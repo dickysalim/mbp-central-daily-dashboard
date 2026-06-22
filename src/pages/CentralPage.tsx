@@ -3,6 +3,7 @@
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, LabelList } from 'recharts'
 import { CalendarRangePicker } from '../components/ui/CalendarRangePicker'
 import { SingleSelect, MultiSelect } from '../components/ui/FilterDropdown'
@@ -133,7 +134,7 @@ export function CentralPage() {
   const [breakdown, setBreakdown] = useState<'source' | 'sku'>('source')
   const [customFrom, setCustomFrom] = useState(getMTDRange().from)
   const [customTo,   setCustomTo]   = useState(getMTDRange().to)
-  const [compMode,   setCompMode]   = useState<CompMode>('previous_period')
+  const [compMode,   setCompMode]   = useState<CompMode>('previous_month')
 
   const { from, to } = getPresetRange(preset, customFrom, customTo)
   const { from: prevFrom, to: prevTo } = compMode === 'previous_month'
@@ -143,6 +144,9 @@ export function CentralPage() {
   const compLabel = compMode === 'previous_month' ? 'vs prev month' : 'vs prev period'
 
   // ── Filter controls
+  const { brand: brandParam } = useParams<{ brand?: string }>()
+  const navigate = useNavigate()
+
   const [brand,        setBrand]        = useState<string>('')
   const [selectedSkus, setSelectedSkus] = useState<string[]>([])
   const [selectedSrcs, setSelectedSrcs] = useState<string[]>([])
@@ -154,9 +158,21 @@ export function CentralPage() {
 
   const prevBrandRef = useRef<string>('')
 
+  // Seed brand from URL param once brands list loads
   useEffect(() => {
-    if (!brand && brands.length > 0) setBrand(brands[0])
-  }, [brands])
+    if (brands.length === 0) return
+    if (brandParam) {
+      const match = brands.find(b => b.toLowerCase() === brandParam.toLowerCase())
+      if (match && match !== brand) { setBrand(match); return }
+    }
+    if (!brand) setBrand(brands[0])
+  }, [brands, brandParam])
+
+  // Sync URL when brand changes
+  const handleBrandChange = (b: string) => {
+    setBrand(b)
+    navigate(b ? `/central/${b.toLowerCase()}` : '/central', { replace: true })
+  }
 
   useEffect(() => {
     if (brand && brand !== prevBrandRef.current && (skus.length > 0 || sources.length > 0)) {
@@ -326,50 +342,34 @@ export function CentralPage() {
 
       {/* ── Header ── */}
       <header className="fixed top-0 left-56 right-0 z-40 border-b border-white/5 bg-surface-950/90 backdrop-blur-md">
-        <div className="px-6 py-3 flex items-center gap-3">
 
+        {/* Row 1 — Title + Filters (left) + Date controls (right) */}
+        <div className="px-6 pt-2.5 pb-1.5 flex items-center gap-3 min-w-0">
           {/* Title */}
-          <div className="shrink-0 mr-2">
+          <div className="shrink-0 mr-1">
             <h1 className="text-sm font-semibold text-surface-100 leading-tight">Central Dashboard</h1>
             <p className="text-[10px] text-surface-200/40 font-mono">{from} → {to}</p>
           </div>
 
           <div className="w-px h-6 bg-white/8 shrink-0" />
 
-          {/* Filters — left aligned */}
-          <SingleSelect label="Brand"          options={brands}  value={brand}        onChange={setBrand}        placeholder="All brands" />
-          <MultiSelect  label="SKU"            options={skus}    value={selectedSkus} onChange={setSelectedSkus} placeholder="All SKUs" />
-          <MultiSelect  label="Traffic Source" options={sources} value={selectedSrcs} onChange={setSelectedSrcs} placeholder="All Sources" />
+          {/* Filters */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <SingleSelect label="Brand"          options={brands}  value={brand}        onChange={handleBrandChange} placeholder="All brands" />
+            <MultiSelect  label="SKU"            options={skus}    value={selectedSkus} onChange={setSelectedSkus} placeholder="All SKUs" />
+            <MultiSelect  label="Traffic Source" options={sources} value={selectedSrcs} onChange={setSelectedSrcs} placeholder="All Sources" />
+          </div>
 
           <div className="w-px h-6 bg-white/8 shrink-0" />
 
-          {/* Breakdown toggle */}
-          <div className="shrink-0">
-            <p className="text-[9px] text-surface-200/30 uppercase tracking-widest font-semibold mb-1">Breakdown</p>
-            <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
-              {([{ key: 'source', label: 'Traffic Source' }, { key: 'sku', label: 'SKU' }] as const).map(opt => (
-                <button
-                  key={opt.key}
-                  onClick={() => setBreakdown(opt.key)}
-                  className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
-                    breakdown === opt.key ? 'bg-white/12 text-surface-100' : 'text-surface-200/35 hover:text-surface-200/70'
-                  }`}
-                >{opt.label}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Spacer pushes date + compare to the right */}
-          <div className="flex-1" />
-
-          {/* Date presets + calendar */}
+          {/* Date presets + calendar — top right */}
           <div className="flex items-center gap-1.5 shrink-0">
             <div className="flex items-center gap-0.5 bg-white/5 rounded-xl p-1">
               {PRESETS.map(p => (
                 <button
                   key={p.key}
                   onClick={() => setPreset(p.key)}
-                  className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+                  className={`px-3 py-1 rounded-lg text-[10px] font-semibold transition-all ${
                     preset === p.key
                       ? 'bg-brand-500 text-white shadow-sm'
                       : 'text-surface-200/50 hover:text-surface-100 hover:bg-white/5'
@@ -385,40 +385,58 @@ export function CentralPage() {
               onChange={(f, t) => { setPreset('custom'); setCustomFrom(f); setCustomTo(t) }}
             />
           </div>
+        </div>
 
-          <div className="w-px h-6 bg-white/8 shrink-0" />
-
-          {/* Compare toggle — rightmost */}
-          <div className="shrink-0">
-            <p className="text-[9px] text-surface-200/30 uppercase tracking-widest font-semibold mb-1">Compare vs</p>
-            <div className="flex items-center gap-1.5">
-              <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
-                {([
-                  { key: 'previous_period', label: 'Prev Period' },
-                  { key: 'previous_month',  label: 'Prev Month'  },
-                ] as { key: CompMode; label: string }[]).map(opt => (
-                  <button
-                    key={opt.key}
-                    onClick={() => setCompMode(opt.key)}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
-                      compMode === opt.key
-                        ? 'bg-white/12 text-surface-100'
-                        : 'text-surface-200/35 hover:text-surface-200/70'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <span className="text-[10px] text-surface-200/20 font-mono">{prevFrom} → {prevTo}</span>
+        {/* Row 2 — Breakdown (left) + Compare vs (right) */}
+        <div className="px-6 pb-2 flex items-center gap-3 border-t border-white/[0.04]">
+          {/* Breakdown toggle — left */}
+          <div className="shrink-0 flex items-center gap-1.5">
+            <p className="text-[9px] text-surface-200/30 uppercase tracking-widest font-semibold">Breakdown</p>
+            <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
+              {([{ key: 'source', label: 'Traffic Source' }, { key: 'sku', label: 'SKU' }] as const).map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => setBreakdown(opt.key)}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                    breakdown === opt.key ? 'bg-white/12 text-surface-100' : 'text-surface-200/35 hover:text-surface-200/70'
+                  }`}
+                >{opt.label}</button>
+              ))}
             </div>
           </div>
 
+          <div className="flex-1" />
+
+          {/* Compare toggle — right */}
+          <div className="shrink-0 flex items-center gap-1.5">
+            <p className="text-[9px] text-surface-200/30 uppercase tracking-widest font-semibold">Compare vs</p>
+            <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
+              {([
+                { key: 'previous_period', label: 'Prev Period' },
+                { key: 'previous_month',  label: 'Prev Month'  },
+              ] as { key: CompMode; label: string }[]).map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => setCompMode(opt.key)}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                    compMode === opt.key
+                      ? 'bg-white/12 text-surface-100'
+                      : 'text-surface-200/35 hover:text-surface-200/70'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] text-surface-200/20 font-mono hidden xl:block">{prevFrom} → {prevTo}</span>
+          </div>
         </div>
+
+
       </header>
 
       {/* ── Body ── */}
-      <div className="flex-1 px-6 pt-[72px] pb-[50vh] space-y-10">
+      <div className="flex-1 px-6 pt-24 pb-[50vh] space-y-10">
 
 
         {/* ── Funnel Analysis ── (hidden, work in progress) */}

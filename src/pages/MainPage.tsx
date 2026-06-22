@@ -56,6 +56,31 @@ function getLastNDays(n: number) {
 }
 
 type Preset = 'last_month' | 'mtd' | 'last_30' | 'last_14' | 'last_7' | 'custom'
+type TimeBreakdown = 'day' | 'isoweek' | 'month'
+
+function getGroupKey(day: string, bd: TimeBreakdown): string {
+  if (bd === 'month') return day.slice(0, 7)
+  if (bd === 'isoweek') {
+    const d = new Date(day + 'T00:00:00')
+    const utc = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+    const dow = utc.getUTCDay() || 7
+    utc.setUTCDate(utc.getUTCDate() + 4 - dow)
+    const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1))
+    const wk = Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+    return `${utc.getUTCFullYear()}-W${String(wk).padStart(2, '0')}`
+  }
+  return day
+}
+
+function fmtGroupKey(key: string, bd: TimeBreakdown): string {
+  if (bd === 'month') {
+    const [y, m] = key.split('-')
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleString('en', { month: 'short', year: '2-digit' })
+  }
+  if (bd === 'isoweek') return key.replace(/^\d{4}-/, '') // W24
+  // day: MM/DD
+  return key ? `${key.slice(5, 7)}/${key.slice(8)}` : key
+}
 
 function getPresetRange(preset: Preset, customFrom: string, customTo: string): { from: string; to: string } {
   switch (preset) {
@@ -410,6 +435,7 @@ export function MainPage() {
   const [preset, setPreset] = useState<Preset>('mtd')
   const [customFrom, setCustomFrom] = useState(getMTDRange().from)
   const [customTo, setCustomTo] = useState(getMTDRange().to)
+  const [timeBreakdown, setTimeBreakdown] = useState<TimeBreakdown>('day')
 
   const { from, to } = getPresetRange(preset, customFrom, customTo)
   const [compMode, setCompMode] = useState<CompMode>('previous_period')
@@ -460,22 +486,23 @@ export function MainPage() {
 
   // Aggregate: ad_spend from ads_performance, sales_total from sales_report, joined on day
   const chartData = useMemo(() => {
-    const byDay = new Map<string, { day: string; ad_spend: number; sales_total: number }>()
+    const byKey = new Map<string, { day: string; ad_spend: number; sales_total: number }>()
 
     for (const row of adsData) {
-      if (!byDay.has(row.day)) byDay.set(row.day, { day: row.day, ad_spend: 0, sales_total: 0 })
-      byDay.get(row.day)!.ad_spend += row.ad_spend ?? 0
+      const k = getGroupKey(row.day, timeBreakdown)
+      if (!byKey.has(k)) byKey.set(k, { day: k, ad_spend: 0, sales_total: 0 })
+      byKey.get(k)!.ad_spend += row.ad_spend ?? 0
     }
 
     for (const row of salesData) {
-      if (!byDay.has(row.day)) byDay.set(row.day, { day: row.day, ad_spend: 0, sales_total: 0 })
-      byDay.get(row.day)!.sales_total += row.sales_total ?? 0
+      const k = getGroupKey(row.day, timeBreakdown)
+      if (!byKey.has(k)) byKey.set(k, { day: k, ad_spend: 0, sales_total: 0 })
+      byKey.get(k)!.sales_total += row.sales_total ?? 0
     }
 
-    const sorted = Array.from(byDay.values())
-      .sort((a, b) => a.day.localeCompare(b.day))
+    const sorted = Array.from(byKey.values()).sort((a, b) => a.day.localeCompare(b.day))
 
-    // 5-day moving average on revenue
+    // 5-point moving average on revenue
     const window = 5
     return sorted.map((d, i) => {
       const start = Math.max(0, i - Math.floor(window / 2))
@@ -488,7 +515,7 @@ export function MainPage() {
         revenue_trend: ma,
       }
     })
-  }, [adsData, salesData])
+  }, [adsData, salesData, timeBreakdown])
 
   // MTD totals
   const totals = useMemo(() => {
@@ -545,7 +572,19 @@ export function MainPage() {
       byDay.get(row.day)!.sales_ca = (byDay.get(row.day)!.sales_ca ?? 0) + (row.sales_ca ?? 0)
       byDay.get(row.day)!.sales_clr = (byDay.get(row.day)!.sales_clr ?? 0) + (row.sales_clr ?? 0)
     }
-    const days = Array.from(byDay.entries()).sort(([a], [b]) => a.localeCompare(b))
+    // Re-aggregate by timeBreakdown
+    const byKey = new Map<string, typeof byDay extends Map<string, infer V> ? V : never>()
+    for (const [day, d] of byDay.entries()) {
+      const k = getGroupKey(day, timeBreakdown)
+      if (!byKey.has(k)) byKey.set(k, { ...d })
+      else {
+        const t = byKey.get(k)!
+        for (const field of Object.keys(d) as (keyof typeof d)[]) {
+          ;(t as any)[field] = ((t as any)[field] ?? 0) + ((d as any)[field] ?? 0)
+        }
+      }
+    }
+    const days = Array.from(byKey.entries()).sort(([a], [b]) => a.localeCompare(b))
 
     return {
       adSpend:   days.map(([day, d]) => ({ v: d.ad_spend, day })),
@@ -579,7 +618,7 @@ export function MainPage() {
       agenDispatchDP: days.map(([day, d]) => ({ v: d.agen_dispatch_dp ?? 0, day })),
       agenDispatchRateDP: days.map(([day, d]) => ({ v: d.real_lead_dp > 0 ? ((d.agen_dispatch_dp ?? 0) / d.real_lead_dp) * 100 : 0, day })),
     }
-  }, [adsData, salesData])
+  }, [adsData, salesData, timeBreakdown])
 
   // Previous month totals
   const prevTotals = useMemo(() => {
@@ -653,8 +692,8 @@ export function MainPage() {
               />
             </div>
 
-            {/* Comparison mode */}
-            <div className="flex items-center gap-2">
+            {/* Comparison mode + time breakdown */}
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="text-[10px] text-surface-200/30 font-medium">Compare vs</span>
               <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
                 {([
@@ -675,6 +714,29 @@ export function MainPage() {
                 ))}
               </div>
               <span className="text-[10px] text-surface-200/20 font-mono">{prevFrom} → {prevTo}</span>
+
+              <div className="w-px h-4 bg-white/8" />
+
+              <span className="text-[10px] text-surface-200/30 font-medium">Group by</span>
+              <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
+                {([
+                  { key: 'day',     label: 'Day' },
+                  { key: 'isoweek', label: 'ISO Week' },
+                  { key: 'month',   label: 'Month' },
+                ] as { key: TimeBreakdown; label: string }[]).map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setTimeBreakdown(opt.key)}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                      timeBreakdown === opt.key
+                        ? 'bg-brand-500/80 text-white'
+                        : 'text-surface-200/35 hover:text-surface-200/70'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -753,10 +815,14 @@ export function MainPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.04)" />
                   <XAxis
                     dataKey="day"
-                    tick={<CustomTick changelogMap={changelogMap} onClickDay={setSelectedDay} />}
+                    tick={timeBreakdown === 'day'
+                      ? <CustomTick changelogMap={changelogMap} onClickDay={setSelectedDay} />
+                      : { fill: 'rgba(255,255,255,.3)', fontSize: 10 }
+                    }
+                    tickFormatter={timeBreakdown !== 'day' ? (v: string) => fmtGroupKey(v, timeBreakdown) : undefined}
                     axisLine={{ stroke: 'rgba(255,255,255,.06)' }}
                     tickLine={false}
-                    height={52}
+                    height={timeBreakdown === 'day' ? 52 : 28}
                     interval={0}
                   />
                   <YAxis

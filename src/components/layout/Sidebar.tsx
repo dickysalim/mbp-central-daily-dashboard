@@ -30,25 +30,7 @@ const PAGES: NavItem[] = [
       </svg>
     ),
   },
-  {
-    to: '/status',
-    label: 'Status Prototype',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-      </svg>
-    ),
-  },
-  {
-    to: '/dynamic',
-    label: 'Dynamic Sidebar',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2"/>
-        <path d="M9 3v18"/>
-      </svg>
-    ),
-  },
+
 ]
 
 const RAW_TABLES: NavItem[] = [
