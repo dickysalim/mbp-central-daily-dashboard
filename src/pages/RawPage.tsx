@@ -67,12 +67,12 @@ export function RawPage() {
 
   const handleDateChange = () => setPage(0)
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><LoadingState message="Loading ads_performance…" /></div>
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><LoadingState message="Loading cdd.v1_ads_performance…" /></div>
   if (isError) return <div className="min-h-screen flex items-center justify-center"><ErrorState title="Could not load data" message={error?.message} onRetry={() => refetch()} /></div>
 
   return (
     <RawDataTable
-      title="ads_performance"
+      title="cdd.v1_ads_performance"
       totalRows={sorted.length}
       columns={COLUMNS}
       rows={pageData}

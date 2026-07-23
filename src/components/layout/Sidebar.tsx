@@ -56,7 +56,7 @@ const PAGES: NavItem[] = [
 const RAW_TABLES: NavItem[] = [
   {
     to: '/raw',
-    label: 'ads_performance',
+    label: 'cdd.v1_ads_performance',
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 3h18v4H3z" /><path d="M3 10h18v4H3z" /><path d="M3 17h18v4H3z" />
@@ -65,7 +65,7 @@ const RAW_TABLES: NavItem[] = [
   },
   {
     to: '/sales',
-    label: 'sales_report',
+    label: 'cdd.v1_sales_report',
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="12" y1="20" x2="12" y2="10" />
@@ -76,7 +76,7 @@ const RAW_TABLES: NavItem[] = [
   },
   {
     to: '/changelog',
-    label: 'changelog',
+    label: 'cdd.v1_changelog',
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />

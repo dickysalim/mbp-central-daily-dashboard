@@ -104,7 +104,7 @@ export function ChangelogPage() {
 
   return (
     <RawDataTable
-      title="changelog"
+      title="cdd.v1_changelog"
       totalRows={filtered.length}
       columns={COLUMNS}
       rows={pageData}

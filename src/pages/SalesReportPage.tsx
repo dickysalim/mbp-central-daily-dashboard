@@ -59,12 +59,12 @@ export function SalesReportPage() {
 
   useEffect(() => { setPage(0) }, [dateRange.from, dateRange.to])
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><LoadingState message="Loading sales_report…" /></div>
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><LoadingState message="Loading cdd.v1_sales_report…" /></div>
   if (isError) return <div className="min-h-screen flex items-center justify-center"><ErrorState title="Could not load data" message={error?.message} onRetry={() => refetch()} /></div>
 
   return (
     <RawDataTable
-      title="sales_report"
+      title="cdd.v1_sales_report"
       totalRows={sorted.length}
       columns={COLUMNS}
       rows={pageData}
