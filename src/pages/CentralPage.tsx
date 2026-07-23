@@ -220,6 +220,7 @@ export function CentralPage() {
         cvr_cc:        rl_cc        > 0 ?  sale_cc      / rl_cc                : 0,
         closing:       rl_cc        > 0 ?  sale_cc      / rl_cc                : 0,
         roas_cc:       spend        > 0 ?  rev_cc       / spend                : 0,
+        cost_cc_purchase: sale_cc   > 0 ?  spend        / sale_cc              : 0,
         dispatch_rate: rl_dp        > 0 ? (lead_disp_dp / rl_dp)       * 100  : 0,
         dispatch_rate_mp: rl_mp     > 0 ? (lead_disp_mp / rl_mp)       * 100  : 0,
       }
@@ -274,6 +275,7 @@ export function CentralPage() {
         cprl:        days.map(([day, d]) => ({ day, v: d.rl_all  > 0 ? d.spend   / d.rl_all  : 0 })),
         closing:     days.map(([day, d]) => ({ day, v: d.rl_cc   > 0 ? d.sale_cc / d.rl_cc * 100 : 0 })),
         roas_cc:     days.map(([day, d]) => ({ day, v: d.spend   > 0 ? d.rev_cc  / d.spend  : 0 })),
+        cost_cc_purchase: days.map(([day, d]) => ({ day, v: d.sale_cc > 0 ? d.spend / d.sale_cc : 0 })),
       },
 
       // Source-level breakdown for pie charts
@@ -1216,64 +1218,26 @@ export function CentralPage() {
         <div className="rounded-2xl bg-surface-800/50 p-6 space-y-6">
           <h2 className="text-sm font-bold text-surface-100 uppercase tracking-widest">CC Performance</h2>
 
-          <div className="grid grid-cols-5 gap-4">
-            <KPICard
-              label="Real Leads CC"
-              value={fmtNum(totals.rl_cc)}
-              delta={pctDelta(totals.rl_cc, prevTotals.rl_cc)}
-              deltaLabel={compLabel}
-              sparkline={sparklines.rl_cc}
-              tooltipFmt="number"
-            />
-            <KPICard
-              label="Sales CC"
-              value={fmtNum(totals.sale_cc)}
-              delta={pctDelta(totals.sale_cc, prevTotals.sale_cc)}
-              deltaLabel={compLabel}
-              sparkline={sparklines.sale_cc}
-              tooltipFmt="number"
-            />
-            <KPICard
-              label="Revenue CC"
-              value={fmtIDR(totals.rev_cc)}
-              delta={pctDelta(totals.rev_cc, prevTotals.rev_cc)}
-              deltaLabel={compLabel}
-              sparkline={sparklines.rev_cc}
-              tooltipFmt="currency"
-            />
-            <KPICard
-              label="CVR CC"
-              value={totals.rl_cc > 0 ? `${(totals.cvr_cc * 100).toFixed(2)}%` : '—'}
-              delta={pctDelta(totals.cvr_cc, prevTotals.cvr_cc)}
-              deltaLabel={compLabel}
-              sparkline={sparklines.cvr_cc}
-              tooltipFmt="percentage"
-            />
-            <KPICard
-              label="RoAS CC"
-              value={totals.spend > 0 ? `${totals.roas_cc.toFixed(2)}×` : '—'}
-              delta={pctDelta(totals.roas_cc, prevTotals.roas_cc)}
-              deltaLabel={compLabel}
-              sparkline={sparklines.roas_cc}
-              tooltipFmt="multiplier"
-            />
+          {/* Row 1: Volume KPIs */}
+          <div className="grid grid-cols-3 gap-4">
+            <KPICard label="Real Leads CC" value={fmtNum(totals.rl_cc)} delta={pctDelta(totals.rl_cc, prevTotals.rl_cc)} deltaLabel={compLabel} sparkline={sparklines.rl_cc} tooltipFmt="number" />
+            <KPICard label="Sales CC" value={fmtNum(totals.sale_cc)} delta={pctDelta(totals.sale_cc, prevTotals.sale_cc)} deltaLabel={compLabel} sparkline={sparklines.sale_cc} tooltipFmt="number" />
+            <KPICard label="Revenue CC" value={fmtIDR(totals.rev_cc)} delta={pctDelta(totals.rev_cc, prevTotals.rev_cc)} deltaLabel={compLabel} sparkline={sparklines.rev_cc} tooltipFmt="currency" />
           </div>
 
-          {/* CC charts: 3 pies + 2 bar charts by breakdown */}
-          <div className="grid grid-cols-5 gap-4">
+          {/* Row 1 charts: Pie breakdowns */}
+          <div className="grid grid-cols-3 gap-4">
             {([
-              { title: `Real Leads CC by ${bdLabel}`, key: 'rl_cc'   as const, currency: false },
-              { title: `Sales CC by ${bdLabel}`,      key: 'sale_cc' as const, currency: false },
-              { title: `Revenue CC by ${bdLabel}`,    key: 'rev_cc'  as const, currency: true  },
+              { title: `Real Leads CC by ${bdLabel}`, key: 'rl_cc' as const, currency: false },
+              { title: `Sales CC by ${bdLabel}`, key: 'sale_cc' as const, currency: false },
+              { title: `Revenue CC by ${bdLabel}`, key: 'rev_cc' as const, currency: true },
             ]).map(({ title, key, currency }) => {
               const pieData = bdRows.map(d => ({ name: d.name, value: d[key] })).filter(d => d.value > 0)
-              const total   = pieData.reduce((s, d) => s + d.value, 0)
+              const total = pieData.reduce((s, d) => s + d.value, 0)
               return (
                 <div key={key} className="rounded-xl bg-surface-900 border border-white/5 p-5">
                   <p className="text-[10px] text-surface-200/40 uppercase tracking-widest font-semibold mb-4">{title}</p>
-                  {pieData.length === 0 ? (
-                    <div className="h-40 flex items-center justify-center text-surface-200/20 text-xs italic">No data</div>
-                  ) : (
+                  {pieData.length === 0 ? <div className="h-40 flex items-center justify-center text-surface-200/20 text-xs italic">No data</div> : (
                     <div className="flex items-center gap-6">
                       <div className="shrink-0">
                         <ResponsiveContainer width={150} height={150}>
@@ -1283,17 +1247,8 @@ export function CentralPage() {
                             </Pie>
                             <Tooltip content={({ active, payload }: any) => {
                               if (!active || !payload?.length) return null
-                              const d = payload[0]
-                              const pct = total > 0 ? ((d.value / total) * 100).toFixed(1) : '0'
-                              return (
-                                <div style={{ background: 'rgba(15,15,25,.95)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, padding: '6px 10px', fontSize: 11, lineHeight: 1.7 }}>
-                                  <p style={{ color: d.payload.fill, fontWeight: 700 }}>{d.name}</p>
-                                  <p style={{ color: '#f1f5f9', fontFamily: 'monospace' }}>
-                                    {currency ? fmtIDR(d.value) : fmtNum(d.value)}
-                                    <span style={{ color: 'rgba(255,255,255,.4)', marginLeft: 6 }}>({pct}%)</span>
-                                  </p>
-                                </div>
-                              )
+                              const d = payload[0]; const pct = total > 0 ? ((d.value / total) * 100).toFixed(1) : '0'
+                              return <div style={{ background: 'rgba(15,15,25,.95)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, padding: '6px 10px', fontSize: 11, lineHeight: 1.7 }}><p style={{ color: d.payload.fill, fontWeight: 700 }}>{d.name}</p><p style={{ color: '#f1f5f9', fontFamily: 'monospace' }}>{currency ? fmtIDR(d.value) : fmtNum(d.value)}<span style={{ color: 'rgba(255,255,255,.4)', marginLeft: 6 }}>({pct}%)</span></p></div>
                             }} />
                           </PieChart>
                         </ResponsiveContainer>
@@ -1316,35 +1271,52 @@ export function CentralPage() {
                 </div>
               )
             })}
+          </div>
 
-            {/* CVR CC by breakdown — horizontal bar */}
+          {/* Row 2: Ratio KPIs */}
+          <div className="grid grid-cols-3 gap-4">
+            <KPICard label="Cost / Purchase" value={totals.sale_cc > 0 ? fmtIDR(totals.cost_cc_purchase) : '—'} delta={pctDelta(totals.cost_cc_purchase, prevTotals.cost_cc_purchase)} deltaLabel={compLabel} sparkline={sparklines.cost_cc_purchase} tooltipFmt="currency" invertDelta />
+            <KPICard label="CVR CC" value={totals.rl_cc > 0 ? `${(totals.cvr_cc * 100).toFixed(2)}%` : '—'} delta={pctDelta(totals.cvr_cc, prevTotals.cvr_cc)} deltaLabel={compLabel} sparkline={sparklines.cvr_cc} tooltipFmt="percentage" />
+            <KPICard label="RoAS CC" value={totals.spend > 0 ? `${totals.roas_cc.toFixed(2)}×` : '—'} delta={pctDelta(totals.roas_cc, prevTotals.roas_cc)} deltaLabel={compLabel} sparkline={sparklines.roas_cc} tooltipFmt="multiplier" />
+          </div>
+
+          {/* Row 2 charts: Bar breakdowns */}
+          <div className="grid grid-cols-3 gap-4">
+            {/* Cost/Purchase by breakdown */}
             {(() => {
-              const barData = bdRows
-                .map(d => ({ name: d.name, value: d.rl_cc > 0 ? parseFloat(((d.sale_cc / d.rl_cc) * 100).toFixed(2)) : 0, fill: bdClr(d.name, 0) }))
-                .filter(d => d.value > 0)
-                .sort((a, b) => b.value - a.value)
+              const barData = bdRows.map(d => ({ name: d.name, value: d.sale_cc > 0 ? parseFloat((d.spend / d.sale_cc).toFixed(0)) : 0, fill: bdClr(d.name, 0) })).filter(d => d.value > 0).sort((a, b) => a.value - b.value)
+              return (
+                <div className="rounded-xl bg-surface-900 border border-white/5 p-5">
+                  <p className="text-[10px] text-surface-200/40 uppercase tracking-widest font-semibold mb-4">Cost/Purchase by {bdLabel}</p>
+                  {barData.length === 0 ? <div className="h-40 flex items-center justify-center text-surface-200/20 text-xs italic">No data</div> : (
+                    <ResponsiveContainer width="100%" height={Math.max(120, barData.length * 36)}>
+                      <BarChart data={barData} layout="vertical" margin={{ top: 0, right: 68, left: 8, bottom: 0 }}>
+                        <XAxis type="number" hide />
+                        <YAxis type="category" dataKey="name" tick={{ fill: 'rgba(255,255,255,.4)', fontSize: 11 }} axisLine={false} tickLine={false} width={44} />
+                        <Tooltip cursor={{ fill: 'rgba(255,255,255,.04)' }} content={({ active, payload }: any) => { if (!active || !payload?.length) return null; return <div style={{ background: 'rgba(15,15,25,.95)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, padding: '6px 10px', fontSize: 11 }}><p style={{ color: payload[0].payload.fill, fontWeight: 700 }}>{payload[0].payload.name}</p><p style={{ color: '#f1f5f9', fontFamily: 'monospace' }}>{fmtIDR(payload[0].value)}</p></div> }} />
+                        <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
+                          {barData.map((d, i) => <Cell key={i} fill={bdClr(d.name, i)} />)}
+                          <LabelList dataKey="value" position="right" formatter={(v: number) => fmtIDR(v)} style={{ fill: 'rgba(255,255,255,.4)', fontSize: 10 }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* CVR CC by breakdown */}
+            {(() => {
+              const barData = bdRows.map(d => ({ name: d.name, value: d.rl_cc > 0 ? parseFloat(((d.sale_cc / d.rl_cc) * 100).toFixed(2)) : 0, fill: bdClr(d.name, 0) })).filter(d => d.value > 0).sort((a, b) => b.value - a.value)
               return (
                 <div className="rounded-xl bg-surface-900 border border-white/5 p-5">
                   <p className="text-[10px] text-surface-200/40 uppercase tracking-widest font-semibold mb-4">CVR CC by {bdLabel}</p>
-                  {barData.length === 0 ? (
-                    <div className="h-40 flex items-center justify-center text-surface-200/20 text-xs italic">No data</div>
-                  ) : (
+                  {barData.length === 0 ? <div className="h-40 flex items-center justify-center text-surface-200/20 text-xs italic">No data</div> : (
                     <ResponsiveContainer width="100%" height={Math.max(120, barData.length * 36)}>
                       <BarChart data={barData} layout="vertical" margin={{ top: 0, right: 48, left: 8, bottom: 0 }}>
                         <XAxis type="number" hide />
                         <YAxis type="category" dataKey="name" tick={{ fill: 'rgba(255,255,255,.4)', fontSize: 11 }} axisLine={false} tickLine={false} width={44} />
-                        <Tooltip
-                          cursor={{ fill: 'rgba(255,255,255,.04)' }}
-                          content={({ active, payload }: any) => {
-                            if (!active || !payload?.length) return null
-                            return (
-                              <div style={{ background: 'rgba(15,15,25,.95)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, padding: '6px 10px', fontSize: 11 }}>
-                                <p style={{ color: payload[0].payload.fill, fontWeight: 700 }}>{payload[0].payload.name}</p>
-                                <p style={{ color: '#f1f5f9', fontFamily: 'monospace' }}>{payload[0].value}%</p>
-                              </div>
-                            )
-                          }}
-                        />
+                        <Tooltip cursor={{ fill: 'rgba(255,255,255,.04)' }} content={({ active, payload }: any) => { if (!active || !payload?.length) return null; return <div style={{ background: 'rgba(15,15,25,.95)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, padding: '6px 10px', fontSize: 11 }}><p style={{ color: payload[0].payload.fill, fontWeight: 700 }}>{payload[0].payload.name}</p><p style={{ color: '#f1f5f9', fontFamily: 'monospace' }}>{payload[0].value}%</p></div> }} />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
                           {barData.map((d, i) => <Cell key={i} fill={bdClr(d.name, i)} />)}
                           <LabelList dataKey="value" position="right" formatter={(v: number) => `${v}%`} style={{ fill: 'rgba(255,255,255,.4)', fontSize: 10 }} />
@@ -1356,34 +1328,18 @@ export function CentralPage() {
               )
             })()}
 
-            {/* RoAS CC by breakdown — horizontal bar */}
+            {/* RoAS CC by breakdown */}
             {(() => {
-              const barData = bdRows
-                .map(d => ({ name: d.name, value: d.spend > 0 ? parseFloat((d.rev_cc / d.spend).toFixed(2)) : 0, fill: bdClr(d.name, 0) }))
-                .filter(d => d.value > 0)
-                .sort((a, b) => b.value - a.value)
+              const barData = bdRows.map(d => ({ name: d.name, value: d.spend > 0 ? parseFloat((d.rev_cc / d.spend).toFixed(2)) : 0, fill: bdClr(d.name, 0) })).filter(d => d.value > 0).sort((a, b) => b.value - a.value)
               return (
                 <div className="rounded-xl bg-surface-900 border border-white/5 p-5">
                   <p className="text-[10px] text-surface-200/40 uppercase tracking-widest font-semibold mb-4">RoAS CC by {bdLabel}</p>
-                  {barData.length === 0 ? (
-                    <div className="h-40 flex items-center justify-center text-surface-200/20 text-xs italic">No data</div>
-                  ) : (
+                  {barData.length === 0 ? <div className="h-40 flex items-center justify-center text-surface-200/20 text-xs italic">No data</div> : (
                     <ResponsiveContainer width="100%" height={Math.max(120, barData.length * 36)}>
                       <BarChart data={barData} layout="vertical" margin={{ top: 0, right: 48, left: 8, bottom: 0 }}>
                         <XAxis type="number" hide />
                         <YAxis type="category" dataKey="name" tick={{ fill: 'rgba(255,255,255,.4)', fontSize: 11 }} axisLine={false} tickLine={false} width={44} />
-                        <Tooltip
-                          cursor={{ fill: 'rgba(255,255,255,.04)' }}
-                          content={({ active, payload }: any) => {
-                            if (!active || !payload?.length) return null
-                            return (
-                              <div style={{ background: 'rgba(15,15,25,.95)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, padding: '6px 10px', fontSize: 11 }}>
-                                <p style={{ color: payload[0].payload.fill, fontWeight: 700 }}>{payload[0].payload.name}</p>
-                                <p style={{ color: '#f1f5f9', fontFamily: 'monospace' }}>{payload[0].value}×</p>
-                              </div>
-                            )
-                          }}
-                        />
+                        <Tooltip cursor={{ fill: 'rgba(255,255,255,.04)' }} content={({ active, payload }: any) => { if (!active || !payload?.length) return null; return <div style={{ background: 'rgba(15,15,25,.95)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, padding: '6px 10px', fontSize: 11 }}><p style={{ color: payload[0].payload.fill, fontWeight: 700 }}>{payload[0].payload.name}</p><p style={{ color: '#f1f5f9', fontFamily: 'monospace' }}>{payload[0].value}×</p></div> }} />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
                           {barData.map((d, i) => <Cell key={i} fill={bdClr(d.name, i)} />)}
                           <LabelList dataKey="value" position="right" formatter={(v: number) => `${v}×`} style={{ fill: 'rgba(255,255,255,.4)', fontSize: 10 }} />

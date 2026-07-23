@@ -1,0 +1,1 @@
+../../../shared-rules/central-daily-dashboard.md

@@ -3,7 +3,7 @@
  * Used across Central Dashboard and Main page.
  */
 
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import {
   AreaChart, Area, Line, ReferenceLine,
   ResponsiveContainer, Tooltip,
@@ -64,6 +64,7 @@ export function KPICard({
   label, value, sub, delta, deltaLabel = 'vs prev period',
   sparkline, tooltipFmt, invertDelta = false,
 }: KPICardProps) {
+  const gradientId = useId()
   const isUp = (delta ?? 0) >= 0
   const isGood = invertDelta ? !isUp : isUp
   const textColor = delta == null ? 'text-surface-100' : isGood ? 'text-emerald-400' : 'text-red-400'
@@ -96,7 +97,7 @@ export function KPICard({
           <ResponsiveContainer width="100%" height={100}>
             <AreaChart data={chartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
               <defs>
-                <linearGradient id={`spark-${label.replace(/\W/g, '')}`} x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor={chartColor} stopOpacity={0.3} />
                   <stop offset="100%" stopColor={chartColor} stopOpacity={0.02} />
                 </linearGradient>
@@ -114,7 +115,7 @@ export function KPICard({
                 dataKey="v"
                 stroke={chartColor}
                 strokeWidth={1.5}
-                fill={`url(#spark-${label.replace(/\W/g, '')})`}
+                fill={`url(#${gradientId})`}
                 dot={false}
               />
               <Line
