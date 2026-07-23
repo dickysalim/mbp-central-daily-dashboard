@@ -591,6 +591,13 @@ function CampaignEvaluatorSection({ from, to, sku }: { from: string; to: string;
   const targetCostLPV = targetCostVO * overallLPVO
   const targetCostFV  = overallFVRate > 0 ? targetCostLPV / overallFVRate : targetCostLPV
 
+  // If actual average is better (lower) than hard target, use actual as the bar
+  const totalPurchCC = metaRows.reduce((s, r) => s + r.purchase_ccom, 0)
+  const actualAvgCPRL = totals.rl > 0 ? totals.spend / totals.rl : Infinity
+  const actualAvgCPA  = totalPurchCC > 0 ? totals.spend / totalPurchCC : Infinity
+  const effectiveCPRL = Math.min(TARGET_CPR, actualAvgCPRL)
+  const effectiveCPA  = Math.min(TARGET_CPA_CC, actualAvgCPA)
+
   // Build evaluation rows
   const evalRows = evaluated
     .filter(c => c.funnel !== 'Unknown')
@@ -602,23 +609,23 @@ function CampaignEvaluatorSection({ from, to, sku }: { from: string; to: string;
 
       switch (c.funnel) {
         case 'ToFU00':
-          metricName = 'Cost / First Visit'
-          targetValue = targetCostFV
-          campaignValue = c.fv > 0 ? spend / c.fv : null
-          break
-        case 'MoFU25':
           metricName = 'Cost / View Offer'
           targetValue = targetCostVO
           campaignValue = c.vo > 0 ? spend / c.vo : null
           break
+        case 'MoFU25':
+          metricName = 'CPRL'
+          targetValue = effectiveCPRL
+          campaignValue = c.realLeads > 0 ? spend / c.realLeads : null
+          break
         case 'BoFU50':
           metricName = 'CPA CC'
-          targetValue = TARGET_CPA_CC
+          targetValue = effectiveCPA
           campaignValue = c.raw.purchase_ccom > 0 ? spend / c.raw.purchase_ccom : null
           break
         case 'BoFU75':
           metricName = 'CPRL'
-          targetValue = TARGET_CPR
+          targetValue = effectiveCPRL
           campaignValue = c.realLeads > 0 ? spend / c.realLeads : null
           break
       }
