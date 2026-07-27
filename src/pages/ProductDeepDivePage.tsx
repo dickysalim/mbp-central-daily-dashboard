@@ -20,8 +20,9 @@ import {
   fmtNum,
   fetchDirectorDaily,
   SKUCard,
-} from './DirectorPage'
-import type { SparkPoint, SKUTotals } from './DirectorPage'
+  Sparkline,
+} from './ProductPerformancePage'
+import type { SparkPoint, SKUTotals, ChangelogEntry } from './ProductPerformancePage'
 
 // ── Funnel Data Fetching ─────────────────────────────────────────────────────
 
@@ -80,19 +81,39 @@ function MiniSpark({ data, width = 80, height = 28, lowerIsBetter = false }: Min
 
   const points = data.map((v, i) => `${pad + i * xStep},${yScale(v)}`).join(' ')
 
-  // Trend color: compare first half avg vs second half avg
-  const mid = Math.floor(data.length / 2)
-  const firstHalf = data.slice(0, mid).reduce((s, v) => s + v, 0) / mid
-  const secondHalf = data.slice(mid).reduce((s, v) => s + v, 0) / (data.length - mid)
-  const trendingUp = secondHalf >= firstHalf
+  // Linear regression for trendline + color
+  const n = data.length
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0
+  for (let i = 0; i < n; i++) {
+    sumX += i; sumY += data[i]; sumXY += i * data[i]; sumX2 += i * i
+  }
+  const denom = n * sumX2 - sumX * sumX
+  const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0
+  const intercept = (sumY - slope * sumX) / n
+  const trendingUp = slope >= 0
   const isGood = lowerIsBetter ? !trendingUp : trendingUp
+  const lineColor = isGood ? 'rgba(52,211,153,0.6)' : 'rgba(239,68,68,0.5)'
+  const dotColor = isGood ? '#34d399' : '#ef4444'
+
+  // Trendline endpoints
+  const tlY1 = yScale(intercept)
+  const tlY2 = yScale(slope * (n - 1) + intercept)
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="sf-mini-spark">
+      {/* Trendline */}
+      <line
+        x1={pad} y1={tlY1}
+        x2={pad + (n - 1) * xStep} y2={tlY2}
+        stroke={lineColor}
+        strokeWidth={1}
+        strokeDasharray="4 2"
+        opacity={0.5}
+      />
       <polyline
         points={points}
         fill="none"
-        stroke={isGood ? 'rgba(52,211,153,0.6)' : 'rgba(239,68,68,0.5)'}
+        stroke={lineColor}
         strokeWidth={1.5}
         strokeLinejoin="round"
         strokeLinecap="round"
@@ -102,7 +123,7 @@ function MiniSpark({ data, width = 80, height = 28, lowerIsBetter = false }: Min
         cx={pad + (data.length - 1) * xStep}
         cy={yScale(data[data.length - 1])}
         r={2}
-        fill={isGood ? '#34d399' : '#ef4444'}
+        fill={dotColor}
       />
     </svg>
   )
@@ -149,6 +170,7 @@ interface CampaignRow {
   traffic_source: string
   campaign_id: string
   campaign_name: string
+  funnel: string        // from campaign_dimension: '00' | '25' | '50' | '75' | '-'
   daily_budget: number
   campaign_status: string
   ad_spend: number
@@ -163,6 +185,12 @@ interface CampaignRow {
   real_lead_ofls: number
   purchase_ccom: number
   revenue_ccom: number
+}
+
+async function fetchCampaignBreakdown(from: string, to: string, sku: string): Promise<CampaignRow[]> {
+  const res = await fetch(`${D1_WORKER_URL}/v2/campaign-breakdown?from=${from}&to=${to}&sku=${sku}`)
+  if (!res.ok) throw new Error('Failed to fetch campaign breakdown')
+  return res.json()
 }
 
 interface ComputedRow {
@@ -188,10 +216,15 @@ interface ComputedRow {
   funnel: FunnelLevel
 }
 
-type SortKey = 'daily_budget' | 'ad_spend' | 'impressions' | 'cpm' | 'link_click' | 'ctr' | 'cpc' |
+type SortKey = 'platform' | 'campaign_name' | 'funnel' |
+  'daily_budget' | 'ad_spend' | 'impressions' | 'cpm' | 'link_click' | 'ctr' | 'cpc' |
   'first_visit' | 'cost_fv' | 'lp_view' | 'cost_lp_view' | 'fv_rate' | 'view_offer' | 'lpvo' |
   'real_leads' | 'vo2l' | 'cprl' | 'real_leads_cc' | 'purchase_cc' | 'cvr_cc' | 'cpa_cc' | 'revenue_cc' | 'roas_cc' |
   'eff_score' | 'suggested_budget' | 'budget_delta'
+
+const FUNNEL_SORT_ORDER: Record<FunnelLevel, number> = {
+  ToFU00: 0, MoFU25: 1, BoFU50: 2, BoFU75: 3, Unknown: 4,
+}
 
 const PLATFORM_COLOR: Record<string, { bg: string; text: string }> = {
   META: { bg: 'rgba(24,119,242,0.15)', text: '#5ba7ff' },
@@ -217,23 +250,32 @@ function fmtPct(n: number | null): string {
   return `${n.toFixed(2)}%`
 }
 
+/** Full-number IDR format for budget values — no K/M truncation */
+function fmtBudget(n: number): string {
+  if (n < 0) return '-' + fmtBudget(-n)
+  return `Rp ${new Intl.NumberFormat('id-ID').format(Math.round(n))}`
+}
+
 // ── Funnel-level parsing ─────────────────────────────────────────────────────
 type FunnelLevel = 'ToFU00' | 'MoFU25' | 'BoFU50' | 'BoFU75' | 'Unknown'
 
-function parseFunnelLevel(name: string): FunnelLevel {
-  if (/ToFU00/i.test(name) || /Mix Upper Funnel/i.test(name)) return 'ToFU00'
-  if (/BoFU75/i.test(name) || /Access.*Promo/i.test(name)) return 'BoFU75'
-  if (/BoFU50/i.test(name) || /Objection/i.test(name)) return 'BoFU50'
-  if (/MoFU25/i.test(name) || /Mix Lower Funnel/i.test(name)) return 'MoFU25'
-  return 'Unknown'
+/** Map campaign_dimension.funnel code to FunnelLevel */
+function mapFunnelLevel(code: string): FunnelLevel {
+  switch (code) {
+    case '00': return 'ToFU00'
+    case '25': return 'MoFU25'
+    case '50': return 'BoFU50'
+    case '75': return 'BoFU75'
+    default:   return 'Unknown'
+  }
 }
 
 const FUNNEL_BADGE: Record<FunnelLevel, { bg: string; text: string; short: string }> = {
-  ToFU00:  { bg: 'rgba(99,102,241,0.15)',  text: '#818cf8', short: 'ToFU' },
-  MoFU25:  { bg: 'rgba(59,130,246,0.15)',  text: '#60a5fa', short: 'MoFU' },
-  BoFU50:  { bg: 'rgba(245,158,11,0.15)',  text: '#fbbf24', short: 'BoF50' },
-  BoFU75:  { bg: 'rgba(239,68,68,0.15)',   text: '#f87171', short: 'BoF75' },
-  Unknown: { bg: 'rgba(255,255,255,0.06)', text: 'rgba(255,255,255,0.4)', short: '?' },
+  ToFU00:  { bg: 'rgba(99,102,241,0.15)',  text: '#818cf8', short: 'ToFU00' },
+  MoFU25:  { bg: 'rgba(59,130,246,0.15)',  text: '#60a5fa', short: 'MoFU25' },
+  BoFU50:  { bg: 'rgba(245,158,11,0.15)',  text: '#fbbf24', short: 'BoFU50' },
+  BoFU75:  { bg: 'rgba(239,68,68,0.15)',   text: '#f87171', short: 'BoFU75' },
+  Unknown: { bg: 'rgba(255,255,255,0.06)', text: 'rgba(255,255,255,0.4)', short: '—' },
 }
 
 // ── Funnel-aware KPI weights (v2) ────────────────────────────────────────────
@@ -346,14 +388,15 @@ function computeBudgetOptimization(rows: ComputedRow[]): void {
 
   scoreable.forEach((c, i) => {
     c.effScore = (multipliers[i] / maxMult) * 100
-    c.suggestedBudget = Math.round((rawSuggested[i] / rawTotal) * totalBudget)
+    c.suggestedBudget = Math.ceil(((rawSuggested[i] / rawTotal) * totalBudget) / 1000) * 1000
     c.budgetDelta = c.suggestedBudget - (c.raw.daily_budget || 0)
   })
 }
 
 function getSortValue(row: ComputedRow, key: SortKey): number {
   const r = row.raw
-  const m: Record<SortKey, number | null> = {
+  if (key === 'funnel') return FUNNEL_SORT_ORDER[row.funnel] ?? 99
+  const m: Record<string, number | null> = {
     daily_budget: r.daily_budget, ad_spend: r.ad_spend, impressions: r.impressions,
     cpm: row.cpm, link_click: r.link_click, ctr: row.ctr, cpc: row.cpc,
     first_visit: row.fv, cost_fv: row.fv > 0 ? row.raw.ad_spend / row.fv : null, lp_view: row.pv, cost_lp_view: row.costPerLPView,
@@ -366,17 +409,21 @@ function getSortValue(row: ComputedRow, key: SortKey): number {
   return m[key] ?? -Infinity
 }
 
-function CampaignBreakdownSection({ from, to, sku }: { from: string; to: string; sku: string }) {
-  const [sortKey, setSortKey] = useState<SortKey>('ad_spend')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+function getStringSortValue(row: ComputedRow, key: SortKey): string {
+  if (key === 'platform') return row.raw.traffic_source
+  if (key === 'campaign_name') return row.raw.campaign_name.toLowerCase()
+  return ''
+}
+
+const STRING_SORT_KEYS = new Set<SortKey>(['platform', 'campaign_name'])
+
+export function CampaignBreakdownSection({ from, to, sku }: { from: string; to: string; sku: string }) {
+  const [sortKey, setSortKey] = useState<SortKey>('funnel')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['campaign-breakdown', from, to, sku],
-    queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/campaign-breakdown?from=${from}&to=${to}&sku=${sku}`)
-      if (!res.ok) throw new Error('Failed to fetch campaign breakdown')
-      return res.json() as Promise<CampaignRow[]>
-    },
+    queryFn: () => fetchCampaignBreakdown(from, to, sku),
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,
     enabled: !!from && !!to && !!sku && from <= to,
@@ -405,7 +452,7 @@ function CampaignBreakdownSection({ from, to, sku }: { from: string; to: string;
       cpaCC: r.purchase_ccom > 0 ? r.ad_spend / r.purchase_ccom : null,
       roasCC: r.ad_spend > 0 ? rev / r.ad_spend : null,
       effScore: 0, suggestedBudget: 0, budgetDelta: 0,
-      funnel: parseFunnelLevel(r.campaign_name),
+      funnel: mapFunnelLevel(r.funnel),
     }
   })
 
@@ -413,6 +460,12 @@ function CampaignBreakdownSection({ from, to, sku }: { from: string; to: string;
   computeBudgetOptimization(computed)
 
   const sorted = [...computed].sort((a, b) => {
+    if (STRING_SORT_KEYS.has(sortKey)) {
+      const sa = getStringSortValue(a, sortKey)
+      const sb = getStringSortValue(b, sortKey)
+      const cmp = sa.localeCompare(sb)
+      return sortDir === 'desc' ? -cmp : cmp
+    }
     const va = getSortValue(a, sortKey)
     const vb = getSortValue(b, sortKey)
     return sortDir === 'desc' ? vb - va : va - vb
@@ -437,9 +490,297 @@ function CampaignBreakdownSection({ from, to, sku }: { from: string; to: string;
   const ok = '#34d399'
   const bad = '#ef4444'
 
+  // ── Budget aggregations for charts ──
+  const totalDailyBudget = computed.reduce((s, c) => s + (c.raw.daily_budget || 0), 0)
+
+  // By traffic source
+  const budgetBySource = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const c of computed) {
+      const b = c.raw.daily_budget || 0
+      if (b <= 0) continue
+      map.set(c.raw.traffic_source, (map.get(c.raw.traffic_source) || 0) + b)
+    }
+    return Array.from(map.entries())
+      .sort(([, a], [, b]) => b - a)
+      .map(([source, amount]) => ({ source, amount, pct: totalDailyBudget > 0 ? (amount / totalDailyBudget) * 100 : 0 }))
+  }, [computed, totalDailyBudget])
+
+  // By funnel level
+  const budgetByFunnel = useMemo(() => {
+    const order: FunnelLevel[] = ['ToFU00', 'MoFU25', 'BoFU50', 'BoFU75', 'Unknown']
+    const map = new Map<FunnelLevel, number>()
+    for (const lvl of order) map.set(lvl, 0)
+    for (const c of computed) {
+      const b = c.raw.daily_budget || 0
+      if (b <= 0) continue
+      map.set(c.funnel, (map.get(c.funnel) || 0) + b)
+    }
+    return order.map(lvl => ({ funnel: lvl, amount: map.get(lvl) || 0, pct: totalDailyBudget > 0 ? ((map.get(lvl) || 0) / totalDailyBudget) * 100 : 0 }))
+      .filter(d => d.amount > 0)
+  }, [computed, totalDailyBudget])
+
+  // ── Suggested budget aggregations ──
+  const totalSuggestedBudget = computed.reduce((s, c) => s + c.suggestedBudget, 0)
+
+  const suggestedBySource = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const c of computed) {
+      if (c.suggestedBudget <= 0) continue
+      map.set(c.raw.traffic_source, (map.get(c.raw.traffic_source) || 0) + c.suggestedBudget)
+    }
+    return Array.from(map.entries())
+      .sort(([, a], [, b]) => b - a)
+      .map(([source, amount]) => ({ source, amount, pct: totalSuggestedBudget > 0 ? (amount / totalSuggestedBudget) * 100 : 0 }))
+  }, [computed, totalSuggestedBudget])
+
+  const suggestedByFunnel = useMemo(() => {
+    const order: FunnelLevel[] = ['ToFU00', 'MoFU25', 'BoFU50', 'BoFU75', 'Unknown']
+    const map = new Map<FunnelLevel, number>()
+    for (const lvl of order) map.set(lvl, 0)
+    for (const c of computed) {
+      if (c.suggestedBudget <= 0) continue
+      map.set(c.funnel, (map.get(c.funnel) || 0) + c.suggestedBudget)
+    }
+    return order.map(lvl => ({ funnel: lvl, amount: map.get(lvl) || 0, pct: totalSuggestedBudget > 0 ? ((map.get(lvl) || 0) / totalSuggestedBudget) * 100 : 0 }))
+      .filter(d => d.amount > 0)
+  }, [computed, totalSuggestedBudget])
+
+  const PIE_COLORS: Record<string, string> = { META: '#818cf8', DGEN: '#f59e0b', SRCH: '#34d399', PMAX: '#06b6d4' }
+  const FUNNEL_COLORS: Record<FunnelLevel, string> = {
+    ToFU00: '#818cf8', MoFU25: '#60a5fa', BoFU50: '#fbbf24', BoFU75: '#f87171', Unknown: 'rgba(255,255,255,0.2)',
+  }
+
   return (
     <div className="sf-section">
       <h2 className="sf-section-title">Campaign Performance Breakdown</h2>
+
+      {/* Budget Overview — scorecard + charts */}
+      {computed.length > 0 && totalDailyBudget > 0 && (
+        <div style={{ display: 'flex', gap: 24, marginBottom: 24, alignItems: 'stretch' }}>
+
+          {/* Scorecard */}
+          <div style={{
+            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 12, padding: '20px 28px', display: 'flex', flexDirection: 'column',
+            justifyContent: 'center', minWidth: 200,
+          }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
+              Total Daily Budget
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#e0e2e6', fontVariantNumeric: 'tabular-nums' }}>
+              {fmtBudget(totalDailyBudget)}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
+              {computed.filter(c => c.raw.daily_budget > 0).length} campaigns with budget
+            </div>
+          </div>
+
+          {/* Pie chart — by traffic source */}
+          <div style={{
+            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 12, padding: '16px 24px', flex: 1, display: 'flex', alignItems: 'center', gap: 20,
+          }}>
+            <div style={{ position: 'relative', width: 120, height: 120, flexShrink: 0 }}>
+              <svg viewBox="0 0 42 42" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                {(() => {
+                  let offset = 0
+                  return budgetBySource.map((d, i) => {
+                    const dash = d.pct * 0.94 // leave small gaps
+                    const el = (
+                      <circle key={d.source} cx="21" cy="21" r="15" fill="none"
+                        stroke={PIE_COLORS[d.source] || `hsl(${i * 80}, 60%, 60%)`}
+                        strokeWidth="5.5" strokeDasharray={`${dash} ${100 - dash}`}
+                        strokeDashoffset={-offset} strokeLinecap="round" />
+                    )
+                    offset += d.pct
+                    return el
+                  })
+                })()}
+                <circle cx="21" cy="21" r="11" fill="rgba(15,17,21,0.9)" />
+              </svg>
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, letterSpacing: '0.04em' }}>SHARE</div>
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+                By Traffic Source
+              </div>
+              {budgetBySource.map((d, i) => (
+                <div key={d.source} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 2, background: PIE_COLORS[d.source] || `hsl(${i * 80}, 60%, 60%)`, flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', flex: 1 }}>{d.source}</span>
+                  <span style={{ fontSize: 12, color: '#e0e2e6', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtBudget(d.amount)}</span>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', width: 42, textAlign: 'right' }}>{d.pct.toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Bar chart — by funnel */}
+          <div style={{
+            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 12, padding: '16px 24px', flex: 1,
+          }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
+              By Funnel Level
+            </div>
+            {budgetByFunnel.map(d => {
+              const maxAmt = Math.max(...budgetByFunnel.map(f => f.amount))
+              const barPct = maxAmt > 0 ? (d.amount / maxAmt) * 100 : 0
+              return (
+                <div key={d.funnel} style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
+                      color: FUNNEL_COLORS[d.funnel], padding: '1px 6px', borderRadius: 3,
+                      background: FUNNEL_BADGE[d.funnel].bg,
+                    }}>
+                      {FUNNEL_BADGE[d.funnel].short}
+                    </span>
+                    <span style={{ fontSize: 12, color: '#e0e2e6', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtBudget(d.amount)} <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>({d.pct.toFixed(1)}%)</span>
+                    </span>
+                  </div>
+                  <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 3, width: `${barPct}%`,
+                      background: FUNNEL_COLORS[d.funnel],
+                      transition: 'width 0.3s ease',
+                    }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Suggested Budget Overview */}
+      {computed.length > 0 && totalSuggestedBudget > 0 && (
+        <div style={{ display: 'flex', gap: 24, marginBottom: 24, alignItems: 'stretch' }}>
+
+          {/* Scorecard */}
+          <div style={{
+            background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)',
+            borderRadius: 12, padding: '20px 28px', display: 'flex', flexDirection: 'column',
+            justifyContent: 'center', minWidth: 200,
+          }}>
+            <div style={{ fontSize: 11, color: 'rgba(99,102,241,0.7)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
+              Suggested Daily Budget
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#a5b4fc', fontVariantNumeric: 'tabular-nums' }}>
+              {fmtBudget(totalSuggestedBudget)}
+            </div>
+            {totalDailyBudget > 0 && (() => {
+              const delta = totalSuggestedBudget - totalDailyBudget
+              if (delta === 0) return null
+              return (
+                <div style={{ fontSize: 11, color: delta > 0 ? ok : bad, marginTop: 4, fontWeight: 600 }}>
+                  {delta > 0 ? '▲' : '▼'} {delta > 0 ? '+' : ''}{fmtBudget(delta)} vs current
+                </div>
+              )
+            })()}
+          </div>
+
+          {/* Pie chart — suggested by traffic source */}
+          <div style={{
+            background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)',
+            borderRadius: 12, padding: '16px 24px', flex: 1, display: 'flex', alignItems: 'center', gap: 20,
+          }}>
+            <div style={{ position: 'relative', width: 120, height: 120, flexShrink: 0 }}>
+              <svg viewBox="0 0 42 42" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                {(() => {
+                  let offset = 0
+                  return suggestedBySource.map((d, i) => {
+                    const dash = d.pct * 0.94
+                    const el = (
+                      <circle key={d.source} cx="21" cy="21" r="15" fill="none"
+                        stroke={PIE_COLORS[d.source] || `hsl(${i * 80}, 60%, 60%)`}
+                        strokeWidth="5.5" strokeDasharray={`${dash} ${100 - dash}`}
+                        strokeDashoffset={-offset} strokeLinecap="round" />
+                    )
+                    offset += d.pct
+                    return el
+                  })
+                })()}
+                <circle cx="21" cy="21" r="11" fill="rgba(15,17,21,0.9)" />
+              </svg>
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: 'rgba(99,102,241,0.6)', fontWeight: 600, letterSpacing: '0.04em' }}>NEW</div>
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: 'rgba(99,102,241,0.7)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+                By Traffic Source
+              </div>
+              {suggestedBySource.map((d, i) => {
+                const currentAmt = budgetBySource.find(b => b.source === d.source)?.amount || 0
+                const delta = d.amount - currentAmt
+                return (
+                  <div key={d.source} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: PIE_COLORS[d.source] || `hsl(${i * 80}, 60%, 60%)`, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', flex: 1 }}>{d.source}</span>
+                    <span style={{ fontSize: 12, color: '#a5b4fc', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtBudget(d.amount)}</span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', width: 42, textAlign: 'right' }}>{d.pct.toFixed(1)}%</span>
+                    {delta !== 0 && (
+                      <span style={{ fontSize: 10, color: delta > 0 ? ok : bad, fontWeight: 600, width: 60, textAlign: 'right' }}>
+                        {delta > 0 ? '+' : ''}{fmtBudget(delta)}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Bar chart — suggested by funnel */}
+          <div style={{
+            background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)',
+            borderRadius: 12, padding: '16px 24px', flex: 1,
+          }}>
+            <div style={{ fontSize: 11, color: 'rgba(99,102,241,0.7)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
+              By Funnel Level
+            </div>
+            {suggestedByFunnel.map(d => {
+              const maxAmt = Math.max(...suggestedByFunnel.map(f => f.amount))
+              const barPct = maxAmt > 0 ? (d.amount / maxAmt) * 100 : 0
+              const currentAmt = budgetByFunnel.find(b => b.funnel === d.funnel)?.amount || 0
+              const delta = d.amount - currentAmt
+              return (
+                <div key={d.funnel} style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
+                      color: FUNNEL_COLORS[d.funnel], padding: '1px 6px', borderRadius: 3,
+                      background: FUNNEL_BADGE[d.funnel].bg,
+                    }}>
+                      {FUNNEL_BADGE[d.funnel].short}
+                    </span>
+                    <span style={{ fontSize: 12, color: '#a5b4fc', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtBudget(d.amount)} <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>({d.pct.toFixed(1)}%)</span>
+                      {delta !== 0 && (
+                        <span style={{ color: delta > 0 ? ok : bad, fontSize: 10, marginLeft: 6 }}>
+                          {delta > 0 ? '+' : ''}{fmtBudget(delta)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 3, width: `${barPct}%`,
+                      background: FUNNEL_COLORS[d.funnel],
+                      opacity: 0.7,
+                      transition: 'width 0.3s ease',
+                    }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {isLoading && rawRows.length === 0 && (
         <div className="dp-card-loading"><div className="tv-spinner" /><span>Loading campaigns…</span></div>
@@ -458,19 +799,15 @@ function CampaignBreakdownSection({ from, to, sku }: { from: string; to: string;
           <table className="cb-table">
             <thead>
               <tr>
-                <th className="cb-sticky cb-sticky-platform">Platform</th>
-                <th className="cb-sticky cb-sticky-campaign">Campaign</th>
-                <SortTh label="Funnel" k="eff_score" />
+                <SortTh label="Platform" k="platform" />
+                <th className="cb-sticky cb-sticky-campaign"><span className={`cb-sortable${sortKey === 'campaign_name' ? ' cb-sort-active' : ''}`} onClick={() => handleSort('campaign_name')}>Campaign{sortKey === 'campaign_name' ? <span className="cb-sort-arrow">{sortDir === 'desc' ? ' ▼' : ' ▲'}</span> : null}</span></th>
+                <SortTh label="Funnel" k="funnel" />
                 <SortTh label="Score" k="eff_score" />
                 <SortTh label="Daily Budget" k="daily_budget" />
                 <SortTh label="Suggested" k="suggested_budget" />
                 <SortTh label="Δ Budget" k="budget_delta" />
-                <SortTh label="Spend" k="ad_spend" />
-                <SortTh label="Real Leads" k="real_leads" />
                 <SortTh label="CPRL" k="cprl" />
-                <SortTh label="Purchase CC" k="purchase_cc" />
                 <SortTh label="CPA CC" k="cpa_cc" />
-                <SortTh label="Revenue CC" k="revenue_cc" />
                 <SortTh label="RoAS CC" k="roas_cc" />
               </tr>
             </thead>
@@ -482,22 +819,18 @@ function CampaignBreakdownSection({ from, to, sku }: { from: string; to: string;
                 const roasOk = c.roasCC !== null && c.roasCC >= 0.2
                 return (
                   <tr key={`${r.traffic_source}-${r.campaign_id}-${i}`}>
-                    <td className="cb-sticky cb-sticky-platform">{platformBadge(r.traffic_source)}</td>
+                    <td className="cb-num">{platformBadge(r.traffic_source)}</td>
                     <td className="cb-sticky cb-sticky-campaign cb-name" title={r.campaign_name}>
                       {r.campaign_name}
                       {r.campaign_status === 'PAUSED' && <span style={{ marginLeft: 6, fontSize: 9, color: 'rgba(255,255,255,0.3)', fontWeight: 600, letterSpacing: '0.05em' }}>PAUSED</span>}
                     </td>
                     <td className="cb-num"><span style={{ background: FUNNEL_BADGE[c.funnel].bg, color: FUNNEL_BADGE[c.funnel].text, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>{FUNNEL_BADGE[c.funnel].short}</span></td>
                     <td className="cb-num"><span className="cb-score-bar" style={{ '--score-pct': `${c.effScore}%`, '--score-color': c.effScore >= 70 ? ok : c.effScore >= 40 ? '#fbbf24' : bad } as React.CSSProperties}>{c.effScore.toFixed(0)}</span></td>
-                    <td className="cb-num" style={{ color: r.daily_budget > 0 ? 'rgba(255,255,255,0.7)' : dim }}>{r.daily_budget > 0 ? fmtIDR(r.daily_budget) : '—'}</td>
-                    <td className="cb-num" style={{ color: 'rgba(99,102,241,0.85)', fontWeight: 600 }}>{c.suggestedBudget > 0 ? fmtIDR(c.suggestedBudget) : '—'}</td>
-                    <td className="cb-num" style={{ color: c.budgetDelta > 0 ? ok : c.budgetDelta < 0 ? bad : dim, fontWeight: 600 }}>{c.budgetDelta !== 0 ? `${c.budgetDelta > 0 ? '+' : ''}${fmtIDR(c.budgetDelta)}` : '—'}</td>
-                    <td className="cb-num">{fmtIDR(r.ad_spend)}</td>
-                    <td className="cb-num">{fmtNum(c.realLeads)}</td>
+                    <td className="cb-num" style={{ color: r.daily_budget > 0 ? 'rgba(255,255,255,0.7)' : dim }}>{r.daily_budget > 0 ? fmtBudget(r.daily_budget) : '—'}</td>
+                    <td className="cb-num" style={{ color: 'rgba(99,102,241,0.85)', fontWeight: 600 }}>{c.suggestedBudget > 0 ? fmtBudget(c.suggestedBudget) : '—'}</td>
+                    <td className="cb-num" style={{ color: c.budgetDelta > 0 ? ok : c.budgetDelta < 0 ? bad : dim, fontWeight: 600 }}>{c.budgetDelta !== 0 ? `${c.budgetDelta > 0 ? '+' : ''}${fmtBudget(c.budgetDelta)}` : '—'}</td>
                     <td className="cb-num" style={{ color: c.cprl === null ? dim : cprlOk ? ok : bad }}>{c.cprl !== null ? fmtIDR(c.cprl) : '—'}</td>
-                    <td className="cb-num">{fmtNum(r.purchase_ccom)}</td>
                     <td className="cb-num" style={{ color: c.cpaCC === null ? dim : cpaOk ? ok : bad }}>{c.cpaCC !== null ? fmtIDR(c.cpaCC) : '—'}</td>
-                    <td className="cb-num">{fmtIDR(c.rev)}</td>
                     <td className="cb-num" style={{ color: c.roasCC === null ? dim : roasOk ? ok : bad }}>{c.roasCC !== null ? `${c.roasCC.toFixed(2)}×` : '—'}</td>
                   </tr>
                 )
@@ -520,19 +853,15 @@ function CampaignBreakdownSection({ from, to, sku }: { from: string; to: string;
               return (
                 <tfoot className="cb-totals">
                   <tr>
-                    <td className="cb-sticky cb-sticky-platform cb-total-label" colSpan={1}></td>
+                    <td className="cb-num cb-total-label" colSpan={1}></td>
                     <td className="cb-sticky cb-sticky-campaign cb-total-label">TOTAL</td>
                     <td className="cb-num">—</td>
                     <td className="cb-num">—</td>
-                    <td className="cb-num">{fmtIDR(t.budget)}</td>
-                    <td className="cb-num" style={{ color: 'rgba(99,102,241,0.85)' }}>{fmtIDR(t.budget)}</td>
+                    <td className="cb-num">{fmtBudget(t.budget)}</td>
+                    <td className="cb-num" style={{ color: 'rgba(99,102,241,0.85)' }}>{fmtBudget(t.budget)}</td>
                     <td className="cb-num">—</td>
-                    <td className="cb-num">{fmtIDR(t.spend)}</td>
-                    <td className="cb-num">{fmtNum(t.rl)}</td>
                     <td className="cb-num" style={{ color: tCprl === null ? dim : cprlOk ? ok : bad }}>{tCprl !== null ? fmtIDR(tCprl) : '—'}</td>
-                    <td className="cb-num">{fmtNum(t.purch)}</td>
                     <td className="cb-num" style={{ color: tCpaCC === null ? dim : cpaOk ? ok : bad }}>{tCpaCC !== null ? fmtIDR(tCpaCC) : '—'}</td>
-                    <td className="cb-num">{fmtIDR(t.rev)}</td>
                     <td className="cb-num" style={{ color: tRoas === null ? dim : roasOk ? ok : bad }}>{tRoas !== null ? `${tRoas.toFixed(2)}×` : '—'}</td>
                   </tr>
                 </tfoot>
@@ -558,7 +887,7 @@ function CampaignEvaluatorSection({ from, to, sku }: { from: string; to: string;
   const rawRows = (data ?? []).filter(r => r.ad_spend > 0)
 
   // Only META campaigns
-  const metaRows = rawRows.filter(r => r.campaign_name.startsWith('[META]'))
+  const metaRows = rawRows.filter(r => r.traffic_source === 'META')
 
   // Compute metrics for each campaign
   const evaluated = metaRows.map(r => {
@@ -566,7 +895,7 @@ function CampaignEvaluatorSection({ from, to, sku }: { from: string; to: string;
     const fv = r.ga4_first_visit || 0
     const pv = r.ga4_page_view || 0
     const vo = r.ga4_view_offer || 0
-    const funnel = parseFunnelLevel(r.campaign_name)
+    const funnel = mapFunnelLevel(r.funnel)
     return { raw: r, realLeads, fv, pv, vo, funnel }
   })
 
@@ -721,7 +1050,7 @@ function CampaignEvaluatorSection({ from, to, sku }: { from: string; to: string;
 }
 
 
-export function SuperfoodDeepdivePage() {
+export function ProductDeepDivePage() {
   // ── Per-brand date bounds + SKU list ──
   interface BrandBounds { brand: string; earliest: string; latest: string; skus: string[] }
   const { data: brandBounds } = useQuery({
@@ -807,6 +1136,68 @@ export function SuperfoodDeepdivePage() {
     placeholderData: keepPreviousData,
     enabled: !!activeFrom && !!activeTo && !!activeSku && activeFrom <= activeTo,
   })
+
+  // Global funnel data (all brands, all SKUs) for benchmark averages
+  const { data: globalFunnelData } = useQuery({
+    queryKey: ['funnel-daily-global', activeFrom, activeTo],
+    queryFn: () => fetchFunnelDaily(activeFrom, activeTo),
+    staleTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
+    enabled: !!activeFrom && !!activeTo && activeFrom <= activeTo,
+  })
+
+  // Compute global benchmark ratios (all brands, all SKUs)
+  const globalBenchmark = useMemo(() => {
+    const fallback = { cpm: 30_000, ctr: 1, lpvo: 10, vo2l: 5 }
+    if (!globalFunnelData || globalFunnelData.length === 0) return fallback
+    let spend = 0, impr = 0, clicks = 0, pv = 0, vo = 0, rl = 0
+    for (const r of globalFunnelData) {
+      spend += r.ad_spend
+      impr += r.impressions
+      clicks += r.link_click
+      pv += r.ga4_page_view
+      vo += r.ga4_view_offer
+      rl += r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls
+    }
+    return {
+      cpm: impr > 0 ? (spend / impr) * 1000 : fallback.cpm,
+      ctr: impr > 0 ? (clicks / impr) * 100 : fallback.ctr,
+      lpvo: pv > 0 ? (vo / pv) * 100 : fallback.lpvo,
+      vo2l: vo > 0 ? (rl / vo) * 100 : fallback.vo2l,
+    }
+  }, [globalFunnelData])
+
+  // Changelog entries for the date range
+  const { data: changelogData } = useQuery({
+    queryKey: ['changelog', activeFrom, activeTo],
+    queryFn: async () => {
+      const res = await fetch(`${D1_WORKER_URL}/v2/changelog?from=${activeFrom}&to=${activeTo}`)
+      if (!res.ok) return []
+      return res.json() as Promise<ChangelogEntry[]>
+    },
+    staleTime: 10 * 60_000,
+    enabled: !!activeFrom && !!activeTo,
+  })
+  const changelog = changelogData ?? []
+
+  // Derive brand from funnel data for the active SKU
+  const activeBrand = useMemo(() => {
+    if (!funnelData || funnelData.length === 0) return ''
+    return funnelData[0]?.brand ?? ''
+  }, [funnelData])
+
+  // Filter changelog to entries relevant to this brand + SKU
+  const filteredChangelog = useMemo(() => {
+    if (!activeBrand) return []
+    return changelog.filter(e => {
+      // Brand must match (comma-separated field)
+      const brands = e.brand.split(',').map(b => b.trim())
+      if (!brands.some(b => b === activeBrand)) return false
+      // If changelog specifies a SKU, only show on that SKU
+      if (e.sku && e.sku !== activeSku) return false
+      return true
+    })
+  }, [changelog, activeBrand, activeSku])
 
   // ── SKU Card data filtered to selected SKU ──
   const msfData = useMemo(() => directorData?.filter(r => r.sku === activeSku) ?? [], [directorData, activeSku])
@@ -954,7 +1345,7 @@ export function SuperfoodDeepdivePage() {
       cpa_cc: t.purchase_cc > 0 ? t.ad_spend / t.purchase_cc : 0,
     }
 
-    return { totals, daily, ratios, ratioTotals }
+    return { totals, daily, ratios, ratioTotals, dates: sorted.map(([d]) => d) }
   }, [funnelData])
 
   const isLoading = dirLoading || funnelLoading
@@ -1034,6 +1425,7 @@ export function SuperfoodDeepdivePage() {
           dailyRoAS={msfTrends.roas}
           maxDevs={maxDevs}
           isLoading={dirLoading}
+          changelog={filteredChangelog}
         />
       </div>
 
@@ -1114,7 +1506,76 @@ export function SuperfoodDeepdivePage() {
         )}
       </div>
 
-
+      {/* ── Funnel Trend Charts ── */}
+      {overviewData && (
+        <div className="sf-section">
+          <h2 className="sf-section-title">Funnel Trends</h2>
+          <div className="sf-trend-charts">
+            <div className="dp-trend-box" style={{ flex: 1 }}>
+              <Sparkline
+                title="CPM"
+                data={overviewData.dates.map((d, i) => ({ date: d, value: overviewData.ratios.cpm[i] }))}
+                target={globalBenchmark.cpm}
+                targetLabel="Benchmark"
+                color="#f59e0b"
+                fixedYMin={0}
+                fixedYMax={Math.max(80_000, globalBenchmark.cpm * 2, overviewData.ratioTotals.cpm * 1.5)}
+                showTrendline
+                height={180}
+                changelog={filteredChangelog}
+              />
+            </div>
+            <div className="dp-trend-box" style={{ flex: 1 }}>
+              <Sparkline
+                title="CTR"
+                data={overviewData.dates.map((d, i) => ({ date: d, value: overviewData.ratios.ctr[i] }))}
+                target={globalBenchmark.ctr}
+                targetLabel="Benchmark"
+                color="#06b6d4"
+                fmt="percent"
+                lowerIsBetter={false}
+                fixedYMin={0}
+                fixedYMax={Math.max(5, globalBenchmark.ctr * 2.5, overviewData.ratioTotals.ctr * 2)}
+                showTrendline
+                height={180}
+                changelog={filteredChangelog}
+              />
+            </div>
+            <div className="dp-trend-box" style={{ flex: 1 }}>
+              <Sparkline
+                title="LPVO"
+                data={overviewData.dates.map((d, i) => ({ date: d, value: overviewData.ratios.lpvo[i] }))}
+                target={globalBenchmark.lpvo}
+                targetLabel="Benchmark"
+                color="#a78bfa"
+                fmt="percent"
+                lowerIsBetter={false}
+                fixedYMin={0}
+                fixedYMax={Math.max(50, globalBenchmark.lpvo * 2, overviewData.ratioTotals.lpvo * 1.5)}
+                showTrendline
+                height={180}
+                changelog={filteredChangelog}
+              />
+            </div>
+            <div className="dp-trend-box" style={{ flex: 1 }}>
+              <Sparkline
+                title="VO2L"
+                data={overviewData.dates.map((d, i) => ({ date: d, value: overviewData.ratios.vo2l[i] }))}
+                target={globalBenchmark.vo2l}
+                targetLabel="Benchmark"
+                color="#34d399"
+                fmt="percent"
+                lowerIsBetter={false}
+                fixedYMin={0}
+                fixedYMax={Math.max(30, globalBenchmark.vo2l * 2.5, overviewData.ratioTotals.vo2l * 2)}
+                showTrendline
+                height={180}
+                changelog={filteredChangelog}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Campaign Performance Evaluator — Meta Ads only */}
       <CampaignEvaluatorSection
@@ -1123,12 +1584,7 @@ export function SuperfoodDeepdivePage() {
         sku={activeSku}
       />
 
-      {/* Campaign Performance Breakdown */}
-      <CampaignBreakdownSection
-        from={activeFrom}
-        to={activeTo}
-        sku={activeSku}
-      />
+      {/* Campaign Performance Breakdown — moved to Budget Setting panel */}
 
       {/* Data source note */}
       <div className="dp-footnote">

@@ -17,6 +17,7 @@ import { D1_WORKER_URL } from '../config/dataSource'
 import imgMetafiber from '../assets/sku_images/Metafiber.webp'
 import imgSuperfood from '../assets/sku_images/Superfood.webp'
 import img3Peptide from '../assets/sku_images/3Peptide.webp'
+import imgNightsure from '../assets/sku_images/Nightsure.webp'
 
 import imgGoogleAds from '../assets/ads_platform_images/Google Ads.webp'
 import imgGoogleSearch from '../assets/ads_platform_images/Google Search Ads.webp'
@@ -30,9 +31,10 @@ export const TARGET_ROAS_CC = 0.2
 
 // Static lookup for known SKUs — extend as new SKUs are added
 export const SKU_META: Record<string, { label: string; fullName: string; color: string; colorMuted: string; image: string | null }> = {
-  MTA: { label: 'MTA', fullName: 'Metafiber', color: '#5b8def', colorMuted: 'rgba(91,141,239,0.15)', image: imgMetafiber },
-  MSF: { label: 'MSF', fullName: 'Superfood', color: '#34d399', colorMuted: 'rgba(52,211,153,0.15)', image: imgSuperfood },
-  M3P: { label: 'M3P', fullName: '3Peptide', color: '#a855f7', colorMuted: 'rgba(168,85,247,0.15)', image: img3Peptide },
+  MSF: { label: 'MSF', fullName: 'Superfood',  color: '#f97316', colorMuted: 'rgba(249,115,22,0.15)',  image: imgSuperfood },
+  MTA: { label: 'MTA', fullName: 'Metafiber',  color: '#fb923c', colorMuted: 'rgba(251,146,60,0.15)',  image: imgMetafiber },
+  M3P: { label: 'M3P', fullName: '3Peptide',   color: '#22c55e', colorMuted: 'rgba(34,197,94,0.15)',   image: img3Peptide },
+  MNS: { label: 'MNS', fullName: 'Nightsure',  color: '#3b82f6', colorMuted: 'rgba(59,130,246,0.15)', image: imgNightsure },
   // Ads Platforms
   META: { label: 'META', fullName: 'Meta Leads Campaign', color: '#1877f2', colorMuted: 'rgba(24,119,242,0.15)', image: imgMetaAds },
   DGEN: { label: 'DGEN', fullName: 'Demand Gen', color: '#34a853', colorMuted: 'rgba(52,168,83,0.15)', image: imgGoogleAds },
@@ -85,7 +87,18 @@ export function fmtIDR(n: number): string {
 }
 
 export function fmtNum(n: number): string {
-  return n.toLocaleString('id-ID')
+  return new Intl.NumberFormat('id-ID').format(Math.round(n))
+}
+
+/** Changelog entry from the media buying changelog table */
+export interface ChangelogEntry {
+  date: string
+  date_end: string | null
+  brand: string
+  sku: string
+  title: string
+  changelist: string
+  notion_page_url: string
 }
 
 function shortDate(d: string): string {
@@ -147,7 +160,7 @@ interface SparklineProps {
   data: SparkPoint[]
   target: number
   title?: string
-  fmt?: 'currency' | 'multiplier'
+  fmt?: 'currency' | 'multiplier' | 'percent'
   /** true = below target is good (CPR/CPA); false = above target is good (RoAS) */
   lowerIsBetter?: boolean
   /** If provided, use this as the max deviation from target for Y scaling (enables cross-SKU comparison) */
@@ -158,11 +171,17 @@ interface SparklineProps {
   width?: number
   height?: number
   color: string
+  /** Label for the reference line — defaults to 'Target' */
+  targetLabel?: string
+  /** Show a linear regression trendline */
+  showTrendline?: boolean
+  /** Changelog entries to show as yellow markers */
+  changelog?: ChangelogEntry[]
 }
 
 let sparklineIdCounter = 0
 
-export function Sparkline({ data, target, title, width = 280, height = 150, color, fmt = 'currency', lowerIsBetter = true, sharedMaxDev, fixedYMin, fixedYMax }: SparklineProps) {
+export function Sparkline({ data, target, title, width = 280, height = 150, color, fmt = 'currency', lowerIsBetter = true, sharedMaxDev, fixedYMin, fixedYMax, targetLabel = 'Target', showTrendline = false, changelog }: SparklineProps) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   void sparklineIdCounter++
@@ -229,31 +248,54 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
   const hoveredX = hoverIdx !== null ? pad.l + hoverIdx * xStep : 0
   const hoveredY = hoverIdx !== null ? yScale(values[hoverIdx]) : 0
 
-  // Compute trend direction for line color
-  const trendColor = (() => {
+  // Compute trend direction and regression line for line color
+  const { trendColor, trendlineY1, trendlineY2 } = (() => {
     const n = values.length
-    if (n < 2) return lastIsGood ? '#34d399' : '#ef4444'
+    if (n < 2) return { trendColor: lastIsGood ? '#34d399' : '#ef4444', trendlineY1: 0, trendlineY2: 0 }
     let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0
     for (let i = 0; i < n; i++) {
       sumX += i; sumY += values[i]; sumXY += i * values[i]; sumX2 += i * i
     }
     const denom = n * sumX2 - sumX * sumX
     const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0
+    const intercept = (sumY - slope * sumX) / n
     const trendGood = lowerIsBetter ? slope <= 0 : slope >= 0
-    return trendGood ? '#34d399' : '#ef4444'
+    return {
+      trendColor: trendGood ? '#34d399' : '#ef4444',
+      trendlineY1: yScale(intercept),
+      trendlineY2: yScale(slope * (n - 1) + intercept),
+    }
   })()
+
+  // Build changelog date→index map
+  const changelogByIdx = useMemo(() => {
+    if (!changelog || changelog.length === 0) return new Map<number, ChangelogEntry[]>()
+    const dateToIdx = new Map<string, number>()
+    data.forEach((d, i) => dateToIdx.set(d.date, i))
+    const map = new Map<number, ChangelogEntry[]>()
+    for (const entry of changelog) {
+      const idx = dateToIdx.get(entry.date)
+      if (idx !== undefined) {
+        const arr = map.get(idx) || []
+        arr.push(entry)
+        map.set(idx, arr)
+      }
+    }
+    return map
+  }, [changelog, data])
 
   // Show empty state for 0 data points — but AFTER all hooks
   if (data.length === 0) return <div className="dp-spark-empty">No data</div>
 
   return (
+    <div className="dp-spark" style={{ position: 'relative' }}>
     <svg
       ref={svgRef}
       viewBox={`0 0 ${width} ${height}`}
-      className="dp-spark"
       preserveAspectRatio="xMidYMid meet"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
+      style={{ display: 'block', width: '100%', height: 'auto', overflow: 'visible', position: 'relative', zIndex: 0 }}
     >
       {/* Chart area boundary — rounded rectangle */}
       <rect
@@ -285,7 +327,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         textAnchor="end"
         fontFamily="Inter, sans-serif"
       >
-        {fmt === 'multiplier' ? `${yMax.toFixed(1)}×` : fmtIDR(yMax)}
+        {fmt === 'multiplier' ? `${yMax.toFixed(1)}×` : fmt === 'percent' ? `${yMax.toFixed(1)}%` : fmtIDR(yMax)}
       </text>
       <text
         x={pad.l + w} y={pad.t + h + 11}
@@ -294,7 +336,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         textAnchor="end"
         fontFamily="Inter, sans-serif"
       >
-        {fmt === 'multiplier' ? `${Math.max(0, yMin).toFixed(1)}×` : fmtIDR(Math.max(0, yMin))}
+        {fmt === 'multiplier' ? `${Math.max(0, yMin).toFixed(1)}×` : fmt === 'percent' ? `${Math.max(0, yMin).toFixed(1)}%` : fmtIDR(Math.max(0, yMin))}
       </text>
 
       {/* Target line (centered) */}
@@ -313,7 +355,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         textAnchor="end"
         fontFamily="Inter, sans-serif"
       >
-        Target {fmt === 'multiplier' ? `${target}×` : fmtIDR(target)}
+        {targetLabel} {fmt === 'multiplier' ? `${target}×` : fmt === 'percent' ? `${target.toFixed(1)}%` : fmtIDR(target)}
       </text>
 
       {/* Data line — colored by trend direction */}
@@ -325,6 +367,20 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         strokeLinejoin="round"
         strokeLinecap="round"
       />
+
+      {/* Trendline — linear regression */}
+      {showTrendline && data.length >= 2 && (
+        <line
+          x1={pad.l}
+          y1={trendlineY1}
+          x2={pad.l + (data.length - 1) * xStep}
+          y2={trendlineY2}
+          stroke={trendColor}
+          strokeWidth={1.2}
+          strokeDasharray="6 3"
+          opacity={0.5}
+        />
+      )}
 
       {/* Overflow indicators — small triangles at clipped points */}
       {overflows.map((dir, i) => {
@@ -384,7 +440,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
             textAnchor="middle"
             fontFamily="Inter, sans-serif"
           >
-            {fmt === 'multiplier' ? `${hoveredPoint.value.toFixed(2)}×` : fmtIDR(hoveredPoint.value)}
+            {fmt === 'multiplier' ? `${hoveredPoint.value.toFixed(2)}×` : fmt === 'percent' ? `${hoveredPoint.value.toFixed(2)}%` : fmtIDR(hoveredPoint.value)}
           </text>
           <text
             x={hoveredX + (hoverIdx > data.length / 2 ? -54 : 54)}
@@ -399,6 +455,26 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         </g>
       )}
 
+      {/* Changelog markers — yellow diamonds on the data line */}
+      {Array.from(changelogByIdx.keys()).map(idx => {
+        const cx = pad.l + idx * xStep
+        const cy = yScale(values[idx])
+        return (
+          <g key={`cl-${idx}`}>
+            <rect
+              x={cx - 3} y={cy - 3}
+              width={6} height={6}
+              rx={0.5}
+              transform={`rotate(45 ${cx} ${cy})`}
+              fill="#fbbf24"
+              stroke="#0e0f12"
+              strokeWidth={1}
+              opacity={0.85}
+            />
+          </g>
+        )
+      })}
+
       {/* Invisible hit areas for hover */}
       {data.map((_, i) => (
         <rect
@@ -411,6 +487,47 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         />
       ))}
     </svg>
+
+      {/* Changelog tooltip — shown when hovering a data point that has changelog entries */}
+      {hoverIdx !== null && changelogByIdx.has(hoverIdx) && (() => {
+        const entries = changelogByIdx.get(hoverIdx)!
+        const cx = pad.l + hoverIdx * xStep
+        const svgEl = svgRef.current
+        if (!svgEl) return null
+        const rect = svgEl.getBoundingClientRect()
+        const pxX = rect.left + (cx / width) * rect.width
+        const pxY = rect.top + 4
+        const isRight = hoverIdx > data.length / 2
+        const point = data[hoverIdx]
+        const fmtVal = fmt === 'multiplier' ? `${point.value.toFixed(2)}×` : fmt === 'percent' ? `${point.value.toFixed(2)}%` : fmtIDR(point.value)
+        return (
+          <div
+            className="changelog-tooltip"
+            style={{
+              position: 'fixed',
+              top: pxY,
+              left: isRight ? undefined : pxX + 8,
+              right: isRight ? window.innerWidth - pxX + 8 : undefined,
+              zIndex: 99999,
+            }}
+          >
+            <div className="changelog-tooltip-metric">
+              <span className="changelog-tooltip-metric-label">{title}</span>
+              <span className="changelog-tooltip-metric-value">{fmtVal}</span>
+            </div>
+            {entries.map((e, i) => (
+              <div key={i} className="changelog-tooltip-entry">
+                <div className="changelog-tooltip-title">{e.title}</div>
+                {e.changelist && (
+                  <div className="changelog-tooltip-body">{e.changelist}</div>
+                )}
+              </div>
+            ))}
+            <div className="changelog-tooltip-date">{shortDate(point.date)}</div>
+          </div>
+        )
+      })()}
+    </div>
   )
 }
 
@@ -432,9 +549,10 @@ interface SKUCardProps {
   dailyRoAS: SparkPoint[]
   maxDevs: { cpr: number; cpa: number; roas: number }
   isLoading: boolean
+  changelog?: ChangelogEntry[]
 }
 
-export function SKUCard({ sku, skuIdx, totals, dailyCPR, dailyCPA, dailyRoAS, maxDevs, isLoading }: SKUCardProps) {
+export function SKUCard({ sku, skuIdx, totals, dailyCPR, dailyCPA, dailyRoAS, maxDevs, isLoading, changelog }: SKUCardProps) {
   const meta = getSkuMeta(sku, skuIdx)
 
   if (isLoading) {
@@ -573,13 +691,13 @@ export function SKUCard({ sku, skuIdx, totals, dailyCPR, dailyCPA, dailyRoAS, ma
           {/* Trend Charts — horizontal */}
           <div className="dp-trends">
             <div className="dp-trend-box">
-              <Sparkline title="CPR" data={dailyCPR} target={TARGET_CPR} color={meta.color} fixedYMin={0} fixedYMax={300_000} />
+              <Sparkline title="CPR" data={dailyCPR} target={TARGET_CPR} color={meta.color} fixedYMin={0} fixedYMax={300_000} changelog={changelog} />
             </div>
             <div className="dp-trend-box">
-              <Sparkline title="CPA CC" data={dailyCPA} target={TARGET_CPA_CC} color={meta.color} fixedYMin={0} fixedYMax={5_000_000} />
+              <Sparkline title="CPA CC" data={dailyCPA} target={TARGET_CPA_CC} color={meta.color} fixedYMin={0} fixedYMax={5_000_000} changelog={changelog} />
             </div>
             <div className="dp-trend-box">
-              <Sparkline title="RoAS CC" data={dailyRoAS} target={TARGET_ROAS_CC} color={meta.color} fmt="multiplier" lowerIsBetter={false} fixedYMin={0} fixedYMax={0.4} />
+              <Sparkline title="RoAS CC" data={dailyRoAS} target={TARGET_ROAS_CC} color={meta.color} fmt="multiplier" lowerIsBetter={false} fixedYMin={0} fixedYMax={0.4} changelog={changelog} />
             </div>
           </div>
         </div>
@@ -590,7 +708,7 @@ export function SKUCard({ sku, skuIdx, totals, dailyCPR, dailyCPA, dailyRoAS, ma
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 
-export function DirectorPage() {
+export function ProductPerformancePage() {
   // ── Per-brand date bounds + SKU list from DB ──
   interface BrandBounds { brand: string; earliest: string; latest: string; skus: string[] }
   const { data: brandBounds } = useQuery({
@@ -617,9 +735,17 @@ export function DirectorPage() {
     [brandBounds, activeBrand],
   )
 
-  // SKUs available for the active brand
+  // SKUs available for the active brand — sorted in preferred display order
+  const SKU_ORDER = ['MSF', 'MTA', 'MNS', 'M3P']
   const activeSkus = useMemo(
-    () => activeBounds?.skus ?? [],
+    () => {
+      const skus = activeBounds?.skus ?? []
+      return skus.slice().sort((a, b) => {
+        const ai = SKU_ORDER.indexOf(a)
+        const bi = SKU_ORDER.indexOf(b)
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
+      })
+    },
     [activeBounds],
   )
 
@@ -675,6 +801,29 @@ export function DirectorPage() {
     placeholderData: keepPreviousData, // keeps cards visible while new date range loads
     enabled: !!activeFrom && !!activeTo && !!activeBrand && activeFrom <= activeTo,
   })
+
+  // ── Changelog fetch ──
+  const { data: changelogData } = useQuery({
+    queryKey: ['changelog', activeFrom, activeTo],
+    queryFn: async () => {
+      const res = await fetch(`${D1_WORKER_URL}/v2/changelog?from=${activeFrom}&to=${activeTo}`)
+      if (!res.ok) return []
+      return res.json() as Promise<ChangelogEntry[]>
+    },
+    staleTime: 10 * 60_000,
+    enabled: !!activeFrom && !!activeTo,
+  })
+
+  const getFilteredChangelog = useCallback((sku: string) => {
+    const cl = changelogData ?? []
+    if (!activeBrand) return []
+    return cl.filter(e => {
+      const brands = e.brand.split(',').map(b => b.trim())
+      if (!brands.some(b => b === activeBrand)) return false
+      if (e.sku && e.sku !== sku) return false
+      return true
+    })
+  }, [changelogData, activeBrand])
 
   // Process totals per SKU (using ground truth)
   const skuTotals = useMemo(() => {
@@ -841,6 +990,7 @@ export function DirectorPage() {
             dailyRoAS={skuTrends[sku]?.roas || []}
             maxDevs={globalMaxDevs}
             isLoading={isLoading}
+            changelog={getFilteredChangelog(sku)}
           />
         ))}
       </div>

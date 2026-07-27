@@ -1,8 +1,7 @@
 /**
  * Sidebar — Main navigation component
  */
-import { useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 
 interface NavItem {
   to: string
@@ -12,7 +11,16 @@ interface NavItem {
 
 const PAGES: NavItem[] = [
   {
-    to: '/director',
+    to: '/overview',
+    label: 'Overview',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/product-performance',
     label: 'Product Performance',
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -21,8 +29,8 @@ const PAGES: NavItem[] = [
     ),
   },
   {
-    to: '/ads-platform',
-    label: 'Ads Platform Performance',
+    to: '/platform-performance',
+    label: 'Platform Performance',
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
@@ -30,7 +38,7 @@ const PAGES: NavItem[] = [
     ),
   },
   {
-    to: '/superfood',
+    to: '/product-deep-dive',
     label: 'Product Deep Dive',
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -38,6 +46,16 @@ const PAGES: NavItem[] = [
         <line x1="21" y1="21" x2="16.65" y2="16.65" />
         <line x1="11" y1="8" x2="11" y2="14" />
         <line x1="8" y1="11" x2="14" y2="11" />
+      </svg>
+    ),
+  },
+  {
+    to: '/budget-optimizer',
+    label: 'Budget Optimizer',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="1" x2="12" y2="23" />
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
       </svg>
     ),
   },
@@ -50,69 +68,9 @@ const PAGES: NavItem[] = [
       </svg>
     ),
   },
-
 ]
-
-const RAW_TABLES: NavItem[] = [
-  {
-    to: '/raw',
-    label: 'cdd.v1_ads_performance',
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 3h18v4H3z" /><path d="M3 10h18v4H3z" /><path d="M3 17h18v4H3z" />
-      </svg>
-    ),
-  },
-  {
-    to: '/sales',
-    label: 'cdd.v1_sales_report',
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="20" x2="12" y2="10" />
-        <line x1="18" y1="20" x2="18" y2="4" />
-        <line x1="6" y1="20" x2="6" y2="16" />
-      </svg>
-    ),
-  },
-  {
-    to: '/changelog',
-    label: 'cdd.v1_changelog',
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-      </svg>
-    ),
-  },
-]
-
-function NavItemLink({ item }: { item: NavItem }) {
-  return (
-    <NavLink
-      to={item.to}
-      end={item.to === '/'}
-      className={({ isActive }) =>
-        `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-          isActive
-            ? 'bg-brand-500/15 text-brand-400 border border-brand-500/20'
-            : 'text-surface-200/50 hover:text-surface-100 hover:bg-white/5'
-        }`
-      }
-    >
-      <span className="shrink-0">{item.icon}</span>
-      <span className="font-mono text-xs">{item.label}</span>
-    </NavLink>
-  )
-}
 
 export function Sidebar() {
-  const location = useLocation()
-  const rawPaths = RAW_TABLES.map(i => i.to)
-  const isRawActive = rawPaths.includes(location.pathname)
-  const [rawOpen, setRawOpen] = useState(isRawActive)
-
   return (
     <aside className="fixed left-0 top-0 h-screen w-56 bg-surface-900 border-r border-white/5 flex flex-col z-50">
       {/* Logo */}
@@ -130,7 +88,6 @@ export function Sidebar() {
 
       {/* Nav items */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {/* Pages section */}
         <p className="px-2 mb-2 text-[10px] font-semibold text-surface-200/25 uppercase tracking-widest">
           Pages
         </p>
@@ -151,33 +108,6 @@ export function Sidebar() {
             {item.label}
           </NavLink>
         ))}
-
-        {/* Raw D1 Data Table section */}
-        <div className="pt-4">
-          <button
-            onClick={() => setRawOpen(!rawOpen)}
-            className="flex items-center gap-2 px-2 mb-2 w-full text-left group cursor-pointer"
-          >
-            <svg
-              width="10" height="10" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`transition-transform duration-150 text-surface-200/25 ${rawOpen ? 'rotate-90' : ''}`}
-            >
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-            <span className="text-[10px] font-semibold text-surface-200/25 uppercase tracking-widest group-hover:text-surface-200/40 transition-colors">
-              Raw D1 Data Table
-            </span>
-          </button>
-
-          {rawOpen && (
-            <div className="space-y-0.5 ml-1">
-              {RAW_TABLES.map((item) => (
-                <NavItemLink key={item.to} item={item} />
-              ))}
-            </div>
-          )}
-        </div>
       </nav>
 
       {/* Footer */}

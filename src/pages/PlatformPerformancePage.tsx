@@ -5,15 +5,15 @@
  * Rows without a valid SKU tag are excluded at the DB layer.
  */
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import {
   TARGET_CPR, TARGET_CPA_CC, TARGET_ROAS_CC,
   PRESETS, dateStr,
   SKUCard,
-} from './DirectorPage'
-import type { SKUTotals, SparkPoint } from './DirectorPage'
+} from './ProductPerformancePage'
+import type { SKUTotals, SparkPoint, ChangelogEntry } from './ProductPerformancePage'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ interface PlatformRow {
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 
-export function AdsPlatformPage() {
+export function PlatformPerformancePage() {
   // ── Per-brand date bounds from DB ──
   interface BrandBounds { brand: string; earliest: string; latest: string; skus: string[] }
   const { data: brandBounds } = useQuery({
@@ -171,6 +171,28 @@ export function AdsPlatformPage() {
 
   const globalMaxDevs = { cpr: 150_000, cpa: 3_000_000, roas: 0.1 }
 
+  // ── Changelog ──
+  const { data: changelogData } = useQuery({
+    queryKey: ['changelog', activeFrom, activeTo],
+    queryFn: async () => {
+      const res = await fetch(`${D1_WORKER_URL}/v2/changelog?from=${activeFrom}&to=${activeTo}`)
+      if (!res.ok) return []
+      return res.json() as Promise<ChangelogEntry[]>
+    },
+    staleTime: 10 * 60_000,
+    enabled: !!activeFrom && !!activeTo,
+  })
+
+  const filteredChangelog = useMemo(() => {
+    const cl = changelogData ?? []
+    if (!activeBrand) return []
+    return cl.filter(e => {
+      const brands = e.brand.split(',').map(b => b.trim())
+      if (!brands.some(b => b === activeBrand)) return false
+      return true
+    })
+  }, [changelogData, activeBrand])
+
   return (
     <div className="dp-page">
       {/* Toolbar */}
@@ -232,6 +254,7 @@ export function AdsPlatformPage() {
             dailyRoAS={platformTrends[platform]?.roas || []}
             maxDevs={globalMaxDevs}
             isLoading={isLoading}
+            changelog={filteredChangelog}
           />
         ))}
       </div>
