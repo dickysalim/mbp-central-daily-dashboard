@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -10,6 +10,12 @@
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4 {
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
   }
 
   * {
@@ -389,19 +395,22 @@
 
 .dp-cards {
   display: flex; flex-direction: column;
-  gap: 60px;
+  gap: 6px;
   padding: 16px 24px;
 }
 
 .dp-card {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 16px;
   overflow: hidden;
-  transition: border-color 0.15s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.dp-card:hover { border-color: rgba(255,255,255,0.22); }
+.dp-card:hover {
+  border-color: rgba(255,255,255,0.16);
+  box-shadow: 0 4px 32px rgba(0,0,0,0.25);
+}
 
 /* Card body — image left, content right */
 .dp-card-body {
@@ -484,49 +493,58 @@
 /* KPI Row — horizontal */
 .dp-kpi-row {
   display: flex; align-items: stretch;
-  padding: 24px 14px 10px;
+  padding: 28px 28px 20px;
   gap: 0;
 }
 
 .dp-kpi {
   flex: 1;
-  display: flex; flex-direction: column; gap: 2px;
-  align-items: center; text-align: center;
+  display: flex; flex-direction: column; gap: 4px;
+  align-items: flex-start; text-align: left;
+  padding: 0 20px;
 }
 
+.dp-kpi:first-child { padding-left: 4px; }
+
 .dp-kpi-divider {
-  width: 2px;
-  background: rgba(255,255,255,0.12);
-  margin: 0 8px;
+  width: 1px;
+  background: rgba(255,255,255,0.08);
+  margin: 4px 0;
   align-self: stretch;
+  flex-shrink: 0;
 }
 
 .dp-kpi-label {
-  font-size: 9px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.08em;
-  color: rgba(255,255,255,0.55);
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 2px;
 }
 
 .dp-kpi-value {
-  font-size: 17px; font-weight: 800;
+  font-size: 32px; font-weight: 800;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #ffffff;
 }
 
 .dp-kpi-good { color: #34d399; }
-.dp-kpi-bad { color: #ef4444; }
+.dp-kpi-bad { color: #f87171; }
 
 .dp-kpi-delta {
-  font-size: 10px; font-weight: 600;
+  font-size: 11px; font-weight: 600;
   font-variant-numeric: tabular-nums;
+  margin-top: 2px;
 }
 
-.dp-delta-good { color: rgba(52,211,153,0.85); }
-.dp-delta-bad { color: rgba(239,68,68,0.85); }
+.dp-delta-good { color: #34d399; }
+.dp-delta-bad { color: #f87171; }
 
 .dp-kpi-target {
-  font-size: 9px; font-weight: 500;
-  color: rgba(255,255,255,0.35);
+  font-size: 10px; font-weight: 500;
+  color: rgba(255,255,255,0.3);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Stats row */
@@ -547,19 +565,22 @@
 
 /* Trend charts — horizontal row */
 .dp-trends {
-  display: flex; flex-direction: row; gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid rgba(255,255,255,0.03);
+  display: flex; flex-direction: row; gap: 0;
+  padding: 0 16px 20px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  margin-top: 8px;
 }
 
 .dp-trend-box {
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 16px 12px 8px;
+  display: flex; flex-direction: column; gap: 4px;
+  border-right: 1px solid rgba(255,255,255,0.04);
 }
 
-.dp-trend-box + .dp-trend-box {
+.dp-trend-box:last-child {
+  border-right: none;
 }
 
 .dp-trend-title {
@@ -647,12 +668,12 @@
 
 /* ── Macro Overview section titles ── */
 .mo-section-title {
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 700;
-  color: rgba(255,255,255,0.55);
+  color: #ffffff;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin: 0 0 8px 0;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px 0;
   padding: 0;
 }
 

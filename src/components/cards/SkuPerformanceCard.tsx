@@ -1,0 +1,726 @@
+/**
+ * SkuPerformanceCard
+ * Per-SKU diagnostic card with CTR · CPRL · CPA CC.
+ *
+ * Chart target lines:
+ *   CTR    → global CTR average (passed as prop)
+ *   CPRL   → fixed Rp 150K
+ *   CPA CC → fixed prop (default Rp 5M)
+ *
+ * Design tokens match AdsPerformanceHealthCard / LeadsQualityCard 1:1.
+ */
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { D1_WORKER_URL } from '../../config/dataSource'
+import { TARGET_CPR, TARGET_CPA_CC, fmtIDR } from '../../pages/ProductPerformancePage'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+export interface SkuPoint     { date: string; value: number }
+export interface ChangelogRow { date: string; date_end: string | null; brand: string; sku: string; title: string; changelist: string }
+
+export interface SkuPerformanceCardProps {
+  sku:           string
+  skuLabel?:     string
+  productName?:  string
+  skuColor:      string
+  imageSrc?:     string
+
+  // Period totals
+  totalCtr:      number   // 0–100 %
+  totalLpvo:     number   // View Offer / LP View  0–100 %
+  totalVo2l:     number   // Real Leads / View Offer  0–100 %
+  totalCprl:     number   // Rp
+  totalCpaCC:    number   // Rp
+
+  // Daily series
+  ctrSeries:     SkuPoint[]
+  lpvoSeries:    SkuPoint[]
+  vo2lSeries:    SkuPoint[]
+  cprlSeries:    SkuPoint[]
+  cpaSeries:     SkuPoint[]
+
+  // Date range (for evaluator table)
+  from?:  string
+  to?:    string
+
+  // Target lines
+  globalCtrAvg:   number
+  globalLpvoAvg:  number
+  globalVo2lAvg:  number
+  cprlTarget?:    number
+  cpaTarget?:     number
+
+  changelog?:    ChangelogRow[]
+
+  // Per-SKU budget
+  skuSpend?:             number
+  skuPeriodBudget?:      number
+  skuDailyBudget?:       number
+  skuTargetDailyBudget?: number
+  budgetDate?:           string
+}
+
+// ── Formatters ────────────────────────────────────────────────────────────────
+const fmtRp   = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID')
+const fmtPct  = (n: number) => n.toFixed(2) + '%'
+const fmtShortRp = (n: number) =>
+  n >= 1_000_000_000 ? 'Rp ' + (n / 1_000_000_000).toFixed(1) + 'B'
+  : n >= 1_000_000   ? 'Rp ' + (n / 1_000_000).toFixed(0) + 'M'
+  : n >= 1_000       ? 'Rp ' + (n / 1_000).toFixed(0) + 'K'
+  : fmtRp(n)
+
+const T = {
+  label: { fontSize: 9,  fontWeight: 600, letterSpacing: '0.09em', color: 'rgba(255,255,255,0.62)', textTransform: 'uppercase' as const },
+  tiny:  { fontSize: 9,  fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.05em', textTransform: 'uppercase' as const },
+  head:  { fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' as const },
+}
+
+// ── Sparkline (same tokens as reference, supports fixed OR computed target) ──
+function Sparkline({
+  data = [],           changelog, color, fmt, fmtShort, chartKey,
+  higherIsBetter, fixedTarget, targetFontSize = 14,
+}: {
+  data:            SkuPoint[]
+  changelog:       ChangelogRow[]
+  color:           string
+  fmt:             (v: number) => string
+  fmtShort:        (v: number) => string
+  chartKey:        string
+  higherIsBetter:  boolean
+  fixedTarget?:    number   // if provided, draw fixed line; otherwise use series avg
+  targetFontSize?: number  // viewBox font size for target label (default 14)
+}) {
+  const VW = 320, VH = 140
+  const PAD = { top: 10, right: 52, bottom: 20, left: 6 }
+  const innerW = VW - PAD.left - PAD.right
+  const innerH = VH - PAD.top - PAD.bottom
+
+  const [tooltip,   setTooltip]   = useState<{ px: number; x: number; y: number; p: SkuPoint } | null>(null)
+  const [clTooltip, setClTooltip] = useState<{ x: number; y: number; entry: ChangelogRow } | null>(null)
+  const ref = useRef<SVGSVGElement>(null)
+
+  if (data.length < 2) return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>—</span>
+    </div>
+  )
+
+  const vals = data.map(d => d.value)
+  const n    = vals.length
+  const avg  = vals.reduce((s, v) => s + v, 0) / n
+  const target = fixedTarget ?? avg
+
+  // Y range: always include target in view
+  const minV = Math.min(...vals, target) * 0.96
+  const maxV = Math.max(...vals, target) * 1.04
+  const rng  = maxV - minV || 1
+
+  // Regression
+  const mX    = (n - 1) / 2
+  const slope = vals.reduce((s, v, i) => s + (i - mX) * (v - avg), 0) /
+                vals.reduce((s, _, i) => s + (i - mX) ** 2, 0)
+  const ic    = avg - slope * mX
+  // Rate relative to target for fixed targets, avg for dynamic
+  const rate  = target > 0 ? Math.abs((slope / target) * 100) : 0
+
+  // Trend semantics
+  const tUp = slope > 0
+  const tc   = higherIsBetter
+    ? (tUp ? '#34d399' : '#f87171')
+    : (tUp ? '#f87171' : '#34d399')
+  const trendLabel = higherIsBetter
+    ? (tUp ? 'Converging' : 'Diverging')
+    : (tUp ? 'Diverging'  : 'Converging')
+  const trendArrow = tUp ? '↑' : '↓'
+
+  // Coordinates
+  const xs = (i: number) => PAD.left + (i / (n - 1)) * innerW
+  const ys = (v: number) => PAD.top + innerH - ((v - minV) / rng) * innerH
+  const cl = (y: number) => Math.max(PAD.top, Math.min(PAD.top + innerH, y))
+  const tY = cl(ys(target))
+
+  // Per-segment zone fill with intersection (exact reference impl)
+  const above: string[] = [], below: string[] = []
+  for (let i = 0; i < n - 1; i++) {
+    const ya = ys(data[i].value), yb = ys(data[i + 1].value)
+    const xa = xs(i), xb = xs(i + 1)
+    const aA = ya < tY, bA = yb < tY
+    if (aA && bA)       { above.push(`${xa},${tY} ${xa},${ya} ${xb},${yb} ${xb},${tY}`) }
+    else if (!aA && !bA){ below.push(`${xa},${tY} ${xa},${ya} ${xb},${yb} ${xb},${tY}`) }
+    else {
+      const t = (tY - ya) / (yb - ya), xi = xa + t * (xb - xa)
+      if (aA) { above.push(`${xa},${tY} ${xa},${ya} ${xi},${tY}`);  below.push(`${xi},${tY} ${xb},${yb} ${xb},${tY}`) }
+      else    { below.push(`${xa},${tY} ${xa},${ya} ${xi},${tY}`);  above.push(`${xi},${tY} ${xb},${yb} ${xb},${tY}`) }
+    }
+  }
+  const aboveColor = higherIsBetter ? '#34d399' : '#f87171'
+  const belowColor = higherIsBetter ? '#f87171' : '#34d399'
+
+  const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
+
+  const markers = data
+    .map((d, i) => ({ d, i, entry: changelog.find(c => c.date === d.date) }))
+    .filter((m): m is typeof m & { entry: ChangelogRow } => m.entry != null)
+
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const r = ref.current?.getBoundingClientRect(); if (!r) return
+    const relX = (e.clientX - r.left) / r.width
+    const idx  = Math.max(0, Math.min(n - 1, Math.round(relX * (n - 1))))
+    setTooltip({ px: e.clientX - r.left, x: xs(idx), y: ys(data[idx].value), p: data[idx] })
+  }
+
+  const sd     = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const gradId = `sku-grad-${chartKey}`
+
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+
+      {/* SVG — proportional scaling via viewBox, no stretch */}
+      <div style={{ position: 'relative' }}>
+        <svg ref={ref}
+          viewBox={`0 0 ${VW} ${VH}`}
+          width="100%"
+          style={{ display: 'block', overflow: 'visible', cursor: 'crosshair' }}
+          onMouseMove={onMove} onMouseLeave={() => setTooltip(null)}>
+
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+
+          {above.map((p, i) => <polygon key={`a${i}`} points={p} fill={aboveColor} fillOpacity="0.1" />)}
+          {below.map((p, i) => <polygon key={`b${i}`} points={p} fill={belowColor} fillOpacity="0.1" />)}
+
+          {/* Target line */}
+          <line x1={PAD.left} y1={tY} x2={VW - PAD.right} y2={tY}
+            stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
+          <text x={VW - PAD.right + 3} y={tY + 5}
+            fontSize={targetFontSize} fill="#94a3b8" opacity="1" fontWeight="700">{fmtShort(target)}</text>
+
+          {/* Trendline */}
+          <line x1={xs(0)} y1={cl(ys(ic))} x2={xs(n - 1)} y2={cl(ys(slope * (n - 1) + ic))}
+            stroke={tc} strokeOpacity="0.45" strokeWidth="1.8" strokeDasharray="4,3" />
+
+          {/* Main line */}
+          <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5"
+            strokeLinejoin="round" strokeLinecap="round" />
+
+          {/* Changelog markers */}
+          {markers.map(m => (
+            <g key={m.i}
+              onMouseEnter={(e) => setClTooltip({ x: e.clientX, y: e.clientY, entry: m.entry })}
+              onMouseLeave={() => setClTooltip(null)}
+              style={{ cursor: 'pointer' }}>
+              <rect x={xs(m.i) - 8} y={PAD.top - 10} width={16} height={innerH + 10} fill="transparent" />
+              <line x1={xs(m.i)} y1={PAD.top} x2={xs(m.i)} y2={PAD.top + innerH}
+                stroke="#fbbf24" strokeOpacity="0.28" strokeWidth="1" strokeDasharray="2,2" />
+              <polygon points={`${xs(m.i)},${PAD.top - 1} ${xs(m.i) - 4},${PAD.top - 8} ${xs(m.i) + 4},${PAD.top - 8}`}
+                fill="#fbbf24" opacity="0.9" />
+            </g>
+          ))}
+
+          {tooltip && (
+            <g>
+              <line x1={tooltip.x} y1={PAD.top} x2={tooltip.x} y2={PAD.top + innerH}
+                stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
+              <circle cx={tooltip.x} cy={tooltip.y} r="4.5" fill={color} stroke="#0d0e12" strokeWidth="1.5" />
+            </g>
+          )}
+
+          <text x={PAD.left} y={VH - 2} fontSize="10" fill="rgba(255,255,255,0.48)" textAnchor="start">{sd(data[0].date)}</text>
+          <text x={VW - PAD.right} y={VH - 2} fontSize="10" fill="rgba(255,255,255,0.48)" textAnchor="end">{sd(data[n - 1].date)}</text>
+        </svg>
+
+        {tooltip && (
+          <div style={{
+            position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap',
+            top: 0, left: tooltip.px > 200 ? tooltip.px - 120 : tooltip.px + 8,
+            background: 'rgba(13,14,18,0.95)', border: `1px solid ${color}50`,
+            borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
+          }}>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginBottom: 1 }}>{sd(tooltip.p.date)}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color }}>{fmt(tooltip.p.value)}</div>
+          </div>
+        )}
+
+        {clTooltip && createPortal(
+          <div style={{
+            position: 'fixed',
+            top: clTooltip.y < 160 ? clTooltip.y + 18 : clTooltip.y - 12,
+            left: Math.max(8, Math.min(clTooltip.x + 14, window.innerWidth - 280)),
+            transform: clTooltip.y < 160 ? 'none' : 'translateY(-100%)',
+            zIndex: 9999,
+            background: 'rgba(10,11,15,0.97)',
+            border: '1px solid rgba(251,191,36,0.45)',
+            borderRadius: 10, padding: '10px 14px', maxWidth: 260,
+            pointerEvents: 'none', backdropFilter: 'blur(16px)',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: '#fbbf24', textTransform: 'uppercase', marginBottom: 5 }}>
+              Changelog · {clTooltip.entry.date}{clTooltip.entry.date_end ? ` → ${clTooltip.entry.date_end}` : ''}
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 6, lineHeight: 1.3 }}>
+              {clTooltip.entry.title}
+            </div>
+            {clTooltip.entry.changelist && (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {clTooltip.entry.changelist}
+              </div>
+            )}
+          </div>,
+          document.body
+        )}
+      </div>
+
+      {/* Trend badge — exact reference tokens */}
+      <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8 }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: `${tc}12`, border: `1px solid ${tc}28`, borderRadius: 4, padding: '3px 7px' }}>
+          <span style={{ fontSize: 9, fontWeight: 800, color: tc }}>{trendArrow}</span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{trendLabel}</span>
+          <span style={{ fontSize: 9, color: tc, opacity: 1 }}>{rate.toFixed(1)}%/d</span>
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+// ── Campaign Performance Evaluator ───────────────────────────────────────────
+type FunnelLevel = 'ToFU00' | 'MoFU25' | 'BoFU50' | 'BoFU75' | 'Unknown'
+interface CampaignRow {
+  traffic_source: string; campaign_id: string; campaign_name: string
+  funnel: string; ad_spend: number
+  ga4_page_view: number; ga4_view_offer: number
+  real_lead_ccom: number; real_lead_d2or: number
+  real_lead_mpsh: number; real_lead_ofls: number
+  purchase_ccom: number
+}
+function mapFunnel(code: string): FunnelLevel {
+  return code === '00' ? 'ToFU00' : code === '25' ? 'MoFU25' : code === '50' ? 'BoFU50' : code === '75' ? 'BoFU75' : 'Unknown'
+}
+const FUNNEL_CLR: Record<FunnelLevel, string> = {
+  ToFU00: '#818cf8', MoFU25: '#60a5fa', BoFU50: '#fbbf24', BoFU75: '#fb923c', Unknown: 'rgba(255,255,255,0.3)',
+}
+function CampaignEvaluator({ from, to, sku, cprlTarget, cpaTarget }: {
+  from: string; to: string; sku: string; cprlTarget: number; cpaTarget: number
+}) {
+  const { data, isLoading } = useQuery<CampaignRow[]>({
+    queryKey: ['campaign-breakdown', from, to, sku],
+    queryFn: async () => {
+      const res = await fetch(`${D1_WORKER_URL}/v2/campaign-breakdown?from=${from}&to=${to}&sku=${sku}`)
+      if (!res.ok) throw new Error()
+      return res.json()
+    },
+    staleTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
+    enabled: !!from && !!to,
+  })
+
+  const metaRows = (data ?? []).filter(r => r.ad_spend > 0 && r.traffic_source === 'META')
+  const tot = metaRows.reduce((t, r) => ({
+    spend: t.spend + r.ad_spend, pv: t.pv + r.ga4_page_view, vo: t.vo + r.ga4_view_offer,
+    rl: t.rl + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls,
+    pu: t.pu + r.purchase_ccom,
+  }), { spend: 0, pv: 0, vo: 0, rl: 0, pu: 0 })
+
+  const overallVO2L = tot.vo > 0 ? tot.rl / tot.vo : 0.01
+  const overallLPVO = tot.pv > 0 ? tot.vo / tot.pv : 0.01
+  const targetCostVO = TARGET_CPR * overallVO2L
+  const effectiveCPRL = Math.min(cprlTarget, tot.rl > 0 ? tot.spend / tot.rl : Infinity)
+  const effectiveCPA  = Math.min(cpaTarget,  tot.pu > 0 ? tot.spend / tot.pu : Infinity)
+
+  const rows = metaRows.map(r => {
+    const rl = r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls
+    const fl = mapFunnel(r.funnel)
+    let metricName = '', targetValue = 0, actual: number | null = null
+    if (fl === 'ToFU00')      { metricName = 'Cost / View Offer'; targetValue = targetCostVO / overallLPVO; actual = r.ga4_page_view > 0 ? r.ad_spend / r.ga4_page_view : null }
+    else if (fl === 'MoFU25') { metricName = 'CPRL';    targetValue = effectiveCPRL; actual = rl > 0 ? r.ad_spend / rl : null }
+    else if (fl === 'BoFU50') { metricName = 'CPA CC';  targetValue = effectiveCPA;  actual = r.purchase_ccom > 0 ? r.ad_spend / r.purchase_ccom : null }
+    else if (fl === 'BoFU75') { metricName = 'CPRL';    targetValue = effectiveCPRL; actual = rl > 0 ? r.ad_spend / rl : null }
+    else return null
+    const gap = actual !== null && actual > 0 ? (targetValue / actual) - 1 : null
+    return { name: r.campaign_name, fl, metricName, targetValue, actual, gap }
+  }).filter(Boolean) as { name: string; fl: FunnelLevel; metricName: string; targetValue: number; actual: number | null; gap: number | null }[]
+
+  rows.sort((a, b) => {
+    const ord: Record<FunnelLevel, number> = { ToFU00: 0, MoFU25: 1, BoFU50: 2, BoFU75: 3, Unknown: 9 }
+    return ord[a.fl] !== ord[b.fl] ? ord[a.fl] - ord[b.fl] : (a.gap ?? -99) - (b.gap ?? -99)
+  })
+
+  const F = { fontFamily: 'Inter, system-ui, sans-serif' }
+
+  if (isLoading) return <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, padding: '8px 0', ...F }}>Loading…</div>
+  if (rows.length === 0) return <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11, padding: '8px 0', ...F }}>No Meta campaigns found.</div>
+
+  return (
+    <div style={{ overflowX: 'auto', marginTop: 16 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, ...F }}>
+        <thead>
+          <tr>
+            {['Campaign', 'Funnel', 'Metric', 'Target', 'Actual', 'Gap'].map(h => (
+              <th key={h} style={{
+                textAlign: h === 'Campaign' ? 'left' : 'right',
+                padding: '4px 10px 8px', fontWeight: 700, fontSize: 9,
+                letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)',
+                textTransform: 'uppercase', whiteSpace: 'nowrap',
+                borderBottom: '1px solid rgba(255,255,255,0.07)',
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => {
+            const gc = row.gap === null ? 'rgba(255,255,255,0.25)'
+              : row.gap >= 0.1 ? '#34d399' : row.gap >= 0 ? '#fbbf24' : row.gap >= -0.1 ? '#f97316' : '#f87171'
+            const gt = row.gap !== null ? `${row.gap >= 0 ? '+' : ''}${(row.gap * 100).toFixed(1)}%` : '—'
+            const fc = FUNNEL_CLR[row.fl]
+            return (
+              <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <td style={{ padding: '6px 10px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.85)' }}>{row.name}</td>
+                <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                  <span style={{ background: fc + '22', color: fc, border: `1px solid ${fc}44`, fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{row.fl}</span>
+                </td>
+                <td style={{ padding: '6px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>{row.metricName}</td>
+                <td style={{ padding: '6px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{fmtIDR(row.targetValue)}</td>
+                <td style={{ padding: '6px 10px', textAlign: 'right', color: row.actual !== null ? '#fff' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{row.actual !== null ? fmtIDR(row.actual) : '—'}</td>
+                <td style={{ padding: '6px 10px', textAlign: 'right', color: gc, fontWeight: 700, whiteSpace: 'nowrap' }}>{gt}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// \u2500\u2500 Main card \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+export function SkuPerformanceCard({
+  sku, skuLabel, productName, skuColor, imageSrc,
+  from, to,
+  totalCtr, totalLpvo, totalVo2l, totalCprl, totalCpaCC,
+  ctrSeries, lpvoSeries, vo2lSeries, cprlSeries, cpaSeries,
+  globalCtrAvg, globalLpvoAvg, globalVo2lAvg,
+  cprlTarget = 150_000,
+  cpaTarget  = 5_000_000,
+  changelog  = [],
+  skuSpend             = 0,
+  skuPeriodBudget      = 0,
+  skuDailyBudget       = 0,
+  skuTargetDailyBudget = 0,
+  budgetDate,
+}: SkuPerformanceCardProps) {
+  const label = skuLabel ?? sku
+  const [open, setOpen] = useState(false)
+
+  const divPct = (val: number, tgt: number) =>
+    tgt > 0 ? Math.abs((val - tgt) / tgt * 100) : 0
+
+  // Chart descriptor type
+  type ChartDef = {
+    key: string; label: string; color: string
+    series: { date: string; value: number }[]
+    higherIsBetter: boolean; fixedTarget: number
+    metricValue: string; metricSub: string
+    statusLabel: string | null; statusGood: boolean; divergencePct: number
+    fmt: (v: number) => string; fmtShort: (v: number) => string
+    targetFontSize?: number
+  }
+
+  const mkRpFmt = (v: number) => v >= 1_000_000
+    ? 'Rp ' + (v / 1_000_000).toFixed(1) + 'M'
+    : 'Rp ' + (v / 1_000).toFixed(0) + 'K'
+
+  // Top row: CPRL + CPA CC
+  const topCharts: ChartDef[] = [
+    {
+      key: `${sku}-cprl`, label: 'CPRL', color: '#818cf8',
+      series: cprlSeries, higherIsBetter: false, fixedTarget: cprlTarget,
+      metricValue:   totalCprl  > 0 ? fmtRp(Math.round(totalCprl))  : '\u2014',
+      metricSub:     `Target ${fmtShortRp(cprlTarget)}`,
+      statusLabel:   totalCprl  > 0 ? (totalCprl  <= cprlTarget ? 'On Target' : 'Off Target') : null,
+      statusGood:    totalCprl  <= cprlTarget,
+      divergencePct: totalCprl  > 0 ? divPct(totalCprl,  cprlTarget) : 0,
+      fmt:      (v) => fmtRp(Math.round(v)),
+      fmtShort: (v) => mkRpFmt(v),
+    },
+    {
+      key: `${sku}-cpa`, label: 'CPA CC', color: '#f472b6',
+      series: cpaSeries, higherIsBetter: false, fixedTarget: cpaTarget,
+      metricValue:   totalCpaCC > 0 ? fmtRp(Math.round(totalCpaCC)) : '\u2014',
+      metricSub:     `Target ${fmtShortRp(cpaTarget)}`,
+      statusLabel:   totalCpaCC > 0 ? (totalCpaCC <= cpaTarget  ? 'On Target' : 'Off Target') : null,
+      statusGood:    totalCpaCC <= cpaTarget,
+      divergencePct: totalCpaCC > 0 ? divPct(totalCpaCC, cpaTarget)  : 0,
+      fmt:      (v) => fmtRp(Math.round(v)),
+      fmtShort: (v) => mkRpFmt(v),
+    },
+  ]
+
+  // Collapsible row: CTR + LPVO + VO2L
+  const detailCharts: ChartDef[] = [
+    {
+      key: `${sku}-ctr`, label: 'CTR', color: '#34d399',
+      series: ctrSeries, higherIsBetter: true, fixedTarget: globalCtrAvg,
+      metricValue:   totalCtr  > 0 ? fmtPct(totalCtr)  : '\u2014',
+      metricSub:     'click-through rate',
+      statusLabel:   totalCtr  > 0 ? (totalCtr  >= globalCtrAvg  ? 'Above Average' : 'Below Average') : null,
+      statusGood:    totalCtr  >= globalCtrAvg,
+      divergencePct: totalCtr  > 0 ? divPct(totalCtr,  globalCtrAvg) : 0,
+      fmt:      (v) => fmtPct(v),
+      fmtShort: (v) => v.toFixed(1) + '%',
+      targetFontSize: 16,
+    },
+    {
+      key: `${sku}-lpvo`, label: 'LPVO', color: '#22d3ee',
+      series: lpvoSeries, higherIsBetter: true, fixedTarget: globalLpvoAvg,
+      metricValue:   totalLpvo > 0 ? fmtPct(totalLpvo) : '\u2014',
+      metricSub:     'offer view / LP view',
+      statusLabel:   totalLpvo > 0 ? (totalLpvo >= globalLpvoAvg ? 'Above Average' : 'Below Average') : null,
+      statusGood:    totalLpvo >= globalLpvoAvg,
+      divergencePct: totalLpvo > 0 ? divPct(totalLpvo, globalLpvoAvg) : 0,
+      fmt:      (v) => fmtPct(v),
+      fmtShort: (v) => v.toFixed(1) + '%',
+      targetFontSize: 16,
+    },
+    {
+      key: `${sku}-vo2l`, label: 'VO2L', color: '#a78bfa',
+      series: vo2lSeries, higherIsBetter: true, fixedTarget: globalVo2lAvg,
+      metricValue:   totalVo2l > 0 ? fmtPct(totalVo2l) : '\u2014',
+      metricSub:     'real lead / view offer',
+      statusLabel:   totalVo2l > 0 ? (totalVo2l >= globalVo2lAvg ? 'Above Average' : 'Below Average') : null,
+      statusGood:    totalVo2l >= globalVo2lAvg,
+      divergencePct: totalVo2l > 0 ? divPct(totalVo2l, globalVo2lAvg) : 0,
+      fmt:      (v) => fmtPct(v),
+      fmtShort: (v) => v.toFixed(1) + '%',
+      targetFontSize: 16,
+    },
+  ]
+
+  const ChartCol = ({ c, borderLeft }: { c: ChartDef; borderLeft?: boolean }) => {
+    const isGood = c.statusGood
+    const isWarn = !isGood && c.divergencePct < 10
+    const clr = isGood ? '#34d399' : isWarn ? '#fbbf24' : '#f87171'
+    const bg  = isGood ? 'rgba(52,211,153,0.12)' : isWarn ? 'rgba(251,191,36,0.12)' : 'rgba(248,113,113,0.12)'
+    const bdr = isGood ? 'rgba(52,211,153,0.28)' : isWarn ? 'rgba(251,191,36,0.28)' : 'rgba(248,113,113,0.28)'
+    return (
+      <div style={{
+        flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
+        paddingLeft: borderLeft ? 16 : 0,
+        borderLeft: borderLeft ? '1px solid rgba(255,255,255,0.06)' : 'none',
+        marginLeft: borderLeft ? 16 : 0,
+      }}>
+        {/* Header */}
+        <div style={{ marginBottom: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+            <div style={{ width: 5, height: 5, borderRadius: '50%', background: c.color }} />
+            <span style={{ fontSize: 9, fontWeight: 700, color: c.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{c.label}</span>
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>
+            {c.metricValue}
+          </div>
+          <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.65)', letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: 4 }}>
+            {c.metricSub}
+          </div>
+          {c.statusLabel && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              marginTop: 5, padding: '2px 6px', borderRadius: 20,
+              background: bg, border: `1px solid ${bdr}`,
+              fontSize: 9, fontWeight: 700, color: clr, whiteSpace: 'nowrap',
+            }}>
+              {isGood ? '\u2191' : '\u2193'} {c.statusLabel} &middot; {c.divergencePct.toFixed(1)}%
+            </div>
+          )}
+        </div>
+        {/* Sparkline */}
+        <Sparkline
+          data={c.series} changelog={changelog}
+          color={c.color} fmt={c.fmt} fmtShort={c.fmtShort}
+          chartKey={c.key} higherIsBetter={c.higherIsBetter}
+          fixedTarget={c.fixedTarget}
+          targetFontSize={c.targetFontSize}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.04)',
+      border: '1px solid rgba(255,255,255,0.09)',
+      borderRadius: 14, padding: '20px 22px',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      display: 'flex', flexDirection: 'column',
+    }}>
+
+      {/* \u2500\u2500 TOP ROW: Image | CPRL | CPA CC \u2500\u2500 */}
+      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch' }}>
+
+        {/* Image + product identity */}
+        <div style={{
+          flex: '0 0 130px', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+          paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 16,
+        }}>
+          {imageSrc
+            ? <img src={imageSrc} alt={productName ?? label} style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 12, marginBottom: 10 }} />
+            : <div style={{ width: '100%', aspectRatio: '1/1', borderRadius: 12, marginBottom: 10, background: `${skuColor}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 22, fontWeight: 800, color: skuColor }}>{label}</span>
+              </div>
+          }
+          {productName && (
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 3 }}>{productName}</div>
+          )}
+          <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.07em' }}>{label}</div>
+        </div>
+
+        {/* CPRL + CPA CC side by side */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minWidth: 0 }}>
+          {topCharts.map((c, i) => <ChartCol key={c.key} c={c} borderLeft={i > 0} />)}
+        </div>
+
+      </div>
+
+      {/* \u2500\u2500 COLLAPSIBLE TOGGLE \u2500\u2500 */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          all: 'unset', display: 'flex', alignItems: 'center', gap: 8,
+          cursor: 'pointer', marginTop: 16, paddingTop: 12,
+          borderTop: '1px solid rgba(255,255,255,0.09)', width: '100%',
+        }}
+      >
+        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.48)', textTransform: 'uppercase' }}>
+          {open ? 'Hide details' : 'CTR \u00b7 LPVO \u00b7 VO2L \u00b7 Campaigns'}
+        </span>
+        <svg
+          width="12" height="12" viewBox="0 0 24 24"
+          fill="none" stroke="rgba(255,255,255,0.40)" strokeWidth="2.5"
+          strokeLinecap="round" strokeLinejoin="round"
+          style={{
+            marginLeft: 'auto', flexShrink: 0,
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s ease',
+          }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {/* \u2500\u2500 COLLAPSIBLE BODY: CTR | LPVO | VO2L + Table \u2500\u2500 */}
+      <div style={{ overflow: 'hidden', maxHeight: open ? '3000px' : '0', transition: 'max-height 0.3s ease' }}>
+
+        {/* ── AD SPEND HEALTH (per SKU) ── */}
+        {skuSpend > 0 && (() => {
+          const pct   = skuPeriodBudget > 0 ? Math.min((skuSpend / skuPeriodBudget) * 100, 100) : 0
+          const color = pct === 0    ? '#818cf8'
+            : pct >  115  ? '#f87171'
+            : pct >= 105  ? '#fbbf24'
+            : pct >=  95  ? '#34d399'
+            : pct >=  85  ? '#fbbf24'
+            :                '#f87171'
+          const statusLabel = pct === 0    ? 'No Data'
+            : pct >  115  ? '🔴 Over Budget'
+            : pct >= 105  ? '🟡 Slightly Over'
+            : pct >=  95  ? '🟢 On Track'
+            : pct >=  85  ? '🟡 Slightly Under'
+            :                '🔴 Far Behind'
+          return (
+            <div style={{ paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {/* Section label */}
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', marginBottom: 8 }}>
+                Ad Spend Health
+              </div>
+
+              {/* Spend headline */}
+              <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, marginBottom: 4 }}>
+                {fmtRp(Math.round(skuSpend))}
+              </div>
+
+              {/* Target sub + progress bar */}
+              {skuPeriodBudget > 0 && (
+                <>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8 }}>
+                    Target {fmtRp(Math.round(skuPeriodBudget))}
+                  </div>
+                  <div style={{ height: 5, background: 'rgba(255,255,255,0.1)', borderRadius: 4, marginBottom: 7 }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 4, transition: 'width 0.5s ease' }} />
+                  </div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                    background: `${color}15`, border: `1px solid ${color}30`,
+                    borderRadius: 5, padding: '3px 7px', width: 'fit-content' }}>
+                    <div style={{ width: 4, height: 4, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 9, fontWeight: 700, color }}>{statusLabel}</span>
+                    <span style={{ fontSize: 9, color, opacity: 0.85 }}>{pct.toFixed(1)}%</span>
+                  </div>
+                </>
+              )}
+
+              {/* Daily budget config */}
+              {skuDailyBudget > 0 && (() => {
+                const delta    = skuDailyBudget - skuTargetDailyBudget
+                const deltaPct = skuTargetDailyBudget > 0 ? (delta / skuTargetDailyBudget) * 100 : null
+                return (
+                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.09)' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', marginBottom: 6 }}>
+                      Daily Budget Config / Target
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 4 }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>
+                        {fmtRp(Math.round(skuDailyBudget))}
+                      </span>
+                      {skuTargetDailyBudget > 0 && (
+                        <>
+                          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>/</span>
+                          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em', color: 'rgba(255,255,255,0.75)' }}>
+                            {fmtRp(Math.round(skuTargetDailyBudget))}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    {deltaPct !== null && (
+                      <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 4,
+                        color: delta < 0 ? '#f87171' : '#34d399' }}>
+                        {delta < 0 ? '▼' : '▲'} {fmtRp(Math.abs(Math.round(delta)))} ({Math.abs(deltaPct).toFixed(1)}%) {delta < 0 ? 'below target' : 'above target'}
+                      </div>
+                    )}
+                    {budgetDate && (
+                      <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                        as of {budgetDate}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          )
+        })()}
+
+        {/* CTR + LPVO + VO2L row */}
+        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch',
+          paddingTop: 14, marginTop: skuSpend > 0 ? 14 : 0,
+          borderTop: skuSpend > 0 ? '1px solid rgba(255,255,255,0.09)' : 'none',
+        }}>
+          {detailCharts.map((c, i) => <ChartCol key={c.key} c={c} borderLeft={i > 0} />)}
+        </div>
+
+        {/* Campaign evaluator */}
+        {from && to && (
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', marginBottom: 2 }}>
+              Campaign Evaluator · Meta Ads
+            </div>
+            <CampaignEvaluator from={from} to={to} sku={sku} cprlTarget={cprlTarget} cpaTarget={cpaTarget} />
+          </div>
+        )}
+
+      </div>
+
+    </div>
+  )
+}
+

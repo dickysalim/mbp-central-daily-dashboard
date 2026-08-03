@@ -16,6 +16,7 @@ import {
   getSkuMeta,
   PRESETS,
   dateStr,
+  capToH2,
   fmtIDR,
   fmtNum,
   fetchDirectorDaily,
@@ -493,288 +494,165 @@ export function CampaignBreakdownSection({ from, to, sku }: { from: string; to: 
   // ── Budget aggregations for charts ──
   const totalDailyBudget = computed.reduce((s, c) => s + (c.raw.daily_budget || 0), 0)
 
-  // By traffic source
-  const budgetBySource = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const c of computed) {
-      const b = c.raw.daily_budget || 0
-      if (b <= 0) continue
-      map.set(c.raw.traffic_source, (map.get(c.raw.traffic_source) || 0) + b)
-    }
-    return Array.from(map.entries())
-      .sort(([, a], [, b]) => b - a)
-      .map(([source, amount]) => ({ source, amount, pct: totalDailyBudget > 0 ? (amount / totalDailyBudget) * 100 : 0 }))
-  }, [computed, totalDailyBudget])
-
-  // By funnel level
-  const budgetByFunnel = useMemo(() => {
-    const order: FunnelLevel[] = ['ToFU00', 'MoFU25', 'BoFU50', 'BoFU75', 'Unknown']
-    const map = new Map<FunnelLevel, number>()
-    for (const lvl of order) map.set(lvl, 0)
-    for (const c of computed) {
-      const b = c.raw.daily_budget || 0
-      if (b <= 0) continue
-      map.set(c.funnel, (map.get(c.funnel) || 0) + b)
-    }
-    return order.map(lvl => ({ funnel: lvl, amount: map.get(lvl) || 0, pct: totalDailyBudget > 0 ? ((map.get(lvl) || 0) / totalDailyBudget) * 100 : 0 }))
-      .filter(d => d.amount > 0)
-  }, [computed, totalDailyBudget])
-
-  // ── Suggested budget aggregations ──
-  const totalSuggestedBudget = computed.reduce((s, c) => s + c.suggestedBudget, 0)
-
-  const suggestedBySource = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const c of computed) {
-      if (c.suggestedBudget <= 0) continue
-      map.set(c.raw.traffic_source, (map.get(c.raw.traffic_source) || 0) + c.suggestedBudget)
-    }
-    return Array.from(map.entries())
-      .sort(([, a], [, b]) => b - a)
-      .map(([source, amount]) => ({ source, amount, pct: totalSuggestedBudget > 0 ? (amount / totalSuggestedBudget) * 100 : 0 }))
-  }, [computed, totalSuggestedBudget])
-
-  const suggestedByFunnel = useMemo(() => {
-    const order: FunnelLevel[] = ['ToFU00', 'MoFU25', 'BoFU50', 'BoFU75', 'Unknown']
-    const map = new Map<FunnelLevel, number>()
-    for (const lvl of order) map.set(lvl, 0)
-    for (const c of computed) {
-      if (c.suggestedBudget <= 0) continue
-      map.set(c.funnel, (map.get(c.funnel) || 0) + c.suggestedBudget)
-    }
-    return order.map(lvl => ({ funnel: lvl, amount: map.get(lvl) || 0, pct: totalSuggestedBudget > 0 ? ((map.get(lvl) || 0) / totalSuggestedBudget) * 100 : 0 }))
-      .filter(d => d.amount > 0)
-  }, [computed, totalSuggestedBudget])
-
   const PIE_COLORS: Record<string, string> = { META: '#818cf8', DGEN: '#f59e0b', SRCH: '#34d399', PMAX: '#06b6d4' }
   const FUNNEL_COLORS: Record<FunnelLevel, string> = {
     ToFU00: '#818cf8', MoFU25: '#60a5fa', BoFU50: '#fbbf24', BoFU75: '#f87171', Unknown: 'rgba(255,255,255,0.2)',
   }
 
+  // ── Ratio aggregations by funnel & platform ──
+  type RatioGroup = { label: string; groups: { key: string; value: number | null; color: string }[] }
+
+  const ratioCharts = useMemo(() => {
+    const funnelOrder: FunnelLevel[] = ['ToFU00', 'MoFU25', 'BoFU50', 'BoFU75']
+    const platforms = [...new Set(computed.map(c => c.raw.traffic_source))].sort()
+
+    // Aggregate raw nums/denoms per group
+    function aggByFunnel(numFn: (c: ComputedRow) => number, denFn: (c: ComputedRow) => number) {
+      return funnelOrder.map(f => {
+        const rows = computed.filter(c => c.funnel === f)
+        const num = rows.reduce((s, c) => s + numFn(c), 0)
+        const den = rows.reduce((s, c) => s + denFn(c), 0)
+        return { key: FUNNEL_BADGE[f].short, value: den > 0 ? num / den : null, color: FUNNEL_COLORS[f] }
+      })
+    }
+    function aggByPlatform(numFn: (c: ComputedRow) => number, denFn: (c: ComputedRow) => number) {
+      return platforms.map(p => {
+        const rows = computed.filter(c => c.raw.traffic_source === p)
+        const num = rows.reduce((s, c) => s + numFn(c), 0)
+        const den = rows.reduce((s, c) => s + denFn(c), 0)
+        return { key: p, value: den > 0 ? num / den : null, color: PIE_COLORS[p] || 'rgba(255,255,255,0.4)' }
+      })
+    }
+
+    const charts: { title: string; fmt: (v: number) => string; lowerIsBetter: boolean; target?: number; byFunnel: RatioGroup; byPlatform: RatioGroup }[] = [
+      {
+        title: 'CPRL', fmt: fmtIDR, lowerIsBetter: true, target: 150_000,
+        byFunnel: { label: 'By Funnel', groups: aggByFunnel(c => c.raw.ad_spend, c => c.realLeads) },
+        byPlatform: { label: 'By Platform', groups: aggByPlatform(c => c.raw.ad_spend, c => c.realLeads) },
+      },
+      {
+        title: 'CPA CC', fmt: fmtIDR, lowerIsBetter: true, target: 2_000_000,
+        byFunnel: { label: 'By Funnel', groups: aggByFunnel(c => c.raw.ad_spend, c => c.raw.purchase_ccom) },
+        byPlatform: { label: 'By Platform', groups: aggByPlatform(c => c.raw.ad_spend, c => c.raw.purchase_ccom) },
+      },
+      {
+        title: 'RoAS CC', fmt: (v: number) => `${v.toFixed(2)}×`, lowerIsBetter: false, target: 0.2,
+        byFunnel: { label: 'By Funnel', groups: aggByFunnel(c => c.rev, c => c.raw.ad_spend) },
+        byPlatform: { label: 'By Platform', groups: aggByPlatform(c => c.rev, c => c.raw.ad_spend) },
+      },
+    ]
+    return charts
+  }, [computed])
+
   return (
     <div className="sf-section">
       <h2 className="sf-section-title">Campaign Performance Breakdown</h2>
 
-      {/* Budget Overview — scorecard + charts */}
+      {/* Current Budget Overview — single card */}
       {computed.length > 0 && totalDailyBudget > 0 && (
-        <div style={{ display: 'flex', gap: 24, marginBottom: 24, alignItems: 'stretch' }}>
+        <div style={{
+          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: 12, padding: '20px 24px', marginBottom: 24,
+        }}>
+          {/* Top row: Budget scorecard + ratio charts */}
+          <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
-          {/* Scorecard */}
-          <div style={{
-            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: 12, padding: '20px 28px', display: 'flex', flexDirection: 'column',
-            justifyContent: 'center', minWidth: 200,
-          }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
-              Total Daily Budget
-            </div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#e0e2e6', fontVariantNumeric: 'tabular-nums' }}>
-              {fmtBudget(totalDailyBudget)}
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
-              {computed.filter(c => c.raw.daily_budget > 0).length} campaigns with budget
-            </div>
-          </div>
-
-          {/* Pie chart — by traffic source */}
-          <div style={{
-            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: 12, padding: '16px 24px', flex: 1, display: 'flex', alignItems: 'center', gap: 20,
-          }}>
-            <div style={{ position: 'relative', width: 120, height: 120, flexShrink: 0 }}>
-              <svg viewBox="0 0 42 42" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-                {(() => {
-                  let offset = 0
-                  return budgetBySource.map((d, i) => {
-                    const dash = d.pct * 0.94 // leave small gaps
-                    const el = (
-                      <circle key={d.source} cx="21" cy="21" r="15" fill="none"
-                        stroke={PIE_COLORS[d.source] || `hsl(${i * 80}, 60%, 60%)`}
-                        strokeWidth="5.5" strokeDasharray={`${dash} ${100 - dash}`}
-                        strokeDashoffset={-offset} strokeLinecap="round" />
-                    )
-                    offset += d.pct
-                    return el
-                  })
-                })()}
-                <circle cx="21" cy="21" r="11" fill="rgba(15,17,21,0.9)" />
-              </svg>
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, letterSpacing: '0.04em' }}>SHARE</div>
+            {/* Budget Scorecard */}
+            <div style={{ minWidth: 160, paddingRight: 20, borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
+                Total Daily Budget
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#e0e2e6', fontVariantNumeric: 'tabular-nums' }}>
+                {fmtBudget(totalDailyBudget)}
+              </div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
+                {computed.filter(c => c.raw.daily_budget > 0).length} campaigns
               </div>
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-                By Traffic Source
-              </div>
-              {budgetBySource.map((d, i) => (
-                <div key={d.source} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: 2, background: PIE_COLORS[d.source] || `hsl(${i * 80}, 60%, 60%)`, flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', flex: 1 }}>{d.source}</span>
-                  <span style={{ fontSize: 12, color: '#e0e2e6', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtBudget(d.amount)}</span>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', width: 42, textAlign: 'right' }}>{d.pct.toFixed(1)}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
 
-          {/* Bar chart — by funnel */}
-          <div style={{
-            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: 12, padding: '16px 24px', flex: 1,
-          }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
-              By Funnel Level
-            </div>
-            {budgetByFunnel.map(d => {
-              const maxAmt = Math.max(...budgetByFunnel.map(f => f.amount))
-              const barPct = maxAmt > 0 ? (d.amount / maxAmt) * 100 : 0
+            {/* Ratio vertical bar charts */}
+            {ratioCharts.map(chart => {
+              const allGroups = [...chart.byFunnel.groups, ...chart.byPlatform.groups]
+              const validVals = allGroups.map(g => g.value).filter((v): v is number => v !== null)
+              const maxVal = validVals.length > 0 ? Math.max(...validVals) : 1
+
               return (
-                <div key={d.funnel} style={{ marginBottom: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{
-                      fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
-                      color: FUNNEL_COLORS[d.funnel], padding: '1px 6px', borderRadius: 3,
-                      background: FUNNEL_BADGE[d.funnel].bg,
-                    }}>
-                      {FUNNEL_BADGE[d.funnel].short}
-                    </span>
-                    <span style={{ fontSize: 12, color: '#e0e2e6', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtBudget(d.amount)} <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>({d.pct.toFixed(1)}%)</span>
-                    </span>
+                <div key={chart.title} style={{ flex: 1, minWidth: 220 }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+                    {chart.title}
                   </div>
-                  <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{
-                      height: '100%', borderRadius: 3, width: `${barPct}%`,
-                      background: FUNNEL_COLORS[d.funnel],
-                      transition: 'width 0.3s ease',
-                    }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+                  <div style={{ display: 'flex', gap: 20 }}>
 
-      {/* Suggested Budget Overview */}
-      {computed.length > 0 && totalSuggestedBudget > 0 && (
-        <div style={{ display: 'flex', gap: 24, marginBottom: 24, alignItems: 'stretch' }}>
+                    {/* By Funnel */}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: '0.05em', marginBottom: 6 }}>FUNNEL</div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 80 }}>
+                        {chart.byFunnel.groups.map(g => {
+                          const barH = g.value !== null ? Math.max((g.value / maxVal) * 100, 4) : 0
+                          const isOk = g.value !== null && chart.target !== undefined
+                            ? (chart.lowerIsBetter ? g.value <= chart.target : g.value >= chart.target) : false
+                          return (
+                            <div key={g.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                              {g.value !== null && (
+                                <div style={{ fontSize: 9, color: isOk ? ok : bad, fontWeight: 600, marginBottom: 2, whiteSpace: 'nowrap' }}>
+                                  {chart.fmt(g.value)}
+                                </div>
+                              )}
+                              <div style={{
+                                width: '100%', maxWidth: 28, borderRadius: '3px 3px 0 0',
+                                height: `${barH}%`, minHeight: g.value !== null ? 4 : 0,
+                                background: g.color, opacity: 0.85,
+                                transition: 'height 0.3s ease',
+                              }} />
+                              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', marginTop: 3, letterSpacing: '0.02em', fontWeight: 600 }}>
+                                {g.key.replace(/^(ToFU|MoFU|BoFU)/, '')}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
 
-          {/* Scorecard */}
-          <div style={{
-            background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)',
-            borderRadius: 12, padding: '20px 28px', display: 'flex', flexDirection: 'column',
-            justifyContent: 'center', minWidth: 200,
-          }}>
-            <div style={{ fontSize: 11, color: 'rgba(99,102,241,0.7)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
-              Suggested Daily Budget
-            </div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#a5b4fc', fontVariantNumeric: 'tabular-nums' }}>
-              {fmtBudget(totalSuggestedBudget)}
-            </div>
-            {totalDailyBudget > 0 && (() => {
-              const delta = totalSuggestedBudget - totalDailyBudget
-              if (delta === 0) return null
-              return (
-                <div style={{ fontSize: 11, color: delta > 0 ? ok : bad, marginTop: 4, fontWeight: 600 }}>
-                  {delta > 0 ? '▲' : '▼'} {delta > 0 ? '+' : ''}{fmtBudget(delta)} vs current
-                </div>
-              )
-            })()}
-          </div>
+                    {/* Divider */}
+                    <div style={{ width: 1, background: 'rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
 
-          {/* Pie chart — suggested by traffic source */}
-          <div style={{
-            background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)',
-            borderRadius: 12, padding: '16px 24px', flex: 1, display: 'flex', alignItems: 'center', gap: 20,
-          }}>
-            <div style={{ position: 'relative', width: 120, height: 120, flexShrink: 0 }}>
-              <svg viewBox="0 0 42 42" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-                {(() => {
-                  let offset = 0
-                  return suggestedBySource.map((d, i) => {
-                    const dash = d.pct * 0.94
-                    const el = (
-                      <circle key={d.source} cx="21" cy="21" r="15" fill="none"
-                        stroke={PIE_COLORS[d.source] || `hsl(${i * 80}, 60%, 60%)`}
-                        strokeWidth="5.5" strokeDasharray={`${dash} ${100 - dash}`}
-                        strokeDashoffset={-offset} strokeLinecap="round" />
-                    )
-                    offset += d.pct
-                    return el
-                  })
-                })()}
-                <circle cx="21" cy="21" r="11" fill="rgba(15,17,21,0.9)" />
-              </svg>
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
-                <div style={{ fontSize: 9, color: 'rgba(99,102,241,0.6)', fontWeight: 600, letterSpacing: '0.04em' }}>NEW</div>
-              </div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: 'rgba(99,102,241,0.7)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-                By Traffic Source
-              </div>
-              {suggestedBySource.map((d, i) => {
-                const currentAmt = budgetBySource.find(b => b.source === d.source)?.amount || 0
-                const delta = d.amount - currentAmt
-                return (
-                  <div key={d.source} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: 2, background: PIE_COLORS[d.source] || `hsl(${i * 80}, 60%, 60%)`, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', flex: 1 }}>{d.source}</span>
-                    <span style={{ fontSize: 12, color: '#a5b4fc', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtBudget(d.amount)}</span>
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', width: 42, textAlign: 'right' }}>{d.pct.toFixed(1)}%</span>
-                    {delta !== 0 && (
-                      <span style={{ fontSize: 10, color: delta > 0 ? ok : bad, fontWeight: 600, width: 60, textAlign: 'right' }}>
-                        {delta > 0 ? '+' : ''}{fmtBudget(delta)}
-                      </span>
-                    )}
+                    {/* By Platform */}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: '0.05em', marginBottom: 6 }}>PLATFORM</div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 80 }}>
+                        {chart.byPlatform.groups.map(g => {
+                          const barH = g.value !== null ? Math.max((g.value / maxVal) * 100, 4) : 0
+                          const isOk = g.value !== null && chart.target !== undefined
+                            ? (chart.lowerIsBetter ? g.value <= chart.target : g.value >= chart.target) : false
+                          return (
+                            <div key={g.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                              {g.value !== null && (
+                                <div style={{ fontSize: 9, color: isOk ? ok : bad, fontWeight: 600, marginBottom: 2, whiteSpace: 'nowrap' }}>
+                                  {chart.fmt(g.value)}
+                                </div>
+                              )}
+                              <div style={{
+                                width: '100%', maxWidth: 28, borderRadius: '3px 3px 0 0',
+                                height: `${barH}%`, minHeight: g.value !== null ? 4 : 0,
+                                background: g.color, opacity: 0.85,
+                                transition: 'height 0.3s ease',
+                              }} />
+                              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', marginTop: 3, fontWeight: 600 }}>
+                                {g.key}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
                   </div>
-                )
-              })}
-            </div>
-          </div>
 
-          {/* Bar chart — suggested by funnel */}
-          <div style={{
-            background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)',
-            borderRadius: 12, padding: '16px 24px', flex: 1,
-          }}>
-            <div style={{ fontSize: 11, color: 'rgba(99,102,241,0.7)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
-              By Funnel Level
-            </div>
-            {suggestedByFunnel.map(d => {
-              const maxAmt = Math.max(...suggestedByFunnel.map(f => f.amount))
-              const barPct = maxAmt > 0 ? (d.amount / maxAmt) * 100 : 0
-              const currentAmt = budgetByFunnel.find(b => b.funnel === d.funnel)?.amount || 0
-              const delta = d.amount - currentAmt
-              return (
-                <div key={d.funnel} style={{ marginBottom: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{
-                      fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
-                      color: FUNNEL_COLORS[d.funnel], padding: '1px 6px', borderRadius: 3,
-                      background: FUNNEL_BADGE[d.funnel].bg,
-                    }}>
-                      {FUNNEL_BADGE[d.funnel].short}
-                    </span>
-                    <span style={{ fontSize: 12, color: '#a5b4fc', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtBudget(d.amount)} <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>({d.pct.toFixed(1)}%)</span>
-                      {delta !== 0 && (
-                        <span style={{ color: delta > 0 ? ok : bad, fontSize: 10, marginLeft: 6 }}>
-                          {delta > 0 ? '+' : ''}{fmtBudget(delta)}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{
-                      height: '100%', borderRadius: 3, width: `${barPct}%`,
-                      background: FUNNEL_COLORS[d.funnel],
-                      opacity: 0.7,
-                      transition: 'width 0.3s ease',
-                    }} />
-                  </div>
+                  {/* Target line label */}
+                  {chart.target !== undefined && (
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 4, textAlign: 'center' }}>
+                      Target: {chart.fmt(chart.target)}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1094,14 +972,14 @@ export function ProductDeepDivePage() {
       const d = new Date(globalLatest + 'T00:00:00')
       d.setDate(d.getDate() - 29)
       const fromStr = dateStr(d)
-      setTo(globalLatest)
+      setTo(capToH2(globalLatest))
       setFrom(fromStr < globalEarliest ? globalEarliest : fromStr)
       setBoundsReady(true)
     }
   }, [globalLatest, globalEarliest, boundsReady])
 
   const activeFrom = from || globalEarliest
-  const activeTo = to || globalLatest
+  const activeTo = to || capToH2(globalLatest)
 
   const applyPreset = (days: number) => {
     if (!globalLatest) return
@@ -1116,7 +994,7 @@ export function ProductDeepDivePage() {
       const fStr = dateStr(f)
       setFrom(fStr < globalEarliest ? globalEarliest : fStr)
     }
-    setTo(globalLatest)
+    setTo(capToH2(globalLatest))
   }
 
   // ── Director data for SKU card ──

@@ -12,7 +12,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import {
   TARGET_CPR, TARGET_CPA_CC, TARGET_ROAS_CC,
-  PRESETS, dateStr, fmtIDR, fmtNum,
+  PRESETS, dateStr, capToH2, fmtIDR, fmtNum,
   Sparkline, getSkuMeta,
 } from './ProductPerformancePage'
 import type { SparkPoint, ChangelogEntry } from './ProductPerformancePage'
@@ -78,7 +78,7 @@ export function OverviewPage() {
 
   useEffect(() => {
     if (activeBrand && activeBounds && activeBrand !== lastBrand) {
-      const latest = activeBounds.latest
+      const latest = capToH2(activeBounds.latest)
       const d = new Date(latest + 'T00:00:00')
       d.setDate(d.getDate() - 29)
       const fromStr = dateStr(d)
@@ -89,12 +89,12 @@ export function OverviewPage() {
   }, [activeBrand, activeBounds, lastBrand])
 
   const activeFrom = from || activeBounds?.earliest || ''
-  const activeTo = to || activeBounds?.latest || ''
+  const activeTo = to || capToH2(activeBounds?.latest || '')
 
   // ── Quick presets ──
   const applyPreset = (days: number) => {
     if (!activeBounds) return
-    const latest = activeBounds.latest
+    const latest = capToH2(activeBounds.latest)
     const t = new Date(latest + 'T00:00:00')
     if (days === 0) {
       const f = new Date(t.getFullYear(), t.getMonth(), 1)
@@ -226,6 +226,52 @@ export function OverviewPage() {
       }))
   }, [rawData])
 
+  // ── Fetch target ad spend ──
+  const { data: targetData } = useQuery({
+    queryKey: ['target-ad-spend', activeFrom, activeTo, activeBrand],
+    queryFn: async () => {
+      const res = await fetch(`${D1_WORKER_URL}/v2/target-ad-spend?from=${activeFrom}&to=${activeTo}&brand=${activeBrand}`)
+      if (!res.ok) return []
+      return res.json() as Promise<{ sku: string; sku_target: number }[]>
+    },
+    staleTime: 10 * 60_000,
+    enabled: !!activeFrom && !!activeTo && !!activeBrand,
+  })
+
+  const totalTarget = useMemo(() => {
+    if (!targetData || targetData.length === 0) return 0
+    return targetData.reduce((s, r) => s + r.sku_target, 0)
+  }, [targetData])
+
+  // ── Daily sparklines for leads & purchases ──
+  const dailyLeads = useMemo(() => {
+    if (!rawData) return [] as SparkPoint[]
+    const map = new Map<string, number>()
+    for (const r of rawData) {
+      const rl = r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls
+      map.set(r.date, (map.get(r.date) || 0) + rl)
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }))
+  }, [rawData])
+
+  const dailyPurchases = useMemo(() => {
+    if (!rawData) return [] as SparkPoint[]
+    const map = new Map<string, number>()
+    for (const r of rawData) {
+      map.set(r.date, (map.get(r.date) || 0) + r.purchase_ccom)
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }))
+  }, [rawData])
+
+  const dailySpend = useMemo(() => {
+    if (!rawData) return [] as SparkPoint[]
+    const map = new Map<string, number>()
+    for (const r of rawData) {
+      map.set(r.date, (map.get(r.date) || 0) + r.ad_spend)
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }))
+  }, [rawData])
+
   return (
     <div className="dp-page">
       {/* Toolbar */}
@@ -270,6 +316,123 @@ export function OverviewPage() {
           ❌ Failed to load data: {error instanceof Error ? error.message : 'Unknown error'}
         </div>
       )}
+
+      <div className="dp-cards">
+        <h2 className="mo-section-title">Brand Health</h2>
+        <div className="dp-card">
+          {isLoading && !totals ? (
+            <div className="dp-card-loading">
+              <div className="tv-spinner" />
+              <span>Loading…</span>
+            </div>
+          ) : !totals ? (
+            <div className="dp-card-loading"><span>No data</span></div>
+          ) : (
+            <div className="dp-card-body">
+              <div className="dp-card-content">
+
+                {/* KPI row */}
+                <div className="dp-kpi-row">
+
+                  {/* Ad Spend */}
+                  <div className="dp-kpi">
+                    <div className="dp-kpi-label">Ad Spend</div>
+                    <div className="dp-kpi-value">{fmtIDR(totals.spend)}</div>
+                    {totalTarget > 0 && (() => {
+                      const pct = (totals.spend / totalTarget) * 100
+                      const over = totals.spend > totalTarget
+                      const color = over ? '#f87171' : pct >= 80 ? '#34d399' : pct >= 50 ? '#fbbf24' : 'rgba(255,255,255,0.5)'
+                      return (
+                        <>
+                          <div className={`dp-kpi-delta`} style={{ color }}>
+                            {over ? `▲ OVER BUDGET` : `${pct.toFixed(1)}% of target`}
+                          </div>
+                          <div style={{ marginTop: 6, height: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 2, overflow: 'hidden', width: '100%' }}>
+                            <div style={{
+                              height: '100%', borderRadius: 2,
+                              width: `${Math.min(pct, 100)}%`,
+                              background: `linear-gradient(90deg, ${color}99, ${color})`,
+                              transition: 'width 0.5s ease',
+                            }} />
+                          </div>
+                          <div className="dp-kpi-target">Target: {fmtIDR(totalTarget)}</div>
+                        </>
+                      )
+                    })()}
+                  </div>
+
+                  <div className="dp-kpi-divider" />
+
+                  {/* Real Leads */}
+                  <div className="dp-kpi">
+                    <div className="dp-kpi-label">Real Leads</div>
+                    <div className="dp-kpi-value">{fmtNum(totals.realLeads)}</div>
+                    {dailyLeads.length > 0 && (
+                      <div className="dp-kpi-target">ø {fmtNum(Math.round(totals.realLeads / dailyLeads.length))} / day</div>
+                    )}
+                  </div>
+
+                  <div className="dp-kpi-divider" />
+
+                  {/* Purchases CC */}
+                  <div className="dp-kpi">
+                    <div className="dp-kpi-label">Purchases CC</div>
+                    <div className="dp-kpi-value">{fmtNum(totals.purchases)}</div>
+                    {dailyPurchases.length > 0 && (
+                      <div className="dp-kpi-target">ø {fmtNum(Math.round(totals.purchases / dailyPurchases.length))} / day</div>
+                    )}
+                  </div>
+
+                </div>
+
+                {/* Trend sparklines */}
+                <div className="dp-trends">
+                  <div className="dp-trend-box">
+                    <Sparkline
+                      title="Ad Spend / day"
+                      data={dailySpend}
+                      target={totalTarget > 0 && dailySpend.length > 0 ? totalTarget / dailySpend.length : Math.max(...dailySpend.map(d => d.value), 1)}
+                      color="#818cf8"
+                      fixedYMin={0}
+                      fixedYMax={Math.max(...dailySpend.map(d => d.value), totalTarget > 0 ? totalTarget / Math.max(dailySpend.length, 1) * 1.3 : 1)}
+                      lowerIsBetter={false}
+                      fmt="currency"
+                      changelog={filteredChangelog}
+                    />
+                  </div>
+                  <div className="dp-trend-box">
+                    <Sparkline
+                      title="Real Leads / day"
+                      data={dailyLeads}
+                      target={totalTarget > 0 && dailySpend.length > 0 ? (totalTarget / dailySpend.length) / TARGET_CPR : 1}
+                      color="#34d399"
+                      fixedYMin={0}
+                      fixedYMax={Math.max(...dailyLeads.map(d => d.value), totalTarget > 0 && dailySpend.length > 0 ? (totalTarget / dailySpend.length) / TARGET_CPR * 1.5 : 1)}
+                      lowerIsBetter={false}
+                      fmt="number"
+                      changelog={filteredChangelog}
+                    />
+                  </div>
+                  <div className="dp-trend-box">
+                    <Sparkline
+                      title="Purchases CC / day"
+                      data={dailyPurchases}
+                      target={totalTarget > 0 && dailySpend.length > 0 ? (totalTarget / dailySpend.length) / TARGET_CPA_CC : 1}
+                      color="#f59e0b"
+                      fixedYMin={0}
+                      fixedYMax={Math.max(...dailyPurchases.map(d => d.value), totalTarget > 0 && dailySpend.length > 0 ? (totalTarget / dailySpend.length) / TARGET_CPA_CC * 1.5 : 1)}
+                      lowerIsBetter={false}
+                      fmt="number"
+                      changelog={filteredChangelog}
+                    />
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ── Section 1: Macro Overview ── */}
       <div className="dp-cards">

@@ -8,6 +8,7 @@ import { ProductDeepDivePage } from './pages/ProductDeepDivePage'
 import { PlatformPerformancePage } from './pages/PlatformPerformancePage'
 import { OverviewPage } from './pages/OverviewPage'
 import { BudgetOptimizerPage } from './pages/BudgetOptimizerPage'
+import { SandboxPage } from './pages/SandboxPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +32,7 @@ function App() {
             <Route path="/budget-optimizer" element={<BudgetOptimizerPage />} />
             <Route path="/central" element={<CentralPage />} />
             <Route path="/central/:brand" element={<CentralPage />} />
+            <Route path="/b2c" element={<SandboxPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

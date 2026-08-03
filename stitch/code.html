@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Campaign Drill-down - Marketing Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@600&amp;f[]=satoshi@400,500,700,600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#38BDF8",
+          "background": "#0F172A",
+          "surface": "#1E293B",
+          "text": "#F8FAFC",
+          "muted": "#94A3B8",
+          "success": "#10B981",
+          "warning": "#F59E0B",
+          "danger": "#EF4444",
+          "border-light": "#334155"
+        },
+        fontFamily: {
+          "heading": ["Clash Display", "sans-serif"],
+          "body": ["Satoshi", "sans-serif"]
+        },
+        borderRadius: {
+          "DEFAULT": "4px",
+          "none": "0",
+          "sm": "2px",
+          "md": "4px",
+          "lg": "8px",
+          "full": "9999px"
+        },
+        boxShadow: {
+          "card": "0 4px 6px -1px rgba(0, 0, 0, 0.4)",
+          "card-hover": "0 10px 15px -3px rgba(0, 0, 0, 0.5)"
+        }
+      },
+    },
+  }
+</script>
+<style>
+  body {
+    background-color: theme('colors.background');
+    color: theme('colors.text');
+    font-family: theme('fontFamily.body');
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: theme('fontFamily.heading');
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  
+  /* Custom Scrollbar for dark theme */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: theme('colors.background'); 
+  }
+  ::-webkit-scrollbar-thumb {
+    background: theme('colors.border-light'); 
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.muted'); 
+  }
+</style>
+</head>
+<body class="min-h-screen bg-background text-text flex flex-col">
+<!-- Shared TopNavBar -->
+<div class="relative flex h-auto w-full flex-col bg-surface border-b border-border-light group/design-root overflow-x-hidden">
+<div class="layout-container flex h-full grow flex-col">
+<div class="px-8 flex flex-1 justify-center py-0">
+<div class="layout-content-container flex flex-col w-full max-w-[1440px] flex-1">
+<header class="flex items-center justify-between whitespace-nowrap px-4 py-4">
+<div class="flex items-center gap-4 text-text">
+<div class="size-6 text-primary">
+<svg fill="none" viewbox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<path d="M44 4H30.6666V17.3334H17.3334V30.6666H4V44H44V4Z" fill="currentColor"></path>
+</svg>
+</div>
+<h2 class="text-text text-xl font-heading font-semibold leading-tight tracking-[-0.015em]">Dashboard</h2>
+</div>
+<div class="flex flex-1 justify-end gap-8">
+<div class="flex items-center gap-9">
+<a class="text-muted hover:text-text transition-colors text-sm font-medium leading-normal" href="#">Executive Overview</a>
+<a class="text-primary text-sm font-medium leading-normal" href="#">Campaigns</a>
+<a class="text-muted hover:text-text transition-colors text-sm font-medium leading-normal" href="#">Budget Pacing</a>
+<a class="text-muted hover:text-text transition-colors text-sm font-medium leading-normal" href="#">Trend Analysis</a>
+</div>
+</div>
+</header>
+</div>
+</div>
+</div>
+</div>
+<!-- Main Content -->
+<main class="flex-1 max-w-[1440px] w-full mx-auto p-6 md:p-8 flex flex-col md:flex-row gap-8">
+<!-- Filter Sidebar -->
+<aside class="w-full md:w-64 flex-shrink-0 flex flex-col gap-6">
+<div>
+<h1 class="text-3xl font-heading text-text mb-2">Campaigns</h1>
+<p class="text-sm text-muted">Isolate performance and identify efficiency leaks.</p>
+</div>
+<div class="bg-surface border border-border-light rounded shadow-card p-5 space-y-6">
+<!-- Channel Filter -->
+<div>
+<h3 class="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Channel</h3>
+<div class="space-y-3">
+<label class="flex items-center gap-3 cursor-pointer group">
+<input checked="" class="w-4 h-4 rounded border-border-light bg-background text-primary focus:ring-primary focus:ring-offset-background" type="checkbox"/>
+<span class="text-sm group-hover:text-white transition-colors">Meta</span>
+</label>
+<label class="flex items-center gap-3 cursor-pointer group">
+<input checked="" class="w-4 h-4 rounded border-border-light bg-background text-primary focus:ring-primary focus:ring-offset-background" type="checkbox"/>
+<span class="text-sm group-hover:text-white transition-colors">Google</span>
+</label>
+<label class="flex items-center gap-3 cursor-pointer group">
+<input checked="" class="w-4 h-4 rounded border-border-light bg-background text-primary focus:ring-primary focus:ring-offset-background" type="checkbox"/>
+<span class="text-sm group-hover:text-white transition-colors">TikTok</span>
+</label>
+</div>
+</div>
+<!-- Status Filter -->
+<div>
+<h3 class="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Status</h3>
+<div class="space-y-3">
+<label class="flex items-center gap-3 cursor-pointer group">
+<input checked="" class="w-4 h-4 rounded border-border-light bg-background text-primary focus:ring-primary focus:ring-offset-background" type="checkbox"/>
+<span class="text-sm group-hover:text-white transition-colors">Active</span>
+</label>
+<label class="flex items-center gap-3 cursor-pointer group">
+<input class="w-4 h-4 rounded border-border-light bg-background text-primary focus:ring-primary focus:ring-offset-background" type="checkbox"/>
+<span class="text-sm group-hover:text-white transition-colors">Paused</span>
+</label>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Campaign List Area -->
+<section class="flex-1 flex flex-col overflow-hidden">
+<!-- Table Header (Simulated for layout control) -->
+<div class="bg-surface border-y border-border-light px-4 py-3 flex items-center text-xs font-semibold uppercase tracking-wider text-muted select-none">
+<div class="flex-1 min-w-[200px]">Campaign Name</div>
+<div class="w-32 hidden lg:block text-right">Spend</div>
+<div class="w-24 text-right">CPR</div>
+<div class="w-24 text-right">CPA</div>
+<div class="w-28 text-center cursor-pointer hover:text-text transition-colors flex items-center justify-center gap-1 group">
+        Status
+        <span class="material-symbols-outlined text-[16px] opacity-0 group-hover:opacity-100 transition-opacity">swap_vert</span>
+</div>
+<div class="w-12 text-center"></div>
+</div>
+<!-- Campaign Rows -->
+<div class="flex-1 overflow-y-auto">
+<!-- Row 1: Danger -->
+<div class="bg-background hover:bg-surface border-b border-border-light px-4 h-16 flex items-center transition-colors group">
+<div class="flex-1 min-w-[200px] pr-4">
+<div class="font-medium text-text truncate">Q4 Retargeting - Broad</div>
+<div class="text-xs text-muted">Meta</div>
+</div>
+<div class="w-32 hidden lg:block text-right font-bold tabular-nums text-text">$12,450.00</div>
+<div class="w-24 text-right font-bold tabular-nums text-text">$45.20</div>
+<div class="w-24 text-right font-bold tabular-nums text-danger">$120.50</div>
+<div class="w-28 flex justify-center items-center">
+<div class="w-2 h-2 rounded-full bg-danger shadow-[0_0_8px_rgba(239,68,68,0.5)]"></div>
+</div>
+<div class="w-12 flex justify-center">
+<button class="text-muted hover:text-text transition-colors p-1 rounded hover:bg-border-light">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Row 2: Success -->
+<div class="bg-background hover:bg-surface border-b border-border-light px-4 h-16 flex items-center transition-colors group">
+<div class="flex-1 min-w-[200px] pr-4">
+<div class="font-medium text-text truncate">Brand Awareness - Exact</div>
+<div class="text-xs text-muted">Google</div>
+</div>
+<div class="w-32 hidden lg:block text-right font-bold tabular-nums text-text">$8,500.00</div>
+<div class="w-24 text-right font-bold tabular-nums text-text">$12.00</div>
+<div class="w-24 text-right font-bold tabular-nums text-success">$45.00</div>
+<div class="w-28 flex justify-center items-center">
+<div class="w-2 h-2 rounded-full bg-success shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+</div>
+<div class="w-12 flex justify-center">
+<button class="text-muted hover:text-text transition-colors p-1 rounded hover:bg-border-light">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Row 3: Warning -->
+<div class="bg-background hover:bg-surface border-b border-border-light px-4 h-16 flex items-center transition-colors group">
+<div class="flex-1 min-w-[200px] pr-4">
+<div class="font-medium text-text truncate">Lookalike 1% - Purchasers</div>
+<div class="text-xs text-muted">TikTok</div>
+</div>
+<div class="w-32 hidden lg:block text-right font-bold tabular-nums text-text">$4,200.00</div>
+<div class="w-24 text-right font-bold tabular-nums text-text">$28.50</div>
+<div class="w-24 text-right font-bold tabular-nums text-warning">$85.10</div>
+<div class="w-28 flex justify-center items-center">
+<div class="w-2 h-2 rounded-full bg-warning shadow-[0_0_8px_rgba(245,158,11,0.5)]"></div>
+</div>
+<div class="w-12 flex justify-center">
+<button class="text-muted hover:text-text transition-colors p-1 rounded hover:bg-border-light">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Row 4: Success -->
+<div class="bg-background hover:bg-surface border-b border-border-light px-4 h-16 flex items-center transition-colors group">
+<div class="flex-1 min-w-[200px] pr-4">
+<div class="font-medium text-text truncate">Search Brand - US</div>
+<div class="text-xs text-muted">Google</div>
+</div>
+<div class="w-32 hidden lg:block text-right font-bold tabular-nums text-text">$1,200.00</div>
+<div class="w-24 text-right font-bold tabular-nums text-text">$4.20</div>
+<div class="w-24 text-right font-bold tabular-nums text-success">$18.00</div>
+<div class="w-28 flex justify-center items-center">
+<div class="w-2 h-2 rounded-full bg-success shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+</div>
+<div class="w-12 flex justify-center">
+<button class="text-muted hover:text-text transition-colors p-1 rounded hover:bg-border-light">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Row 5: Danger -->
+<div class="bg-background hover:bg-surface border-b border-border-light px-4 h-16 flex items-center transition-colors group">
+<div class="flex-1 min-w-[200px] pr-4">
+<div class="font-medium text-text truncate">Prospecting - Interest V2</div>
+<div class="text-xs text-muted">Meta</div>
+</div>
+<div class="w-32 hidden lg:block text-right font-bold tabular-nums text-text">$6,800.00</div>
+<div class="w-24 text-right font-bold tabular-nums text-text">$52.90</div>
+<div class="w-24 text-right font-bold tabular-nums text-danger">$145.30</div>
+<div class="w-28 flex justify-center items-center">
+<div class="w-2 h-2 rounded-full bg-danger shadow-[0_0_8px_rgba(239,68,68,0.5)]"></div>
+</div>
+<div class="w-12 flex justify-center">
+<button class="text-muted hover:text-text transition-colors p-1 rounded hover:bg-border-light">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+</main>
+</body></html>

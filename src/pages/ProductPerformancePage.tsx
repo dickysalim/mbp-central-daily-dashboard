@@ -78,6 +78,15 @@ export function getDateRange(days: number): { from: string; to: string } {
   return { from: dateStr(from), to: dateStr(to) }
 }
 
+/** Cap a date string to H-2 (ETL pipeline lag — data only available up to 2 days ago) */
+export function capToH2(dateString: string): string {
+  if (!dateString) return dateString
+  const h2 = new Date()
+  h2.setDate(h2.getDate() - 2)
+  const cap = dateStr(h2)
+  return dateString > cap ? cap : dateString
+}
+
 export function fmtIDR(n: number): string {
   if (n < 0) return '-' + fmtIDR(-n)
   if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)}B`
@@ -160,7 +169,7 @@ interface SparklineProps {
   data: SparkPoint[]
   target: number
   title?: string
-  fmt?: 'currency' | 'multiplier' | 'percent'
+  fmt?: 'currency' | 'multiplier' | 'percent' | 'number'
   /** true = below target is good (CPR/CPA); false = above target is good (RoAS) */
   lowerIsBetter?: boolean
   /** If provided, use this as the max deviation from target for Y scaling (enables cross-SKU comparison) */
@@ -327,7 +336,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         textAnchor="end"
         fontFamily="Inter, sans-serif"
       >
-        {fmt === 'multiplier' ? `${yMax.toFixed(1)}×` : fmt === 'percent' ? `${yMax.toFixed(1)}%` : fmtIDR(yMax)}
+        {fmt === 'multiplier' ? `${yMax.toFixed(1)}×` : fmt === 'percent' ? `${yMax.toFixed(1)}%` : fmt === 'number' ? fmtNum(Math.round(yMax)) : fmtIDR(yMax)}
       </text>
       <text
         x={pad.l + w} y={pad.t + h + 11}
@@ -336,7 +345,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         textAnchor="end"
         fontFamily="Inter, sans-serif"
       >
-        {fmt === 'multiplier' ? `${Math.max(0, yMin).toFixed(1)}×` : fmt === 'percent' ? `${Math.max(0, yMin).toFixed(1)}%` : fmtIDR(Math.max(0, yMin))}
+        {fmt === 'multiplier' ? `${Math.max(0, yMin).toFixed(1)}×` : fmt === 'percent' ? `${Math.max(0, yMin).toFixed(1)}%` : fmt === 'number' ? fmtNum(Math.round(Math.max(0, yMin))) : fmtIDR(Math.max(0, yMin))}
       </text>
 
       {/* Target line (centered) */}
@@ -355,7 +364,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         textAnchor="end"
         fontFamily="Inter, sans-serif"
       >
-        {targetLabel} {fmt === 'multiplier' ? `${target}×` : fmt === 'percent' ? `${target.toFixed(1)}%` : fmtIDR(target)}
+        {targetLabel} {fmt === 'multiplier' ? `${target}×` : fmt === 'percent' ? `${target.toFixed(1)}%` : fmt === 'number' ? fmtNum(Math.round(target)) : fmtIDR(target)}
       </text>
 
       {/* Data line — colored by trend direction */}
@@ -440,7 +449,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
             textAnchor="middle"
             fontFamily="Inter, sans-serif"
           >
-            {fmt === 'multiplier' ? `${hoveredPoint.value.toFixed(2)}×` : fmt === 'percent' ? `${hoveredPoint.value.toFixed(2)}%` : fmtIDR(hoveredPoint.value)}
+            {fmt === 'multiplier' ? `${hoveredPoint.value.toFixed(2)}×` : fmt === 'percent' ? `${hoveredPoint.value.toFixed(2)}%` : fmt === 'number' ? fmtNum(Math.round(hoveredPoint.value)) : fmtIDR(hoveredPoint.value)}
           </text>
           <text
             x={hoveredX + (hoverIdx > data.length / 2 ? -54 : 54)}
@@ -499,7 +508,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         const pxY = rect.top + 4
         const isRight = hoverIdx > data.length / 2
         const point = data[hoverIdx]
-        const fmtVal = fmt === 'multiplier' ? `${point.value.toFixed(2)}×` : fmt === 'percent' ? `${point.value.toFixed(2)}%` : fmtIDR(point.value)
+        const fmtVal = fmt === 'multiplier' ? `${point.value.toFixed(2)}×` : fmt === 'percent' ? `${point.value.toFixed(2)}%` : fmt === 'number' ? fmtNum(Math.round(point.value)) : fmtIDR(point.value)
         return (
           <div
             className="changelog-tooltip"
