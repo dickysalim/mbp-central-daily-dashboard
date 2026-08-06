@@ -811,51 +811,68 @@ export function SkuPerformanceCard({
               ? `${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/d ${cprl.slopePctPerDay >= 0 ? '↘' : '↗'}`
               : ''
 
-            let rLabel: string, sublabel: string, color: string, glow: string
+            let rLabel: string, sublabelStats: string, sublabelMsg: string, color: string, glow: string
 
-            if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && cpaCC.onTarget && roas.onTarget) {
+            const cprlStr = cprl.convStrength === 'strong' ? 'strong convergence' : 'steady'
+
+            // ── Branch 1: All green → Scale Up
+            if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && roas.onTarget && cpaCC.onTarget) {
               rLabel = '🚀 Scale Up Budget'
-              const strength = cprl.convStrength === 'strong' ? 'strong convergence' : 'steady'
-              sublabel = `CPRL on target (${strength}) · CPA CC healthy · RoAS on target`
+              sublabelStats = `CPRL on target · RoAS on target · CPA CC healthy`
+              sublabelMsg = `Increase daily budget 20–30% and monitor CPRL closely`
               color = '#34d399'; glow = 'rgba(52,211,153,0.15)'
 
-            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && cpaCC.onTarget && !roas.onTarget) {
-              rLabel = '⚡ Hold — RoAS Catching Up'
-              const cprlStr = cprl.convStrength === 'strong' ? 'strong' : 'steady'
-              sublabel = `CPRL ${cprlStr} · RoAS ${roas.offPct.toFixed(0)}% below — sales channels need to close`
+            // ── Branch 2: CPRL ✅ + RoAS ✅ + CPA CC ❌ → Scale Up Potential?
+            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && roas.onTarget && !cpaCC.onTarget) {
+              rLabel = '⚡ Scale Up Potential?'
+              sublabelStats = `CPRL on target · RoAS on target · CPA CC +${cpaCC.offPct.toFixed(0)}% off`
+              sublabelMsg = `Produce more Bottom Funnel creatives — CPRL + RoAS are solid`
+              color = '#34d399'; glow = 'rgba(52,211,153,0.10)'
+
+            // ── Branch 3: CPRL ✅ + RoAS ❌ + CPA CC ✅ → Hold — RoAS Lagging
+            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && !roas.onTarget && cpaCC.onTarget) {
+              rLabel = '⚡ Hold — RoAS Lagging'
+              sublabelStats = `CPRL on target · CPA CC healthy · RoAS ${roas.offPct.toFixed(0)}% below`
+              sublabelMsg = `Produce more Bottom Funnel creatives — push purchase intent`
               color = '#fbbf24'; glow = 'rgba(251,191,36,0.12)'
 
-            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && !cpaCC.onTarget) {
-              rLabel = '⚡ Hold — CPA CC High'
-              const cprlStr = cprl.convStrength === 'strong' ? 'strong' : 'steady'
-              sublabel = `CPRL ${cprlStr} · CPA CC +${cpaCC.offPct.toFixed(0)}% off — lead quality or CCOM closing issue`
+            // ── Branch 4: CPRL ✅ + RoAS ❌ + CPA CC ❌ → Hold — Both Lagging
+            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && !roas.onTarget && !cpaCC.onTarget) {
+              rLabel = '⚡ Hold — RoAS & CPA CC Lagging'
+              sublabelStats = `CPRL on target · RoAS ${roas.offPct.toFixed(0)}% off · CPA CC +${cpaCC.offPct.toFixed(0)}% off`
+              sublabelMsg = `Produce more Bottom Funnel creatives — top funnel is working`
               color = '#fbbf24'; glow = 'rgba(251,191,36,0.12)'
 
+            // ── Branch 5: CPRL on target but flat/diverging → Caution
             } else if (cprl.onTarget && (cprl.convStrength === 'flat' || cprl.convStrength === 'diverging')) {
               const drift = cprl.convStrength === 'diverging'
                 ? `diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day`
                 : 'trend is flat'
               rLabel = '⚠️ Caution — CPRL Drifting'
-              sublabel = `On target but ${drift} — don't scale yet`
+              sublabelStats = `CPRL on target · trend ${drift}`
+              sublabelMsg = `Test new creatives before any budget changes`
               color = '#fb923c'; glow = 'rgba(251,146,60,0.12)'
 
+            // ── Branch 6: CPRL off target but recovering
             } else if (!cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak')) {
-              const speed = cprl.convStrength === 'strong'
-                ? `recovering fast (${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day)`
-                : `recovering slowly (${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day)`
+              const speed = cprl.convStrength === 'strong' ? 'strong' : 'slow'
               rLabel = cprl.convStrength === 'strong' ? '⚠️ Recovering — Almost There' : '⚠️ Recovering — Slowly'
-              sublabel = `CPRL +${cprl.offPct.toFixed(0)}% off but ${speed} — hold budget`
+              sublabelStats = `CPRL +${cprl.offPct.toFixed(0)}% off · ${speed} recovery (${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day)`
+              sublabelMsg = `Test new creative hooks to accelerate convergence`
               color = '#fb923c'; glow = 'rgba(251,146,60,0.12)'
 
+            // ── Branch 7: CPRL off target, flat
             } else if (!cprl.onTarget && cprl.convStrength === 'flat') {
               rLabel = '🔧 Stalled — CPRL Stuck'
-              sublabel = `CPRL +${cprl.offPct.toFixed(0)}% off with no improvement — review creatives`
+              sublabelStats = `CPRL +${cprl.offPct.toFixed(0)}% off · no improvement trend`
+              sublabelMsg = `Replace underperforming creatives — test new hooks and angles`
               color = '#f87171'; glow = 'rgba(248,113,113,0.12)'
 
             } else {
-              // CPRL off target and diverging
+              // Branch 8: CPRL off target and diverging
               rLabel = '🔧 Optimize Ads First'
-              sublabel = `CPRL +${cprl.offPct.toFixed(0)}% off & diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day — fix creatives before scaling`
+              sublabelStats = `CPRL +${cprl.offPct.toFixed(0)}% off · diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day`
+              sublabelMsg = `Pause weakest ad sets and test fresh creatives immediately`
               color = '#f87171'; glow = 'rgba(248,113,113,0.12)'
             }
 
@@ -876,16 +893,8 @@ export function SkuPerformanceCard({
               }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 800, color, letterSpacing: '-0.02em' }}>{rLabel}</div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: `${color}90`, letterSpacing: '0.03em', textTransform: 'uppercase' as const, marginTop: 1, lineHeight: 1.4 }}>{sublabel}</div>
-                </div>
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                  {scores.map((s, i) => (
-                    <div key={i} title={`${s.label}: ${s.onTarget ? 'On Target' : `+${s.offPct.toFixed(0)}% off`} · ${s.convStrength}`} style={{
-                      width: 8, height: 8, borderRadius: '50%',
-                      background: dotColor(s),
-                      border: s.convStrength === 'strong' ? `1.5px solid ${dotColor(s)}` : '1px solid rgba(255,255,255,0.1)',
-                    }} />
-                  ))}
+                  <div style={{ fontSize: 11, fontWeight: 600, color: `${color}99`, letterSpacing: '0.01em', marginTop: 2, lineHeight: 1.3 }}>{sublabelStats}</div>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: `${color}cc`, marginTop: 2, lineHeight: 1.4 }}>{sublabelMsg}</div>
                 </div>
               </div>
             )
