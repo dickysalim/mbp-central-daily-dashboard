@@ -9,7 +9,7 @@ export function AppLayout() {
     <div className="flex min-h-screen bg-surface-950">
       <Sidebar />
       {/* Main content — offset by sidebar width */}
-      <main className="flex-1 ml-56 min-h-screen overflow-x-hidden">
+      <main className="flex-1 ml-36 min-h-screen overflow-x-hidden">
         <Outlet />
       </main>
     </div>

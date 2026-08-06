@@ -214,7 +214,7 @@ function Sparkline({
               onMouseEnter={(e) => setClTooltip({ x: e.clientX, y: e.clientY, entry: m.entry })}
               onMouseLeave={() => setClTooltip(null)}
               style={{ cursor: 'pointer' }}>
-              <rect x={xs(m.i) - 8} y={PAD.top - 10} width={16} height={innerH + 10} fill="transparent" />
+              <rect x={xs(m.i) - 8} y={PAD.top - 14} width={16} height={18} fill="transparent" />
               <line x1={xs(m.i)} y1={PAD.top} x2={xs(m.i)} y2={PAD.top + innerH}
                 stroke="#fbbf24" strokeOpacity="0.28" strokeWidth="1" strokeDasharray="2,2" />
               <polygon points={`${xs(m.i)},${PAD.top - 1} ${xs(m.i) - 4},${PAD.top - 8} ${xs(m.i) + 4},${PAD.top - 8}`}
@@ -249,9 +249,8 @@ function Sparkline({
         {clTooltip && createPortal(
           <div style={{
             position: 'fixed',
-            top: clTooltip.y < 160 ? clTooltip.y + 18 : clTooltip.y - 12,
+            top: (() => { const h = 140; let t = clTooltip.y + 18; if (t + h > window.innerHeight - 8) t = clTooltip.y - h - 8; return Math.max(8, t) })(),
             left: Math.max(8, Math.min(clTooltip.x + 14, window.innerWidth - 280)),
-            transform: clTooltip.y < 160 ? 'none' : 'translateY(-100%)',
             zIndex: 9999,
             background: 'rgba(10,11,15,0.97)',
             border: '1px solid rgba(251,191,36,0.45)',
@@ -327,9 +326,8 @@ function CampaignEvaluator({ from, to, sku, cprlTarget, cpaTarget }: {
     pu: t.pu + r.purchase_ccom,
   }), { spend: 0, pv: 0, vo: 0, rl: 0, pu: 0 })
 
-  const overallVO2L = tot.vo > 0 ? tot.rl / tot.vo : 0.01
-  const overallLPVO = tot.pv > 0 ? tot.vo / tot.pv : 0.01
-  const targetCostVO = TARGET_CPR * overallVO2L
+  // Target = META global average; capped at the hard limit if global avg exceeds it
+  const globalCostVO  = tot.vo > 0 ? tot.spend / tot.vo : 0            // META avg Cost / View Offer
   const effectiveCPRL = Math.min(cprlTarget, tot.rl > 0 ? tot.spend / tot.rl : Infinity)
   const effectiveCPA  = Math.min(cpaTarget,  tot.pu > 0 ? tot.spend / tot.pu : Infinity)
 
@@ -337,7 +335,8 @@ function CampaignEvaluator({ from, to, sku, cprlTarget, cpaTarget }: {
     const rl = r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls
     const fl = mapFunnel(r.funnel)
     let metricName = '', targetValue = 0, actual: number | null = null
-    if (fl === 'ToFU00')      { metricName = 'Cost / View Offer'; targetValue = targetCostVO / overallLPVO; actual = r.ga4_page_view > 0 ? r.ad_spend / r.ga4_page_view : null }
+    // ToFU: target = META-wide avg Cost/ViewOffer; actual = campaign Cost/ViewOffer
+    if (fl === 'ToFU00')      { metricName = 'Cost / View Offer'; targetValue = globalCostVO;    actual = r.ga4_view_offer > 0 ? r.ad_spend / r.ga4_view_offer : null }
     else if (fl === 'MoFU25') { metricName = 'CPRL';    targetValue = effectiveCPRL; actual = rl > 0 ? r.ad_spend / rl : null }
     else if (fl === 'BoFU50') { metricName = 'CPA CC';  targetValue = effectiveCPA;  actual = r.purchase_ccom > 0 ? r.ad_spend / r.purchase_ccom : null }
     else if (fl === 'BoFU75') { metricName = 'CPRL';    targetValue = effectiveCPRL; actual = rl > 0 ? r.ad_spend / rl : null }
@@ -345,6 +344,7 @@ function CampaignEvaluator({ from, to, sku, cprlTarget, cpaTarget }: {
     const gap = actual !== null && actual > 0 ? (targetValue / actual) - 1 : null
     return { name: r.campaign_name, fl, metricName, targetValue, actual, gap }
   }).filter(Boolean) as { name: string; fl: FunnelLevel; metricName: string; targetValue: number; actual: number | null; gap: number | null }[]
+
 
   rows.sort((a, b) => {
     const ord: Record<FunnelLevel, number> = { ToFU00: 0, MoFU25: 1, BoFU50: 2, BoFU75: 3, Unknown: 9 }

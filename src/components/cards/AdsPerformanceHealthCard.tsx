@@ -84,7 +84,9 @@ function CprlChart({ data, changelog }: { data: CprlPoint[]; changelog: Changelo
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const r = ref.current?.getBoundingClientRect(); if (!r) return
-    const idx = Math.max(0, Math.min(n - 1, Math.round(((e.clientX - r.left - PAD.left) / innerW) * (n - 1))))
+    const scale = r.width / W
+    const svgX = (e.clientX - r.left) / scale
+    const idx = Math.max(0, Math.min(n - 1, Math.round(((svgX - PAD.left) / innerW) * (n - 1))))
     setTooltip({ x: xs(idx), y: ys(data[idx].value), p: data[idx] })
   }
   const sd = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
@@ -107,7 +109,7 @@ function CprlChart({ data, changelog }: { data: CprlPoint[]; changelog: Changelo
             onMouseLeave={() => setClTooltip(null)}
             style={{ cursor: 'pointer' }}>
             {/* wider invisible hit area */}
-            <rect x={xs(m.i) - 8} y={PAD.top - 10} width={16} height={innerH + 10} fill="transparent" />
+            <rect x={xs(m.i) - 8} y={PAD.top - 14} width={16} height={18} fill="transparent" />
             <line x1={xs(m.i)} y1={PAD.top} x2={xs(m.i)} y2={PAD.top + innerH} stroke="#fbbf24" strokeOpacity="0.28" strokeWidth="1" strokeDasharray="2,2" />
             <polygon points={`${xs(m.i)},${PAD.top - 1} ${xs(m.i) - 4},${PAD.top - 8} ${xs(m.i) + 4},${PAD.top - 8}`} fill="#fbbf24" opacity="0.9" />
           </g>
@@ -148,9 +150,8 @@ function CprlChart({ data, changelog }: { data: CprlPoint[]; changelog: Changelo
       {clTooltip && createPortal(
         <div style={{
           position: 'fixed',
-          top: clTooltip.y < 160 ? clTooltip.y + 18 : clTooltip.y - 12,
+          top: (() => { const h = 140; let t = clTooltip.y + 18; if (t + h > window.innerHeight - 8) t = clTooltip.y - h - 8; return Math.max(8, t) })(),
           left: Math.max(8, Math.min(clTooltip.x + 14, window.innerWidth - 280)),
-          transform: clTooltip.y < 160 ? 'none' : 'translateY(-100%)',
           zIndex: 9999,
           background: 'rgba(10,11,15,0.97)',
           border: '1px solid rgba(251,191,36,0.45)',
