@@ -6,8 +6,8 @@ import { useQuery } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import { fmtIDR, dateStr, capToH2, PRESETS } from './ProductPerformancePage'
 import { AdSpendHealthCard } from '../components/cards/AdSpendHealthCard'
-import { AdsPerformanceHealthCard } from '../components/cards/AdsPerformanceHealthCard'
-import { LeadsQualityCard } from '../components/cards/LeadsQualityCard'
+import { AdsPerformanceHealthCard, type SkuCprlRow } from '../components/cards/AdsPerformanceHealthCard'
+import { LeadsQualityCard, type SkuCpaCCRow } from '../components/cards/LeadsQualityCard'
 import { AtlPerformanceCard } from '../components/cards/AtlPerformanceCard'
 import { SkuPerformanceCard } from '../components/cards/SkuPerformanceCard'
 import { TotalRoasCard } from '../components/cards/TotalRoasCard'
@@ -223,8 +223,8 @@ export function SandboxPage() {
       spend: spendByDate.get(date) ?? 0,
       value: (spendByDate.get(date) ?? 0) > 0 ? (revByDate.get(date) ?? 0) / (spendByDate.get(date) ?? 0) : 0,
     }))
-    // 7-day moving average
-    const window = 7
+    // 14-day moving average (matches bi-weekly reseller payout cycle: DoM 11-16 & 27-31)
+    const window = 14
     const ma: { date: string; value: number }[] = []
     for (let i = 0; i < daily.length; i++) {
       const start = Math.max(0, i - window + 1)
@@ -254,7 +254,7 @@ export function SandboxPage() {
       revenue: revByDate.get(date) ?? 0,
       spend: spendByDate.get(date) ?? 0,
     }))
-    const window = 7
+    const window = 14 // 14-day MA (bi-weekly reseller payout cycle)
     const ma: { date: string; value: number }[] = []
     for (let i = 0; i < daily.length; i++) {
       const start = Math.max(0, i - window + 1)
@@ -309,11 +309,19 @@ export function SandboxPage() {
       const prev = byDate.get(r.date) ?? { spend: 0, purchases: 0 }
       byDate.set(r.date, { spend: prev.spend + r.ad_spend, purchases: prev.purchases + r.purchase_ccom })
     }
-    return Array.from(byDate.entries())
+    const daily = Array.from(byDate.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, { spend, purchases }]) => ({ date, value: purchases > 0 ? spend / purchases : 0 }))
-      .filter(p => p.value > 0)
+      .map(([date, v]) => ({ date, ...v }))
+    // 7-day rolling MA (smooths weekly Mon/Sat purchase cycle)
+    const window = 7
+    return daily.map((_, i) => {
+      const slice = daily.slice(Math.max(0, i - window + 1), i + 1)
+      const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
+      const totalPurchases = slice.reduce((s, d) => s + d.purchases, 0)
+      return { date: daily[i].date, value: totalPurchases > 0 ? totalSpend / totalPurchases : 0 }
+    }).filter(p => p.value > 0)
   }, [rawData])
+
   const purchaseBySku = useMemo(() => {
     const bySku = new Map<string, number>()
     for (const r of rawData ?? []) {
@@ -726,6 +734,12 @@ export function SandboxPage() {
             realLeadOfls={totalLeadOfls}
             cprlSeries={cprlSeries}
             changelog={filteredChangelog}
+            skuCprl={(['MSF', 'MTA', 'MNS', 'M3P'] as const).map((sku): SkuCprlRow => {
+              const d = allSkuData[sku]
+              const rows = (rawData ?? []).filter(r => r.sku === sku)
+              const leads = rows.reduce((s, r) => s + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls, 0)
+              return { sku, cprl: d.totals.cprl, leads }
+            })}
           />
 
           {/* Leads Quality Card */}
@@ -735,6 +749,12 @@ export function SandboxPage() {
             purchaseBySku={purchaseBySku}
             cpaSeries={cpaSeries}
             changelog={filteredChangelog}
+            skuCpaCC={(['MSF', 'MTA', 'MNS', 'M3P'] as const).map((sku): SkuCpaCCRow => {
+              const d = allSkuData[sku]
+              const rows = (rawData ?? []).filter(r => r.sku === sku)
+              const purchases = rows.reduce((s, r) => s + r.purchase_ccom, 0)
+              return { sku, cpaCC: d.totals.cpaCC, purchases }
+            })}
           />
 
         </div>

@@ -20,7 +20,7 @@ const T = {
   section:    { fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase' as const },
   headline:   { fontSize: 24, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' as const },
   metaLabel:  { fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.03em' },
-  skuCode:    { fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', minWidth: 32 } as const,
+  skuCode:    { fontSize: 13, fontWeight: 700, letterSpacing: '0.07em', minWidth: 32 } as const,
   skuMeta:    { fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.45)' } as const,
   skuValue:   { fontSize: 13, fontWeight: 800, letterSpacing: '-0.02em' } as const,
   pill:       (c: string) => ({
@@ -240,8 +240,8 @@ export function TotalRoasCard({
 
   const totalRoas = totalAdSpend > 0 ? totalSalesRevenue / totalAdSpend : 0
   const div = totalRoas > 0 ? ((totalRoas - ROAS_TARGET) / ROAS_TARGET) * 100 : null
-  const roasColor = totalRoas >= ROAS_TARGET ? '#34d399' : totalRoas >= ROAS_TARGET * 0.8 ? '#fbbf24' : '#f87171'
-  const roasLabel = totalRoas >= ROAS_TARGET ? '🟢 On Target' : totalRoas >= ROAS_TARGET * 0.8 ? '🟡 Slightly Below' : '🔴 Below Target'
+  const roasColor = totalRoas >= ROAS_TARGET ? '#34d399' : totalRoas >= ROAS_TARGET * 0.9 ? '#fbbf24' : '#f87171'
+  const roasLabel = totalRoas >= ROAS_TARGET ? '🟢 On Target' : totalRoas >= ROAS_TARGET * 0.9 ? '🟡 Slightly Below' : '🔴 Below Target'
   const maxRoas   = Math.max(...skuRoas.map(s => s.roas), ROAS_TARGET)
   const hasChart  = roasSeries.length > 1
 
@@ -267,22 +267,26 @@ export function TotalRoasCard({
 
           {/* Headline: Total Sales Revenue */}
           <div>
-            <div style={T.metaLabel}>Total Sales Revenue</div>
+            <div style={T.section}>Total Sales Revenue</div>
             <div style={{ ...T.headline, marginTop: 4 }}>
               {totalSalesRevenue > 0 ? fmtFull(totalSalesRevenue) : '—'}
             </div>
           </div>
 
-          {/* Sub headline: Total RoAS + Target */}
+          {/* Sub headline: Total RoAS / Target RoAS */}
           <div>
+            <div style={{ ...T.section, marginBottom: 5 }}>Total RoAS</div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              {/* Current */}
               <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', color: roasColor }}>
                 {totalRoas > 0 ? totalRoas.toFixed(2) + '×' : '—'}
               </span>
-              <span style={{ ...T.metaLabel, color: 'rgba(255,255,255,0.45)' }}>RoAS</span>
-            </div>
-            <div style={{ ...T.metaLabel, marginTop: 3 }}>
-              Target {ROAS_TARGET}×
+              {/* Separator */}
+              <span style={{ fontSize: 18, fontWeight: 300, color: 'rgba(255,255,255,0.2)', lineHeight: 1 }}>/</span>
+              {/* Target */}
+              <span style={{ ...T.section, alignSelf: 'center' }}>
+                {ROAS_TARGET}×
+              </span>
             </div>
             {div !== null && (
               <div style={T.pill(roasColor)}>
@@ -292,6 +296,7 @@ export function TotalRoasCard({
               </div>
             )}
           </div>
+
         </div>
 
         {/* MIDDLE — chart */}
@@ -318,6 +323,11 @@ export function TotalRoasCard({
             const color = SKU_COLORS[s.sku] ?? 'rgba(255,255,255,0.68)'
             const barPct = maxRoas > 0 ? Math.min((s.roas / maxRoas) * 100, 100) : 0
             const onTarget = s.roas >= ROAS_TARGET
+            const gapPct = ROAS_TARGET > 0 ? ((ROAS_TARGET - s.roas) / ROAS_TARGET) * 100 : 0
+            // green = at/above target, yellow = within 10% below, red = >10% below
+            const barColor = s.roas >= ROAS_TARGET ? '#34d399'
+                           : gapPct <= 10 ? '#fbbf24'
+                           : '#f87171'
             return (
               <div key={s.sku}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -327,14 +337,14 @@ export function TotalRoasCard({
                       {fmtRp(s.revenue)} / {fmtRp(s.spend)}
                     </span>
                   </div>
-                  <span style={{ ...T.skuValue, color: onTarget ? '#34d399' : '#f87171' }}>
+                  <span style={{ ...T.skuValue, color: barColor }}>
                     {s.roas.toFixed(2)}×
                   </span>
                 </div>
                 <div style={{ ...T.barTrack, position: 'relative' }}>
                   <div style={{
                     height: '100%', width: `${barPct}%`,
-                    background: color, borderRadius: 2,
+                    background: barColor, borderRadius: 2,
                     transition: 'width 0.4s ease',
                   }} />
                   {maxRoas > 0 && (

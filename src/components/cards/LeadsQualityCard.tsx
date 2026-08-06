@@ -21,12 +21,15 @@ export interface ChangelogRow { date: string; date_end: string | null; brand: st
 
 export interface SkuPurchase { sku: string; count: number }
 
+export interface SkuCpaCCRow { sku: string; cpaCC: number; purchases: number }
+
 export interface LeadsQualityCardProps {
   totalSpend:      number
   purchaseCcom:    number
   purchaseBySku?:  SkuPurchase[]
   cpaSeries?:      CpaPoint[]
   changelog?:      ChangelogRow[]
+  skuCpaCC?:       SkuCpaCCRow[]
 }
 
 const SKU_COLORS: Record<string, string> = {
@@ -38,8 +41,12 @@ const SKU_COLORS: Record<string, string> = {
 const skuColor = (sku: string) => SKU_COLORS[sku.toUpperCase()] ?? 'rgba(255,255,255,0.68)'
 
 const T = {
+  cardTitle: { fontSize: 14, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' } as const,
+  headline:  { fontSize: 24, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' as const },
+  section:   { fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase' as const },
   label: { fontSize: 9, fontWeight: 600, letterSpacing: '0.09em', color: 'rgba(255,255,255,0.62)', textTransform: 'uppercase' as const },
   tiny:  { fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.76)', letterSpacing: '0.05em', textTransform: 'uppercase' as const },
+  divider: { borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 24 } as const,
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
@@ -109,7 +116,7 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
         {above.map((p, i) => <polygon key={`a${i}`} points={p} fill="#f87171" fillOpacity="0.1" />)}
         {below.map((p, i) => <polygon key={`b${i}`} points={p} fill="#34d399" fillOpacity="0.1" />)}
         <line x1={PAD.left} y1={tY} x2={W - PAD.right} y2={tY} stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
-        <text x={W - PAD.right + 3} y={tY + 5} fontSize="14" fill="#94a3b8" opacity="1" fontWeight="700">2M</text>
+        <text x={W - PAD.right + 3} y={tY + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">2M</text>
         <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)} stroke={tc} strokeOpacity="0.45" strokeWidth="1.8" strokeDasharray="4,3" />
         <polyline points={pts} fill="none" stroke="#f472b6" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {markers.map(m => (
@@ -191,7 +198,7 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
 
 // ── Main card ─────────────────────────────────────────────────────────────────
 export function LeadsQualityCard({
-  totalSpend, purchaseCcom, purchaseBySku = [], cpaSeries = [], changelog = [],
+  totalSpend, purchaseCcom, purchaseBySku = [], cpaSeries = [], changelog = [], skuCpaCC = [],
 }: LeadsQualityCardProps) {
   const cpaCC  = purchaseCcom > 0 ? totalSpend / purchaseCcom : 0
   const div    = cpaCC > 0 ? ((cpaCC - CPA_CC_TARGET) / CPA_CC_TARGET) * 100 : null
@@ -205,65 +212,83 @@ export function LeadsQualityCard({
       background: 'rgba(255,255,255,0.04)',
       border: '1px solid rgba(255,255,255,0.09)',
       borderRadius: 14, padding: '24px 28px',
-      display: 'flex', flexDirection: 'row', gap: 24,
+      display: 'flex', flexDirection: 'column', gap: 20,
       fontFamily: 'Inter, system-ui, sans-serif',
       overflow: 'hidden',
     }}>
 
-      {/* LEFT: 170px fixed */}
-      <div style={{ flex: '0 0 170px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={T.label}>Leads Quality</div>
+      {/* TITLE row */}
+      <div style={T.cardTitle}>Leads Quality</div>
 
-        <div>
-          <div style={{ ...T.tiny, marginBottom: 3 }}>CPA CC</div>
-          <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>
-            {cpaCC > 0 ? fmtRpM(Math.round(cpaCC)) : '—'}
-          </div>
-          {div !== null && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: `${sc}15`, border: `1px solid ${sc}30`, borderRadius: 5, padding: '3px 7px' }}>
-              <div style={{ width: 4, height: 4, borderRadius: '50%', background: sc }} />
-              <span style={{ fontSize: 10, fontWeight: 700, color: sc }}>{sl}</span>
-              <span style={{ fontSize: 9, color: sc, opacity: 0.8 }}>{div > 0 ? '+' : ''}{div.toFixed(1)}%</span>
+      {/* CONTENT row */}
+      <div style={{ display: 'flex', flexDirection: 'row', gap: 24 }}>
+
+        {/* LEFT: CPA CC metrics */}
+        <div style={{ flex: '0 0 150px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <div style={{ ...T.section, marginBottom: 3 }}>CPA CC</div>
+            <div style={T.headline}>
+              {cpaCC > 0 ? fmtRpM(Math.round(cpaCC)) : '—'}
             </div>
-          )}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.02em', color: 'rgba(255,255,255,0.72)' }}>{purchaseCcom.toLocaleString('id-ID')}</span>
-            <span style={T.tiny}>purchases CC</span>
+            {div !== null && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: `${sc}15`, border: `1px solid ${sc}30`, borderRadius: 5, padding: '3px 7px' }}>
+                <div style={{ width: 4, height: 4, borderRadius: '50%', background: sc }} />
+                <span style={{ fontSize: 10, fontWeight: 700, color: sc }}>{sl}</span>
+                <span style={{ fontSize: 9, color: sc, opacity: 0.8 }}>{div > 0 ? '+' : ''}{div.toFixed(1)}%</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.02em', color: 'rgba(255,255,255,0.72)' }}>{purchaseCcom.toLocaleString('id-ID')}</span>
+              <span style={T.tiny}>purchases CC</span>
+            </div>
           </div>
+        </div>
 
-          {/* SKU breakdown */}
-          {purchaseBySku.length > 0 && (
-            <div style={{ borderTop: '1px solid rgba(255,255,255,0.09)', paddingTop: 8, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {purchaseBySku.map(({ sku, count }) => {
-                const pct = purchaseCcom > 0 ? (count / purchaseCcom) * 100 : 0
+        {/* MIDDLE: chart */}
+        {hasChart && (
+          <div style={{ flex: '1 1 auto', minWidth: 0, ...T.divider, display: 'flex', alignItems: 'center' }}>
+            <div style={{ width: '100%', maxWidth: 320 }}>
+              <CpaChart data={cpaSeries} changelog={changelog} />
+            </div>
+          </div>
+        )}
+
+        {/* RIGHT: Breakdown by Product (CPA CC per SKU) */}
+        {skuCpaCC.length > 0 && (
+          <div style={{ flex: '0 0 180px', ...T.divider, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={T.section}>Breakdown by Product</div>
+            {(() => {
+              const maxCpa = Math.max(...skuCpaCC.map(s => s.cpaCC), 1)
+              return skuCpaCC.filter(s => s.purchases > 0).map(s => {
+                const color = SKU_COLORS[s.sku] ?? 'rgba(255,255,255,0.68)'
+                const onTarget = s.cpaCC <= CPA_CC_TARGET
+                // Efficiency bar: full = at/under target, shrinks as cost rises above target
+                const efficiency = Math.min(CPA_CC_TARGET / Math.max(s.cpaCC, 1), 1) * 100
+                const barColor = onTarget ? '#34d399' : '#f87171'
+                const diff = ((s.cpaCC - CPA_CC_TARGET) / CPA_CC_TARGET) * 100
                 return (
-                  <div key={sku}>
+                  <div key={s.sku}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: skuColor(sku), letterSpacing: '0.04em' }}>{sku}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
-                        {count.toLocaleString('id-ID')}
-                        <span style={{ fontSize: 9, fontWeight: 500, color: 'rgba(255,255,255,0.62)', marginLeft: 3 }}>{pct.toFixed(0)}%</span>
-                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color, letterSpacing: '0.07em' }}>{s.sku}</span>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
+                          {fmtRpM(Math.round(s.cpaCC))}
+                        </span>
+                        <span style={{ fontSize: 9, fontWeight: 600, color: onTarget ? '#34d399' : '#f87171', marginLeft: 4 }}>
+                          {diff > 0 ? '+' : ''}{diff.toFixed(0)}%
+                        </span>
+                      </div>
                     </div>
-                    <div style={{ height: 2, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: skuColor(sku), borderRadius: 2, transition: 'width 0.4s ease' }} />
+                    <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
+                      <div style={{ height: '100%', width: `${efficiency}%`, background: barColor, borderRadius: 2, transition: 'width 0.4s ease' }} />
                     </div>
                   </div>
                 )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* RIGHT: chart — shrinks when card is narrow */}
-      {hasChart && (
-        <div style={{ flex: '1 1 auto', minWidth: 0, borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 24, display: 'flex', alignItems: 'center' }}>
-          <div style={{ width: '100%', maxWidth: 320 }}>
-            <CpaChart data={cpaSeries} changelog={changelog} />
+              })
+            })()}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

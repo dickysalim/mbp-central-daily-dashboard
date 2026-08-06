@@ -35,7 +35,7 @@ const T = {
   section:    { fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase' as const },
   headline:   { fontSize: 24, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' as const },
   metaLabel:  { fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.03em' },
-  skuCode:    { fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', minWidth: 32 } as const,
+  skuCode:    { fontSize: 13, fontWeight: 700, letterSpacing: '0.07em', minWidth: 32 } as const,
   skuMeta:    { fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.45)' } as const,
   skuValue:   { fontSize: 13, fontWeight: 800, letterSpacing: '-0.02em' } as const,
   pill:       (c: string) => ({
@@ -86,13 +86,13 @@ export function AdSpendHealthCard({
       <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
 
         {/* LEFT — metrics */}
-        <div style={{ flex: '0 0 220px', display: 'flex', flexDirection: 'column', gap: 12, paddingRight: 24 }}>
+        <div style={{ flex: '0 0 280px', display: 'flex', flexDirection: 'column', gap: 12, paddingRight: 24 }}>
 
           <div>
-            <div style={T.metaLabel}>Total Ad Spend</div>
+            <div style={T.section}>Total Ad Spend</div>
             <div style={{ ...T.headline, marginTop: 4 }}>{fmtFull(totalSpend)}</div>
             {periodBudget > 0 && (
-              <div style={{ ...T.metaLabel, marginTop: 6 }}>Target {fmtFull(periodBudget)}</div>
+              <div style={{ ...T.section, marginTop: 6 }}>Target {fmtFull(periodBudget)}</div>
             )}
 
             {/* Progress bar */}
@@ -163,7 +163,7 @@ export function AdSpendHealthCard({
                     <div style={T.barTrack}>
                       <div style={{
                         height: '100%', width: `${barPct}%`,
-                        background: skuColor, borderRadius: 2,
+                        background: dc, borderRadius: 2,
                         transition: 'width 0.4s ease',
                       }} />
                     </div>
