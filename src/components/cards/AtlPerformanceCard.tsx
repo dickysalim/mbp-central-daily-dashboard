@@ -40,6 +40,7 @@ const fmtK   = (n: number) =>
   : n.toString()
 
 const T = {
+  cardTitle: { fontSize: 14, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' } as const,
   label: { fontSize: 9,  fontWeight: 700, letterSpacing: '0.1em',  color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase' as const },
   tiny:  { fontSize: 9,  fontWeight: 600, color: 'rgba(255,255,255,0.65)', letterSpacing: '0.05em', textTransform: 'uppercase' as const },
   head:  { fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' as const },
@@ -308,51 +309,55 @@ export function AtlPerformanceCard({
       border: '1px solid rgba(255,255,255,0.09)',
       borderRadius: 14, padding: '24px 28px',
       fontFamily: 'Inter, system-ui, sans-serif',
-      display: 'flex', flexDirection: 'row',
+      display: 'flex', flexDirection: 'column', gap: 20,
     }}>
 
-      {/* ── Left: stacked metrics ── */}
-      <div style={{ flex: '0 0 210px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', marginBottom: 24 }}>
-          ATL Performance
+      {/* ── Title ── */}
+      <div style={T.cardTitle}>ATL Performance</div>
+
+      {/* ── Content row ── */}
+      <div style={{ display: 'flex', flexDirection: 'row' }}>
+
+        {/* ── Left: stacked metrics ── */}
+        <div style={{ flex: '0 0 210px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {metrics.map(m => (
+              <div key={m.label}>
+                <div style={T.label}>{m.label}</div>
+                <div style={{ ...T.head, marginTop: 4 }}>{m.value}</div>
+                <div style={{ ...T.tiny, marginTop: 4 }}>{m.sub}</div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          {metrics.map(m => (
-            <div key={m.label}>
-              <div style={T.label}>{m.label}</div>
-              <div style={{ ...T.head, marginTop: 4 }}>{m.value}</div>
-              <div style={{ ...T.tiny, marginTop: 4 }}>{m.sub}</div>
+
+        {/* ── Divider ── */}
+        <div style={{ width: 1, background: 'rgba(255,255,255,0.09)', margin: '0 32px', flexShrink: 0 }} />
+
+        {/* ── Right: charts in a row ── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'stretch' }}>
+          {charts.map((c, idx) => (
+            <div key={c.key} style={{
+              flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
+              paddingLeft: idx > 0 ? 24 : 0,
+              borderLeft: idx > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+              marginLeft: idx > 0 ? 24 : 0,
+            }}>
+              {/* Chart label — dot + name */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexShrink: 0 }}>
+                <div style={{ width: 5, height: 5, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 9, fontWeight: 700, color: c.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{c.label}</span>
+              </div>
+              <Sparkline
+                data={c.series} changelog={changelog}
+                color={c.color} fmt={c.fmt} fmtShort={c.fmtShort}
+                chartKey={c.key} higherIsBetter={c.higherIsBetter}
+              />
             </div>
           ))}
         </div>
+
       </div>
-
-      {/* ── Divider ── */}
-      <div style={{ width: 1, background: 'rgba(255,255,255,0.09)', margin: '0 32px', flexShrink: 0 }} />
-
-      {/* ── Right: charts in a row ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'stretch' }}>
-        {charts.map((c, idx) => (
-          <div key={c.key} style={{
-            flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
-            paddingLeft: idx > 0 ? 24 : 0,
-            borderLeft: idx > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-            marginLeft: idx > 0 ? 24 : 0,
-          }}>
-            {/* Chart label — dot + name, same style as reference channel labels */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexShrink: 0 }}>
-              <div style={{ width: 5, height: 5, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 9, fontWeight: 700, color: c.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{c.label}</span>
-            </div>
-            <Sparkline
-              data={c.series} changelog={changelog}
-              color={c.color} fmt={c.fmt} fmtShort={c.fmtShort}
-              chartKey={c.key} higherIsBetter={c.higherIsBetter}
-            />
-          </div>
-        ))}
-      </div>
-
     </div>
   )
 }
