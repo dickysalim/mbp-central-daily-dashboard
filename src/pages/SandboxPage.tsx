@@ -447,8 +447,17 @@ export function SandboxPage() {
           .map(([date, { c, i }]) => ({ date, value: i > 0 ? (c / i) * 100 : 0 })).filter(p => p.value > 0),
         cprlSeries: byDate({ s: 0, l: 0 }, (p, r) => ({ s: p.s + r.ad_spend, l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls }))
           .map(([date, { s, l }]) => ({ date, value: l > 0 ? s / l : 0 })).filter(p => p.value > 0),
-        cpaSeries: byDate({ s: 0, p: 0 }, (p, r) => ({ s: p.s + r.ad_spend, p: p.p + r.purchase_ccom }))
-          .map(([date, { s, p }]) => ({ date, value: p > 0 ? s / p : 0 })).filter(p => p.value > 0),
+        cpaSeries: (() => {
+          const daily = byDate({ s: 0, p: 0 }, (p, r) => ({ s: p.s + r.ad_spend, p: p.p + r.purchase_ccom }))
+            .map(([date, { s, p }]) => ({ date, spend: s, purchases: p }))
+          const win = 7
+          return daily.map((_, i) => {
+            const slice = daily.slice(Math.max(0, i - win + 1), i + 1)
+            const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
+            const totalPurchases = slice.reduce((s, d) => s + d.purchases, 0)
+            return { date: daily[i].date, value: totalPurchases > 0 ? totalSpend / totalPurchases : 0 }
+          }).filter(p => p.value > 0)
+        })(),
         lpvoSeries: byDate({ vo: 0, pv: 0 }, (p, r) => ({ vo: p.vo + (r.ga4_view_offer ?? 0), pv: p.pv + r.ga4_page_view }))
           .map(([date, { vo, pv }]) => ({ date, value: pv > 0 ? (vo / pv) * 100 : 0 })).filter(p => p.value > 0),
         vo2lSeries: byDate({ l: 0, vo: 0 }, (p, r) => ({ l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls, vo: p.vo + (r.ga4_view_offer ?? 0) }))
@@ -813,6 +822,8 @@ export function SandboxPage() {
                 skuDailyBudget={skuBudgets[sku]?.dailyBudget ?? 0}
                 skuTargetDailyBudget={skuBudgets[sku]?.targetDailyBudget ?? 0}
                 budgetDate={skuBudgets[sku]?.budgetDate}
+                totalRoas={skuRoas.find(r => r.sku === sku)?.roas ?? 0}
+                roasTarget={6.59}
               />
             )
           })}

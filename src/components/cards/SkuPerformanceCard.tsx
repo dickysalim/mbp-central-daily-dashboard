@@ -59,6 +59,10 @@ export interface SkuPerformanceCardProps {
   skuDailyBudget?:       number
   skuTargetDailyBudget?: number
   budgetDate?:           string
+
+  // RoAS
+  totalRoas?:   number
+  roasTarget?:  number
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -278,9 +282,9 @@ function Sparkline({
       {/* Trend badge — exact reference tokens */}
       <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: `${tc}12`, border: `1px solid ${tc}28`, borderRadius: 4, padding: '3px 7px' }}>
-          <span style={{ fontSize: 9, fontWeight: 800, color: tc }}>{trendArrow}</span>
-          <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{trendLabel}</span>
-          <span style={{ fontSize: 9, color: tc, opacity: 1 }}>{rate.toFixed(1)}%/d</span>
+          <span style={{ fontSize: 10, fontWeight: 800, color: tc }}>{trendArrow}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: tc }}>{trendLabel}</span>
+          <span style={{ fontSize: 10, color: tc, opacity: 1 }}>{rate.toFixed(1)}%/d</span>
         </div>
       </div>
 
@@ -358,13 +362,13 @@ function CampaignEvaluator({ from, to, sku, cprlTarget, cpaTarget }: {
 
   return (
     <div style={{ overflowX: 'auto', marginTop: 16 }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, ...F }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, ...F }}>
         <thead>
           <tr>
-            {['Campaign', 'Funnel', 'Metric', 'Target', 'Actual', 'Gap'].map(h => (
+            {['Campaign', 'Metric', 'Target', 'Actual', 'Gap'].map(h => (
               <th key={h} style={{
                 textAlign: h === 'Campaign' ? 'left' : 'right',
-                padding: '4px 10px 8px', fontWeight: 700, fontSize: 9,
+                padding: '4px 10px 8px', fontWeight: 700, fontSize: 11,
                 letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)',
                 textTransform: 'uppercase', whiteSpace: 'nowrap',
                 borderBottom: '1px solid rgba(255,255,255,0.07)',
@@ -380,10 +384,7 @@ function CampaignEvaluator({ from, to, sku, cprlTarget, cpaTarget }: {
             const fc = FUNNEL_CLR[row.fl]
             return (
               <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                <td style={{ padding: '6px 10px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.85)' }}>{row.name}</td>
-                <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                  <span style={{ background: fc + '22', color: fc, border: `1px solid ${fc}44`, fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{row.fl}</span>
-                </td>
+                <td style={{ padding: '6px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.85)' }}>{row.name}</td>
                 <td style={{ padding: '6px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>{row.metricName}</td>
                 <td style={{ padding: '6px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{fmtIDR(row.targetValue)}</td>
                 <td style={{ padding: '6px 10px', textAlign: 'right', color: row.actual !== null ? '#fff' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{row.actual !== null ? fmtIDR(row.actual) : '—'}</td>
@@ -412,6 +413,8 @@ export function SkuPerformanceCard({
   skuDailyBudget       = 0,
   skuTargetDailyBudget = 0,
   budgetDate,
+  totalRoas   = 0,
+  roasTarget  = 6.59,
 }: SkuPerformanceCardProps) {
   const label = skuLabel ?? sku
   const [open, setOpen] = useState(false)
@@ -446,6 +449,7 @@ export function SkuPerformanceCard({
       divergencePct: totalCprl  > 0 ? divPct(totalCprl,  cprlTarget) : 0,
       fmt:      (v) => fmtRp(Math.round(v)),
       fmtShort: (v) => mkRpFmt(v),
+      targetFontSize: 12,
     },
     {
       key: `${sku}-cpa`, label: 'CPA CC', color: '#f472b6',
@@ -457,6 +461,18 @@ export function SkuPerformanceCard({
       divergencePct: totalCpaCC > 0 ? divPct(totalCpaCC, cpaTarget)  : 0,
       fmt:      (v) => fmtRp(Math.round(v)),
       fmtShort: (v) => mkRpFmt(v),
+      targetFontSize: 12,
+    },
+    {
+      key: `${sku}-roas`, label: 'Total RoAS', color: '#fbbf24',
+      series: [], higherIsBetter: true, fixedTarget: roasTarget,
+      metricValue:   totalRoas > 0 ? totalRoas.toFixed(2) + '\u00d7' : '\u2014',
+      metricSub:     `Target ${roasTarget}\u00d7`,
+      statusLabel:   totalRoas > 0 ? (totalRoas >= roasTarget ? 'On Target' : totalRoas >= roasTarget * 0.9 ? 'Slightly Below' : 'Off Target') : null,
+      statusGood:    totalRoas >= roasTarget,
+      divergencePct: totalRoas > 0 ? divPct(totalRoas, roasTarget) : 0,
+      fmt:      (v) => v.toFixed(2) + '\u00d7',
+      fmtShort: (v) => v.toFixed(1) + '\u00d7',
     },
   ]
 
@@ -472,7 +488,7 @@ export function SkuPerformanceCard({
       divergencePct: totalCtr  > 0 ? divPct(totalCtr,  globalCtrAvg) : 0,
       fmt:      (v) => fmtPct(v),
       fmtShort: (v) => v.toFixed(1) + '%',
-      targetFontSize: 16,
+      targetFontSize: 18,
     },
     {
       key: `${sku}-lpvo`, label: 'LPVO', color: '#22d3ee',
@@ -484,7 +500,7 @@ export function SkuPerformanceCard({
       divergencePct: totalLpvo > 0 ? divPct(totalLpvo, globalLpvoAvg) : 0,
       fmt:      (v) => fmtPct(v),
       fmtShort: (v) => v.toFixed(1) + '%',
-      targetFontSize: 16,
+      targetFontSize: 18,
     },
     {
       key: `${sku}-vo2l`, label: 'VO2L', color: '#a78bfa',
@@ -496,7 +512,7 @@ export function SkuPerformanceCard({
       divergencePct: totalVo2l > 0 ? divPct(totalVo2l, globalVo2lAvg) : 0,
       fmt:      (v) => fmtPct(v),
       fmtShort: (v) => v.toFixed(1) + '%',
-      targetFontSize: 16,
+      targetFontSize: 18,
     },
   ]
 
@@ -517,12 +533,12 @@ export function SkuPerformanceCard({
         <div style={{ marginBottom: 8, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
             <div style={{ width: 5, height: 5, borderRadius: '50%', background: c.color }} />
-            <span style={{ fontSize: 9, fontWeight: 700, color: c.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{c.label}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: c.color, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>{c.label}</span>
           </div>
           <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>
             {c.metricValue}
           </div>
-          <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.65)', letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.65)', letterSpacing: '0.05em', textTransform: 'uppercase' as const, marginTop: 4 }}>
             {c.metricSub}
           </div>
           {c.statusLabel && (
@@ -530,7 +546,7 @@ export function SkuPerformanceCard({
               display: 'inline-flex', alignItems: 'center', gap: 3,
               marginTop: 5, padding: '2px 6px', borderRadius: 20,
               background: bg, border: `1px solid ${bdr}`,
-              fontSize: 9, fontWeight: 700, color: clr, whiteSpace: 'nowrap',
+              fontSize: 10, fontWeight: 700, color: clr, whiteSpace: 'nowrap' as const,
             }}>
               {isGood ? '\u2191' : '\u2193'} {c.statusLabel} &middot; {c.divergencePct.toFixed(1)}%
             </div>
@@ -557,35 +573,330 @@ export function SkuPerformanceCard({
       display: 'flex', flexDirection: 'column',
     }}>
 
-      {/* \u2500\u2500 TOP ROW: Image | CPRL | CPA CC \u2500\u2500 */}
-      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch' }}>
+      {/* ── MAIN ROW: Image | Right content ── */}
+      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 0 }}>
 
         {/* Image + product identity */}
         <div style={{
-          flex: '0 0 130px', display: 'flex', flexDirection: 'column',
+          flex: '0 0 120px', display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-          paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 16,
+          paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 18,
         }}>
           {imageSrc
-            ? <img src={imageSrc} alt={productName ?? label} style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 12, marginBottom: 10 }} />
-            : <div style={{ width: '100%', aspectRatio: '1/1', borderRadius: 12, marginBottom: 10, background: `${skuColor}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: 22, fontWeight: 800, color: skuColor }}>{label}</span>
+            ? <img src={imageSrc} alt={productName ?? label} style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, marginBottom: 8 }} />
+            : <div style={{ width: '100%', aspectRatio: '1/1', borderRadius: 10, marginBottom: 8, background: `${skuColor}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 20, fontWeight: 800, color: skuColor }}>{label}</span>
               </div>
           }
           {productName && (
-            <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 3 }}>{productName}</div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 3 }}>{productName}</div>
           )}
-          <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.07em' }}>{label}</div>
+          <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.07em' }}>{label}</div>
         </div>
 
-        {/* CPRL + CPA CC side by side */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minWidth: 0 }}>
-          {topCharts.map((c, i) => <ChartCol key={c.key} c={c} borderLeft={i > 0} />)}
-        </div>
+        {/* Right content */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      </div>
+          {/* Ad Spend Health + Daily Budget */}
+          {skuSpend > 0 && (() => {
+            const rawPct = skuPeriodBudget > 0 ? (skuSpend / skuPeriodBudget) * 100 : 0
+            const barPct = Math.min(rawPct, 100)
+            const spColor = rawPct === 0  ? '#818cf8'
+              : rawPct >  115 ? '#f87171'
+              : rawPct >= 105 ? '#fbbf24'
+              : rawPct >=  95 ? '#34d399'
+              : rawPct >=  85 ? '#fbbf24'
+              :                 '#f87171'
+            const spLabel = rawPct === 0  ? 'No Data'
+              : rawPct >  115 ? '🔴 Over Budget'
+              : rawPct >= 105 ? '🟡 Slightly Over'
+              : rawPct >=  95 ? '🟢 On Track'
+              : rawPct >=  85 ? '🟡 Slightly Under'
+              :                 '🔴 Far Behind'
+            const delta    = skuDailyBudget > 0 ? skuDailyBudget - skuTargetDailyBudget : 0
+            const deltaPct = skuTargetDailyBudget > 0 ? (delta / skuTargetDailyBudget) * 100 : null
+            return (
+              <div style={{ display: 'flex', flexDirection: 'row', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' as const }}>
+                {/* Ad Spend Health */}
+                <div style={{ flex: '1 1 auto' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                    Ad Spend Health
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, marginBottom: 4 }}>
+                    {fmtRp(Math.round(skuSpend))}
+                  </div>
+                  {skuPeriodBudget > 0 && (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em', textTransform: 'uppercase' as const, marginBottom: 5 }}>
+                        Target {fmtRp(Math.round(skuPeriodBudget))}
+                      </div>
+                      <div style={{ height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 3, marginBottom: 6 }}>
+                        <div style={{ height: '100%', width: `${barPct}%`, background: spColor, borderRadius: 3, transition: 'width 0.5s ease' }} />
+                      </div>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                        background: `${spColor}15`, border: `1px solid ${spColor}30`,
+                        borderRadius: 5, padding: '2px 6px' }}>
+                        <div style={{ width: 4, height: 4, borderRadius: '50%', background: spColor }} />
+                        <span style={{ fontSize: 11, fontWeight: 700, color: spColor }}>{spLabel}</span>
+                        <span style={{ fontSize: 11, color: spColor, opacity: 0.8 }}>{rawPct.toFixed(1)}%</span>
+                      </div>
+                    </>
+                  )}
+                </div>
 
-      {/* \u2500\u2500 COLLAPSIBLE TOGGLE \u2500\u2500 */}
+                {/* Daily Budget Config */}
+                {skuDailyBudget > 0 && (
+                  <div style={{ flex: '1 1 auto' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                      Daily Budget
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 3 }}>
+                      <span style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff' }}>
+                        {fmtRp(Math.round(skuDailyBudget))}
+                      </span>
+                      {skuTargetDailyBudget > 0 && (
+                        <>
+                          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>/</span>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>
+                            {fmtRp(Math.round(skuTargetDailyBudget))}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    {deltaPct !== null && (() => {
+                      const absDelta = Math.abs(deltaPct)
+                      const dClr = absDelta <= 5 ? '#34d399' : absDelta <= 10 ? '#fbbf24' : '#f87171'
+                      return (
+                        <div style={{ fontSize: 11, fontWeight: 600, color: dClr }}>
+                          {delta < 0 ? '▼' : '▲'} {absDelta.toFixed(1)}% {delta < 0 ? 'below' : 'above'} target
+                        </div>
+                      )
+                    })()}
+                    {budgetDate && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>as of {budgetDate}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* 3 Metric columns: CPRL | CPA CC | Total RoAS */}
+          <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
+            {topCharts.map((c, idx) => {
+              const vals = c.series.map(p => p.value).filter(v => v > 0)
+              const n = vals.length
+              let slopeRaw = 0
+              if (n >= 3) {
+                const mX  = (n - 1) / 2
+                const avg = vals.reduce((s, v) => s + v, 0) / n
+                slopeRaw = vals.reduce((s, v, i) => s + (i - mX) * (v - avg), 0) /
+                           vals.reduce((s, _, i) => s + (i - mX) ** 2, 1)
+              }
+              const target = c.fixedTarget || 1
+              const slopePctPerDay = c.higherIsBetter
+                ? (slopeRaw / target) * 100
+                : -(slopeRaw / target) * 100
+              const isGood     = c.statusGood
+              const isWarn     = !isGood && c.divergencePct <= 10
+              const clr        = isGood ? '#34d399' : isWarn ? '#fbbf24' : '#f87171'
+              const bg         = isGood ? 'rgba(52,211,153,0.10)' : isWarn ? 'rgba(251,191,36,0.10)' : 'rgba(248,113,113,0.10)'
+              const bdr        = isGood ? 'rgba(52,211,153,0.25)' : isWarn ? 'rgba(251,191,36,0.25)' : 'rgba(248,113,113,0.25)'
+              const trendGood  = slopePctPerDay > 0
+              const trendClr   = trendGood ? '#34d399' : '#f87171'
+              const strengthLabel = Math.abs(slopePctPerDay) > 3 ? 'Strong'
+                                  : Math.abs(slopePctPerDay) > 0.5 ? 'Weak'
+                                  : 'Flat'
+              return (
+                <div key={c.key} style={{
+                  flex: 1, display: 'flex', flexDirection: 'column', gap: 4,
+                  paddingLeft: idx > 0 ? 14 : 0,
+                  borderLeft: idx > 0 ? '1px solid rgba(255,255,255,0.07)' : 'none',
+                  marginLeft: idx > 0 ? 14 : 0,
+                }}>
+                  {/* Metric label */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: c.color }} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: c.color, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>{c.label}</span>
+                  </div>
+                  {/* Value */}
+                  <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
+                    {c.metricValue}
+                  </div>
+                  {/* On/Off Target badge with off-target % */}
+                  {c.statusLabel && (
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 3,
+                      padding: '2px 6px', borderRadius: 20,
+                      background: bg, border: `1px solid ${bdr}`,
+                      fontSize: 10, fontWeight: 700, color: clr, width: 'fit-content',
+                    }}>
+                      {isGood ? '●' : '○'} {c.statusLabel}{c.divergencePct > 0 ? ` · ${c.divergencePct.toFixed(0)}%` : ''}
+                    </div>
+                  )}
+                  {/* Trend flag with strength */}
+                  {n >= 3 && (
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 3,
+                      padding: '2px 6px', borderRadius: 20,
+                      background: `${trendClr}10`, border: `1px solid ${trendClr}25`,
+                      fontSize: 10, fontWeight: 700, color: trendClr, width: 'fit-content',
+                    }}>
+                      {slopeRaw > 0 ? '↗' : '↘'} {strengthLabel} {Math.abs(slopePctPerDay).toFixed(1)}%/d
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+          </div>
+
+          {/* Scale-Up Readiness */}
+          {(() => {
+            // Require at least 14 days of data for meaningful readiness signal
+            const cprlDataPoints = topCharts[0].series.filter(p => p.value > 0).length
+            if (cprlDataPoints < 14) {
+              const daysLeft = 14 - cprlDataPoints
+              return (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '7px 11px', borderRadius: 9,
+                  background: 'rgba(129,140,248,0.10)', border: '1px solid rgba(129,140,248,0.25)',
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#818cf8', letterSpacing: '-0.02em' }}>📊 Not Enough Data</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(129,140,248,0.75)', letterSpacing: '0.03em', textTransform: 'uppercase' as const, marginTop: 1, lineHeight: 1.4 }}>
+                      Minimum 14 days of available data needed for this feature
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#818cf8', opacity: 0.5 }}>{cprlDataPoints}/14</div>
+                </div>
+              )
+            }
+            // Compute rich scores: onTarget, offPct, convergence strength
+            const labels = ['CPRL', 'CPA CC', 'RoAS'] as const
+            const scores = topCharts.map((c, idx) => {
+              const vals = c.series.map(p => p.value).filter(v => v > 0)
+              const n = vals.length
+              let slopeRaw = 0
+              if (n >= 3) {
+                const mX  = (n - 1) / 2
+                const avg = vals.reduce((s, v) => s + v, 0) / n
+                slopeRaw = vals.reduce((s, v, i) => s + (i - mX) * (v - avg), 0) /
+                           vals.reduce((s, _, i) => s + (i - mX) ** 2, 1)
+              }
+              // Normalize slope: % of target per day (positive = moving toward target)
+              const target = c.fixedTarget || 1
+              const slopePctPerDay = c.higherIsBetter
+                ? (slopeRaw / target) * 100        // higher is better: positive slope = converging
+                : -(slopeRaw / target) * 100        // lower is better:  negative slope = converging
+              // Off-target %: positive = bad (above target for cost, below for RoAS)
+              const offPct = c.divergencePct
+              const onTarget = c.statusGood
+              // Convergence tiers
+              const convStrength = slopePctPerDay > 3 ? 'strong' as const
+                                 : slopePctPerDay > 0.5 ? 'weak' as const
+                                 : slopePctPerDay > -0.5 ? 'flat' as const
+                                 : 'diverging' as const
+              return { label: labels[idx], onTarget, offPct, slopePctPerDay, convStrength, hasTrend: n >= 3 }
+            })
+
+            const cprl  = scores[0]
+            const cpaCC = scores[1]
+            const roas  = scores[2]
+
+            // Build detail flags shown on the sublabel
+            const cprlOff  = cprl.onTarget ? '' : `CPRL +${cprl.offPct.toFixed(0)}% off`
+            const cprlConv = cprl.hasTrend
+              ? `${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/d ${cprl.slopePctPerDay >= 0 ? '↘' : '↗'}`
+              : ''
+
+            let rLabel: string, sublabel: string, color: string, glow: string
+
+            if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && cpaCC.onTarget && roas.onTarget) {
+              rLabel = '🚀 Scale Up Budget'
+              const strength = cprl.convStrength === 'strong' ? 'strong convergence' : 'steady'
+              sublabel = `CPRL on target (${strength}) · CPA CC healthy · RoAS on target`
+              color = '#34d399'; glow = 'rgba(52,211,153,0.15)'
+
+            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && cpaCC.onTarget && !roas.onTarget) {
+              rLabel = '⚡ Hold — RoAS Catching Up'
+              const cprlStr = cprl.convStrength === 'strong' ? 'strong' : 'steady'
+              sublabel = `CPRL ${cprlStr} · RoAS ${roas.offPct.toFixed(0)}% below — sales channels need to close`
+              color = '#fbbf24'; glow = 'rgba(251,191,36,0.12)'
+
+            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && !cpaCC.onTarget) {
+              rLabel = '⚡ Hold — CPA CC High'
+              const cprlStr = cprl.convStrength === 'strong' ? 'strong' : 'steady'
+              sublabel = `CPRL ${cprlStr} · CPA CC +${cpaCC.offPct.toFixed(0)}% off — lead quality or CCOM closing issue`
+              color = '#fbbf24'; glow = 'rgba(251,191,36,0.12)'
+
+            } else if (cprl.onTarget && (cprl.convStrength === 'flat' || cprl.convStrength === 'diverging')) {
+              const drift = cprl.convStrength === 'diverging'
+                ? `diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day`
+                : 'trend is flat'
+              rLabel = '⚠️ Caution — CPRL Drifting'
+              sublabel = `On target but ${drift} — don't scale yet`
+              color = '#fb923c'; glow = 'rgba(251,146,60,0.12)'
+
+            } else if (!cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak')) {
+              const speed = cprl.convStrength === 'strong'
+                ? `recovering fast (${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day)`
+                : `recovering slowly (${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day)`
+              rLabel = cprl.convStrength === 'strong' ? '⚠️ Recovering — Almost There' : '⚠️ Recovering — Slowly'
+              sublabel = `CPRL +${cprl.offPct.toFixed(0)}% off but ${speed} — hold budget`
+              color = '#fb923c'; glow = 'rgba(251,146,60,0.12)'
+
+            } else if (!cprl.onTarget && cprl.convStrength === 'flat') {
+              rLabel = '🔧 Stalled — CPRL Stuck'
+              sublabel = `CPRL +${cprl.offPct.toFixed(0)}% off with no improvement — review creatives`
+              color = '#f87171'; glow = 'rgba(248,113,113,0.12)'
+
+            } else {
+              // CPRL off target and diverging
+              rLabel = '🔧 Optimize Ads First'
+              sublabel = `CPRL +${cprl.offPct.toFixed(0)}% off & diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day — fix creatives before scaling`
+              color = '#f87171'; glow = 'rgba(248,113,113,0.12)'
+            }
+
+            // Dot color based on convergence strength
+            const dotColor = (s: typeof scores[0]) =>
+              s.onTarget && (s.convStrength === 'strong' || s.convStrength === 'weak') ? '#34d399'
+              : s.onTarget && s.convStrength === 'flat' ? '#a3e635'
+              : s.onTarget && s.convStrength === 'diverging' ? '#fbbf24'
+              : !s.onTarget && (s.convStrength === 'strong') ? '#fbbf24'
+              : !s.onTarget && (s.convStrength === 'weak') ? '#fb923c'
+              : '#f87171'
+
+            return (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '7px 11px', borderRadius: 9,
+                background: glow, border: `1px solid ${color}30`,
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color, letterSpacing: '-0.02em' }}>{rLabel}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: `${color}90`, letterSpacing: '0.03em', textTransform: 'uppercase' as const, marginTop: 1, lineHeight: 1.4 }}>{sublabel}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {scores.map((s, i) => (
+                    <div key={i} title={`${s.label}: ${s.onTarget ? 'On Target' : `+${s.offPct.toFixed(0)}% off`} · ${s.convStrength}`} style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: dotColor(s),
+                      border: s.convStrength === 'strong' ? `1.5px solid ${dotColor(s)}` : '1px solid rgba(255,255,255,0.1)',
+                    }} />
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+
+
+
+        </div> {/* right content */}
+      </div> {/* main row */}
+
+      {/* ── COLLAPSIBLE TOGGLE ── */}
       <button
         onClick={() => setOpen(o => !o)}
         style={{
@@ -595,7 +906,7 @@ export function SkuPerformanceCard({
         }}
       >
         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.48)', textTransform: 'uppercase' }}>
-          {open ? 'Hide details' : 'CTR \u00b7 LPVO \u00b7 VO2L \u00b7 Campaigns'}
+          {open ? 'Hide details' : 'CTR · LPVO · VO2L · Campaigns'}
         </span>
         <svg
           width="12" height="12" viewBox="0 0 24 24"
@@ -611,99 +922,23 @@ export function SkuPerformanceCard({
         </svg>
       </button>
 
-      {/* \u2500\u2500 COLLAPSIBLE BODY: CTR | LPVO | VO2L + Table \u2500\u2500 */}
+      {/* ── COLLAPSIBLE BODY ── */}
       <div style={{ overflow: 'hidden', maxHeight: open ? '3000px' : '0', transition: 'max-height 0.3s ease' }}>
 
-        {/* ── AD SPEND HEALTH (per SKU) ── */}
-        {skuSpend > 0 && (() => {
-          const pct   = skuPeriodBudget > 0 ? Math.min((skuSpend / skuPeriodBudget) * 100, 100) : 0
-          const color = pct === 0    ? '#818cf8'
-            : pct >  115  ? '#f87171'
-            : pct >= 105  ? '#fbbf24'
-            : pct >=  95  ? '#34d399'
-            : pct >=  85  ? '#fbbf24'
-            :                '#f87171'
-          const statusLabel = pct === 0    ? 'No Data'
-            : pct >  115  ? '🔴 Over Budget'
-            : pct >= 105  ? '🟡 Slightly Over'
-            : pct >=  95  ? '🟢 On Track'
-            : pct >=  85  ? '🟡 Slightly Under'
-            :                '🔴 Far Behind'
-          return (
-            <div style={{ paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {/* Section label */}
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', marginBottom: 8 }}>
-                Ad Spend Health
-              </div>
+        {/* CPRL + CPA CC charts */}
+        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch',
+          paddingTop: 14, marginTop: 14,
+          borderTop: '1px solid rgba(255,255,255,0.09)',
+        }}>
+          {topCharts.filter(c => c.series.length > 0).map((c, i) => <ChartCol key={c.key} c={c} borderLeft={i > 0} />)}
+        </div>
 
-              {/* Spend headline */}
-              <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, marginBottom: 4 }}>
-                {fmtRp(Math.round(skuSpend))}
-              </div>
-
-              {/* Target sub + progress bar */}
-              {skuPeriodBudget > 0 && (
-                <>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8 }}>
-                    Target {fmtRp(Math.round(skuPeriodBudget))}
-                  </div>
-                  <div style={{ height: 5, background: 'rgba(255,255,255,0.1)', borderRadius: 4, marginBottom: 7 }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 4, transition: 'width 0.5s ease' }} />
-                  </div>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-                    background: `${color}15`, border: `1px solid ${color}30`,
-                    borderRadius: 5, padding: '3px 7px', width: 'fit-content' }}>
-                    <div style={{ width: 4, height: 4, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 9, fontWeight: 700, color }}>{statusLabel}</span>
-                    <span style={{ fontSize: 9, color, opacity: 0.85 }}>{pct.toFixed(1)}%</span>
-                  </div>
-                </>
-              )}
-
-              {/* Daily budget config */}
-              {skuDailyBudget > 0 && (() => {
-                const delta    = skuDailyBudget - skuTargetDailyBudget
-                const deltaPct = skuTargetDailyBudget > 0 ? (delta / skuTargetDailyBudget) * 100 : null
-                return (
-                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.09)' }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', marginBottom: 6 }}>
-                      Daily Budget Config / Target
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 4 }}>
-                      <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>
-                        {fmtRp(Math.round(skuDailyBudget))}
-                      </span>
-                      {skuTargetDailyBudget > 0 && (
-                        <>
-                          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>/</span>
-                          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em', color: 'rgba(255,255,255,0.75)' }}>
-                            {fmtRp(Math.round(skuTargetDailyBudget))}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    {deltaPct !== null && (
-                      <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 4,
-                        color: delta < 0 ? '#f87171' : '#34d399' }}>
-                        {delta < 0 ? '▼' : '▲'} {fmtRp(Math.abs(Math.round(delta)))} ({Math.abs(deltaPct).toFixed(1)}%) {delta < 0 ? 'below target' : 'above target'}
-                      </div>
-                    )}
-                    {budgetDate && (
-                      <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                        as of {budgetDate}
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-            </div>
-          )
-        })()}
+        {/* ── AD SPEND HEALTH moved to main card ── */}
 
         {/* CTR + LPVO + VO2L row */}
         <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch',
-          paddingTop: 14, marginTop: skuSpend > 0 ? 14 : 0,
-          borderTop: skuSpend > 0 ? '1px solid rgba(255,255,255,0.09)' : 'none',
+          paddingTop: 14, marginTop: 14,
+          borderTop: '1px solid rgba(255,255,255,0.09)',
         }}>
           {detailCharts.map((c, i) => <ChartCol key={c.key} c={c} borderLeft={i > 0} />)}
         </div>
@@ -711,7 +946,7 @@ export function SkuPerformanceCard({
         {/* Campaign evaluator */}
         {from && to && (
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', marginBottom: 2 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.01em', color: 'rgba(255,255,255,0.90)', marginBottom: 2 }}>
               Campaign Evaluator · Meta Ads
             </div>
             <CampaignEvaluator from={from} to={to} sku={sku} cprlTarget={cprlTarget} cpaTarget={cpaTarget} />
