@@ -4,12 +4,12 @@
  *   Left:  Total Sales Revenue headline + Total RoAS sub-headline + SKU breakdown bars
  *   Right: 7-Day MA sparkline chart
  */
-
-const fmtRp = (n: number) =>
-  n >= 1_000_000_000 ? 'Rp ' + (n / 1_000_000_000).toFixed(2) + 'B'
-  : n >= 1_000_000   ? 'Rp ' + (n / 1_000_000).toFixed(1) + 'M'
-  : n >= 1_000       ? 'Rp ' + (n / 1_000).toFixed(0) + 'K'
-  : 'Rp ' + Math.round(n).toLocaleString('id-ID')
+import { useRef, useState } from 'react'
+import { ChangelogModal } from '../ChangelogModal'
+import { ChangelogTooltip } from '../ChangelogTooltip'
+import type { ChangelogRow } from '../../types/changelog'
+import { fmtRpM as fmtRp } from '../../utils/format'
+import { SKU_COLORS } from '../../utils/skuColors'
 
 const fmtFull = (n: number) =>
   'Rp ' + Math.round(n).toLocaleString('id-ID')
@@ -37,13 +37,6 @@ const ROAS_TARGET = 6.59
 interface RoasPoint { date: string; value: number }
 export interface SkuRoasRow { sku: string; revenue: number; spend: number; roas: number }
 
-const SKU_COLORS: Record<string, string> = {
-  MTA: '#fdba74',  // light orange
-  MSF: '#f97316',  // orange
-  M3P: '#34d399',  // green
-  MNS: '#60a5fa',  // blue
-}
-
 export interface TotalRoasCardProps {
   totalSalesRevenue: number
   totalAdSpend:      number
@@ -52,12 +45,7 @@ export interface TotalRoasCardProps {
   changelog?:        ChangelogRow[]
 }
 
-/* ── 7-Day MA Chart with tooltip + changelog ─────────────────────────────── */
-import { useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { ChangelogModal } from '../ChangelogModal'
-
-export interface ChangelogRow { date: string; brand: string; sku: string; platform: string; title: string; changelist: string | null }
+export type { ChangelogRow }
 
 function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: ChangelogRow[] }) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; p: RoasPoint } | null>(null)
@@ -197,44 +185,7 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
         </div>
       )}
 
-      {/* Changelog portal tooltip */}
-      {clTooltip && createPortal(
-        <div style={{
-          position: 'fixed',
-          top: (() => { const h = 140; let t = clTooltip.y + 18; if (t + h > window.innerHeight - 8) t = clTooltip.y - h - 8; return Math.max(8, t) })(),
-          left: Math.max(8, Math.min(clTooltip.x + 14, window.innerWidth - 280)),
-          zIndex: 9999,
-          background: 'rgba(10,11,15,0.97)',
-          border: '1px solid rgba(251,191,36,0.45)',
-          borderRadius: 10,
-          padding: '10px 14px',
-          maxWidth: 280, maxHeight: 400, overflowY: 'auto' as const,
-          pointerEvents: 'none',
-          backdropFilter: 'blur(16px)',
-          fontFamily: 'Inter, system-ui, sans-serif',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(251,191,36,0.1)',
-        }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: '#fbbf24', textTransform: 'uppercase', marginBottom: 5 }}>
-            Changelog · {clTooltip.entries[0].date}
-            {clTooltip.entries.length > 1 ? ` · ${clTooltip.entries.length} entries` : ''}
-          </div>
-          {clTooltip.entries.map((entry, idx) => (
-            <div key={idx}>
-              {idx > 0 && <div style={{ borderTop: '1px solid rgba(251,191,36,0.20)', margin: '8px 0' }} />}
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 4, lineHeight: 1.3 }}>
-                {entry.title}
-              </div>
-              {entry.changelist && (
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
-                  {entry.changelist}
-                </div>
-              )}
-            </div>
-          ))}
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', marginTop: 6, textAlign: 'center' }}>Click for full details</div>
-        </div>,
-        document.body
-      )}
+      {clTooltip && <ChangelogTooltip x={clTooltip.x} y={clTooltip.y} entries={clTooltip.entries} />}
     </div>
 
     {modalEntries && <ChangelogModal entries={modalEntries} onClose={() => setModalEntries(null)} />}

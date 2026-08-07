@@ -4,14 +4,7 @@
  * and a 7-day MA sparkline chart.
  */
 
-const fmtRp = (n: number) =>
-  n >= 1_000_000_000 ? 'Rp ' + (n / 1_000_000_000).toFixed(2) + 'B'
-  : n >= 1_000_000   ? 'Rp ' + (n / 1_000_000).toFixed(1) + 'M'
-  : n >= 1_000       ? 'Rp ' + (n / 1_000).toFixed(0) + 'K'
-  : 'Rp ' + Math.round(n).toLocaleString('id-ID')
-
-const fmtFull = (n: number) =>
-  'Rp ' + Math.round(n).toLocaleString('id-ID')
+import { fmtRp as fmtFull, fmtRpM as fmtRp } from '../../utils/format'
 
 const T = {
   label: {

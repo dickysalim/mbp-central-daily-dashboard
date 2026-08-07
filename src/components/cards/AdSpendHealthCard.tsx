@@ -3,13 +3,8 @@
  * Unified design system with TotalRoasCard
  * Structure: Card Title → [Left: metrics | Right: breakdown]
  */
-const fmtFull = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID')
-const fmtIDR  = (n: number) => {
-  if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)}B`
-  if (n >= 1_000_000)     return `Rp ${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)         return `Rp ${(n / 1_000).toFixed(0)}K`
-  return fmtFull(n)
-}
+import { fmtRp as fmtFull, fmtRpM as fmtIDR } from '../../utils/format'
+import { SKU_COLORS } from '../../utils/skuColors'
 
 export interface SkuSpendRow { sku: string; spend: number; target: number }
 
@@ -20,13 +15,6 @@ export interface AdSpendHealthCardProps {
   campaignBudgetTotal: number
   budgetDate?: string
   skuSpend?: SkuSpendRow[]
-}
-
-const SKU_COLORS: Record<string, string> = {
-  MTA: '#fdba74',
-  MSF: '#f97316',
-  M3P: '#34d399',
-  MNS: '#60a5fa',
 }
 
 /* ── Shared design tokens (identical to TotalRoasCard) ─────────────────────── */
