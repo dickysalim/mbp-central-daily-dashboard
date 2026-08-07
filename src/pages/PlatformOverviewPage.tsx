@@ -9,6 +9,9 @@ import { useQuery } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import { dateStr, capToH2, PRESETS } from './ProductPerformancePage'
 import { SkuPerformanceCard } from '../components/cards/SkuPerformanceCard'
+import metaAdsImg   from '../assets/ads_platform_images/Meta Ads.webp'
+import googleAdsImg from '../assets/ads_platform_images/Google Ads.webp'
+import searchAdsImg from '../assets/ads_platform_images/Google Search Ads.webp'
 
 // ── Types (same as SandboxPage) ────────────────────────────────────────────
 interface AdPerfRow    { date: string; traffic_source: string; ads_platform_campaign_id: string; sku: string; ad_spend: number; impressions: number; link_click: number }
@@ -33,9 +36,9 @@ interface PlatAggRow {
 
 // Platform config
 const PLATFORMS = [
-  { id: 'META', label: 'Meta Ads',       color: '#60a5fa' },
-  { id: 'DGEN', label: 'DGen / Dable',   color: '#34d399' },
-  { id: 'SRCH', label: 'Search Ads',     color: '#fbbf24' },
+  { id: 'META', label: 'Meta Ads',          color: '#60a5fa', imageSrc: metaAdsImg },
+  { id: 'DGEN', label: 'Demand Gen',        color: '#34d399', imageSrc: googleAdsImg },
+  { id: 'SRCH', label: 'Google Search Ads', color: '#fbbf24', imageSrc: searchAdsImg },
 ] as const
 
 export function PlatformOverviewPage() {
@@ -374,7 +377,7 @@ export function PlatformOverviewPage() {
       {/* ── Platform Cards ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%' }}>
         <div style={{ display: 'grid', gridTemplateColumns: activePlatforms.length >= 2 ? 'repeat(2, 1fr)' : '1fr', gap: 40 }}>
-          {activePlatforms.map(({ id, label, color }) => {
+          {activePlatforms.map(({ id, label, color, imageSrc }) => {
             const d = allPlatformData[id]
             if (!d) return null
             return (
@@ -384,6 +387,7 @@ export function PlatformOverviewPage() {
                 skuLabel={id}
                 productName={label}
                 skuColor={color}
+                imageSrc={imageSrc}
                 from={activeFrom}
                 to={activeTo}
                 totalCtr={d.totals.ctr}
