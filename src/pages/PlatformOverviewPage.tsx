@@ -376,6 +376,9 @@ export function PlatformOverviewPage() {
 
       {/* ── Platform Cards ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%' }}>
+        {(() => {
+          const totalSpendAllPlatforms = activePlatforms.reduce((sum, { id }) => sum + (allPlatformData[id]?.totalSpend ?? 0), 0)
+          return (
         <div style={{ display: 'grid', gridTemplateColumns: activePlatforms.length >= 2 ? 'repeat(2, 1fr)' : '1fr', gap: 40 }}>
           {activePlatforms.map(({ id, label, color, imageSrc }) => {
             const d = allPlatformData[id]
@@ -407,6 +410,7 @@ export function PlatformOverviewPage() {
                 cpaTarget={2_000_000}
                 changelog={filteredChangelog}
                 skuSpend={d.totalSpend}
+                totalAllPlatformsSpend={totalSpendAllPlatforms}
                 totalRoas={d.totals.ccRoas}
                 roasTarget={6.59}
                 roasLabel="CC RoAS"
@@ -414,6 +418,8 @@ export function PlatformOverviewPage() {
             )
           })}
         </div>
+          )
+        })()}
       </div>
 
     </div>

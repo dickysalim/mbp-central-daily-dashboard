@@ -63,6 +63,7 @@ export interface SkuPerformanceCardProps {
   skuDailyBudget?:       number
   skuTargetDailyBudget?: number
   budgetDate?:           string
+  totalAllPlatformsSpend?: number  // When set, shows spend share % instead of budget bar
 
   // RoAS
   totalRoas?:   number
@@ -392,6 +393,7 @@ export function SkuPerformanceCard({
   skuDailyBudget       = 0,
   skuTargetDailyBudget = 0,
   budgetDate,
+  totalAllPlatformsSpend,
   totalRoas   = 0,
   roasTarget  = 6.59,
   roasLabel   = 'Total RoAS',
@@ -629,6 +631,26 @@ export function SkuPerformanceCard({
                       </div>
                     </>
                   )}
+                  {!skuPeriodBudget && totalAllPlatformsSpend != null && totalAllPlatformsSpend > 0 && (() => {
+                    const sharePct = (skuSpend / totalAllPlatformsSpend) * 100
+                    return (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.05em', textTransform: 'uppercase' as const, marginBottom: 5 }}>
+                          of {fmtRp(Math.round(totalAllPlatformsSpend))} total
+                        </div>
+                        <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 3, marginBottom: 6 }}>
+                          <div style={{ height: '100%', width: `${sharePct}%`, background: skuColor, borderRadius: 3, transition: 'width 0.5s ease' }} />
+                        </div>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                          background: `${skuColor}15`, border: `1px solid ${skuColor}30`,
+                          borderRadius: 5, padding: '2px 6px' }}>
+                          <div style={{ width: 4, height: 4, borderRadius: '50%', background: skuColor }} />
+                          <span style={{ fontSize: 11, fontWeight: 700, color: skuColor }}>{sharePct.toFixed(1)}%</span>
+                          <span style={{ fontSize: 11, color: skuColor, opacity: 0.8 }}>of total spend</span>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
 
                 {/* Daily Budget Config */}
