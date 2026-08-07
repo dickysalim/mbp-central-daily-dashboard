@@ -1,5 +1,5 @@
 /**
- * SandboxPage — Design laboratory
+ * ConsumerGoodsDashboard — Consumer Goods Dashboard
  */
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -45,7 +45,7 @@ interface AggRow {
 }
 export interface CprlPoint { date: string; value: number }
 
-export function SandboxPage() {
+export function ConsumerGoodsDashboard() {
   // ── Brand + date state ──
   const { data: brandBounds } = useQuery({
     queryKey: ['date-bounds'],

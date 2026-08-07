@@ -13,7 +13,7 @@ import metaAdsImg   from '../assets/ads_platform_images/Meta Ads.webp'
 import googleAdsImg from '../assets/ads_platform_images/Google Ads.webp'
 import searchAdsImg from '../assets/ads_platform_images/Google Search Ads.webp'
 
-// ── Types (same as SandboxPage) ────────────────────────────────────────────
+// ── Types (same as ConsumerGoodsDashboard) ────────────────────────────────────────────
 interface AdPerfRow    { date: string; traffic_source: string; ads_platform_campaign_id: string; sku: string; ad_spend: number; impressions: number; link_click: number }
 interface Ga4Row       { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }
 interface ConvRow      { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number; mongo_purchase_ccom: number; mongo_purchase_ccom_revenue: number }
@@ -166,7 +166,7 @@ export function PlatformOverviewPage() {
 
   const filteredChangelog = useMemo(() => cgData?.changelog ?? [], [cgData])
 
-  // ── Per-platform computed metrics (same shape as allSkuData in SandboxPage) ──
+  // ── Per-platform computed metrics (same shape as allSkuData in ConsumerGoodsDashboard) ──
   const allPlatformData = useMemo(() => {
     type Point = { date: string; value: number }
     type PlatOut = {
