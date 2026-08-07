@@ -406,6 +406,7 @@ export function PlatformOverviewPage() {
                 cprlTarget={150_000}
                 cpaTarget={2_000_000}
                 changelog={filteredChangelog}
+                skuSpend={d.totalSpend}
                 totalRoas={d.totals.ccRoas}
                 roasTarget={6.59}
                 roasLabel="CC RoAS"
