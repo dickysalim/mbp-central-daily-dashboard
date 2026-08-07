@@ -611,7 +611,7 @@ export function SkuPerformanceCard({
                   <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase' as const, marginBottom: 4 }}>
                     Ad Spend Health
                   </div>
-                  <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, marginBottom: 4 }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, marginBottom: 10 }}>
                     {fmtRp(Math.round(skuSpend))}
                   </div>
                   {skuPeriodBudget > 0 && (
@@ -672,7 +672,20 @@ export function SkuPerformanceCard({
                         </>
                       )}
                     </div>
-                    {deltaPct !== null && (() => {
+                    {totalAllPlatformsSpend != null && skuTargetDailyBudget > 0 ? (() => {
+                      // Platform context: show share of total daily budget
+                      const sharePct = (skuDailyBudget / skuTargetDailyBudget) * 100
+                      return (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                          background: `${skuColor}15`, border: `1px solid ${skuColor}30`,
+                          borderRadius: 5, padding: '2px 6px' }}>
+                          <div style={{ width: 4, height: 4, borderRadius: '50%', background: skuColor }} />
+                          <span style={{ fontSize: 11, fontWeight: 700, color: skuColor }}>{sharePct.toFixed(1)}%</span>
+                          <span style={{ fontSize: 11, color: skuColor, opacity: 0.8 }}>of total</span>
+                        </div>
+                      )
+                    })() : deltaPct !== null && (() => {
+                      // SKU context: show above/below target
                       const absDelta = Math.abs(deltaPct)
                       const dClr = absDelta <= 5 ? '#34d399' : absDelta <= 10 ? '#fbbf24' : '#f87171'
                       return (

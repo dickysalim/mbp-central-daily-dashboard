@@ -18,8 +18,9 @@ interface AdPerfRow    { date: string; traffic_source: string; ads_platform_camp
 interface Ga4Row       { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }
 interface ConvRow      { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number; mongo_purchase_ccom: number; mongo_purchase_ccom_revenue: number }
 interface BrandBounds  { brand: string; earliest: string; latest: string; skus: string[] }
+interface CampaignBudgetRow { date: string; traffic_source: string; campaign_name: string; sku: string; daily_budget: number }
 interface ConsumerGoodsData {
-  performance: AdPerfRow[]; campaign_budgets: unknown[]; targets: unknown[]
+  performance: AdPerfRow[]; campaign_budgets: CampaignBudgetRow[]; targets: unknown[]
   ga4: Ga4Row[]; conversions: ConvRow[]
   changelog: { date: string; brand: string; sku: string; platform: string; title: string; changelist: string | null }[]
   campaign_dimension: unknown[]; sales: unknown[]
@@ -378,6 +379,16 @@ export function PlatformOverviewPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%' }}>
         {(() => {
           const totalSpendAllPlatforms = activePlatforms.reduce((sum, { id }) => sum + (allPlatformData[id]?.totalSpend ?? 0), 0)
+
+          // Per-platform daily budgets (sum of active campaign budgets per traffic_source)
+          const budgets = cgData?.campaign_budgets ?? []
+          const platformBudgets: Record<string, number> = {}
+          for (const b of budgets) {
+            const ts = (b.traffic_source ?? '').toUpperCase()
+            platformBudgets[ts] = (platformBudgets[ts] ?? 0) + (b.daily_budget ?? 0)
+          }
+          const totalDailyBudget = Object.values(platformBudgets).reduce((s, v) => s + v, 0)
+
           return (
         <div style={{ display: 'grid', gridTemplateColumns: activePlatforms.length >= 2 ? 'repeat(2, 1fr)' : '1fr', gap: 40 }}>
           {activePlatforms.map(({ id, label, color, imageSrc }) => {
@@ -411,6 +422,8 @@ export function PlatformOverviewPage() {
                 changelog={filteredChangelog}
                 skuSpend={d.totalSpend}
                 totalAllPlatformsSpend={totalSpendAllPlatforms}
+                skuDailyBudget={platformBudgets[id] ?? 0}
+                skuTargetDailyBudget={totalDailyBudget}
                 totalRoas={d.totals.ccRoas}
                 roasTarget={6.59}
                 roasLabel="CC RoAS"
