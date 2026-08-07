@@ -149,6 +149,7 @@ function Sparkline({
   const gradId = `atl-grad-${chartKey}`
 
   return (
+    <>
     <div style={{ flex: 1, minWidth: 0 }}>
 
       {/* SVG — proportional scaling via viewBox, no stretch */}
@@ -275,6 +276,7 @@ function Sparkline({
     </div>
 
     {modalEntries && <ChangelogModal entries={modalEntries} onClose={() => setModalEntries(null)} />}
+    </>
   )
 }
 

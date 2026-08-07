@@ -109,6 +109,7 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
   const sd = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
   return (
+    <>
     <div style={{ position: 'relative' }}>
       {/* Chart SVG */}
       <svg ref={ref} width={W} height={H}
@@ -204,6 +205,7 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
     </div>
 
     {modalEntries && <ChangelogModal entries={modalEntries} onClose={() => setModalEntries(null)} />}
+    </>
   )
 }
 

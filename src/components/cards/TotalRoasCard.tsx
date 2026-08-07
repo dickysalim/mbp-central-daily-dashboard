@@ -125,6 +125,7 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
   }
 
   return (
+    <>
     <div style={{ position: 'relative' }}>
       <svg ref={ref} width={W} height={H}
         onMouseMove={onMove} onMouseLeave={() => setTooltip(null)}
@@ -237,6 +238,7 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
     </div>
 
     {modalEntries && <ChangelogModal entries={modalEntries} onClose={() => setModalEntries(null)} />}
+    </>
   )
 }
 

@@ -104,6 +104,7 @@ function CprlChart({ data, changelog }: { data: CprlPoint[]; changelog: Changelo
   const sd = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
   return (
+    <>
     <div style={{ position: 'relative' }}>
       {/* Chart SVG */}
       <svg ref={ref} width={W} height={H}
@@ -200,6 +201,7 @@ function CprlChart({ data, changelog }: { data: CprlPoint[]; changelog: Changelo
     </div>
 
     {modalEntries && <ChangelogModal entries={modalEntries} onClose={() => setModalEntries(null)} />}
+    </>
   )
 }
 
