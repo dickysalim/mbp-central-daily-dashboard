@@ -9,6 +9,8 @@ import { useQuery } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import { dateStr, capToH2, PRESETS } from './ProductPerformancePage'
 import { SkuPerformanceCard } from '../components/cards/SkuPerformanceCard'
+import { AdSpendHealthCard } from '../components/cards/AdSpendHealthCard'
+import { SKU_COLORS } from '../utils/skuColors'
 import metaAdsImg   from '../assets/ads_platform_images/Meta Ads.webp'
 import googleAdsImg from '../assets/ads_platform_images/Google Ads.webp'
 import searchAdsImg from '../assets/ads_platform_images/Google Search Ads.webp'
@@ -19,8 +21,9 @@ interface Ga4Row       { date: string; traffic_source: string; sku: string; ads_
 interface ConvRow      { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number; mongo_purchase_ccom: number; mongo_purchase_ccom_revenue: number }
 interface BrandBounds  { brand: string; earliest: string; latest: string; skus: string[] }
 interface CampaignBudgetRow { date: string; traffic_source: string; campaign_name: string; sku: string; daily_budget: number }
+interface TargetRow { date: string; sku: string; daily_ad_spend: number }
 interface ConsumerGoodsData {
-  performance: AdPerfRow[]; campaign_budgets: CampaignBudgetRow[]; targets: unknown[]
+  performance: AdPerfRow[]; campaign_budgets: CampaignBudgetRow[]; targets: TargetRow[]
   ga4: Ga4Row[]; conversions: ConvRow[]
   changelog: { date: string; brand: string; sku: string; platform: string; title: string; changelist: string | null }[]
   campaign_dimension: unknown[]; sales: unknown[]
@@ -59,6 +62,11 @@ export function PlatformOverviewPage() {
   useEffect(() => { if (brands.length > 0 && !brand) setBrand(brands[0]) }, [brands, brand])
   const activeBrand = brand || brands[0] || ''
   const activeBounds = useMemo(() => brandBounds?.find(b => b.brand === activeBrand), [brandBounds, activeBrand])
+  const skus = useMemo(() => activeBounds?.skus ?? [], [activeBounds])
+  const skuOrder = ['MSF', 'MTA', 'MNS', 'M3P']
+  const orderedSkus = useMemo(() => skuOrder.filter(s => skus.includes(s)).concat(skus.filter(s => !skuOrder.includes(s))), [skus])
+  const [selectedSku, setSelectedSku] = useState('')
+  useEffect(() => { if (orderedSkus.length > 0 && !orderedSkus.includes(selectedSku)) setSelectedSku(orderedSkus[0]) }, [orderedSkus, selectedSku])
 
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -434,6 +442,89 @@ export function PlatformOverviewPage() {
           )
         })()}
       </div>
+
+      {/* ── SKU Picker ── */}
+      {orderedSkus.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 36 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase' }}>SKU</span>
+          {orderedSkus.map(sku => {
+            const isActive = sku === selectedSku
+            const c = SKU_COLORS[sku.toUpperCase()] ?? 'rgba(255,255,255,0.5)'
+            return (
+              <button
+                key={sku}
+                onClick={() => setSelectedSku(sku)}
+                style={{
+                  padding: '5px 14px',
+                  fontSize: 12,
+                  fontWeight: isActive ? 700 : 600,
+                  letterSpacing: '0.04em',
+                  borderRadius: 6,
+                  border: `1.5px solid ${isActive ? c : 'rgba(255,255,255,0.10)'}`,
+                  background: isActive ? `${c}18` : 'transparent',
+                  color: isActive ? c : 'rgba(255,255,255,0.45)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {sku}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Ad Spend Health for selected SKU ── */}
+      {selectedSku && cgData && (() => {
+        const perf = cgData.performance ?? []
+        const targets = cgData.targets ?? []
+        const budgets = cgData.campaign_budgets ?? []
+
+        // Total spend for selected SKU in period
+        const skuTotalSpend = perf.filter(r => r.sku === selectedSku).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+
+        // Period budget (sum of daily targets across the date range)
+        const skuPeriodBudget = targets.filter(r => r.sku === selectedSku).reduce((s, r) => s + (r.daily_ad_spend ?? 0), 0)
+
+        // Daily budget: latest target for this SKU
+        const skuTargets = targets.filter(r => r.sku === selectedSku).sort((a, b) => b.date.localeCompare(a.date))
+        const skuDailyBudget = skuTargets[0]?.daily_ad_spend ?? 0
+
+        // Campaign budget: sum of campaign budgets for this SKU
+        const skuCampaignBudget = budgets.filter(r => r.sku === selectedSku).reduce((s, r) => s + (r.daily_budget ?? 0), 0)
+        const budgetDate = budgets[0]?.date ?? ''
+
+        // Per-platform breakdown for this SKU (with CPRL, CPA CC, CC RoAS)
+        const skuPerf = perf.filter(r => r.sku === selectedSku)
+        const convs = (cgData.conversions ?? []).filter(r => r.sku === selectedSku)
+        const platformBreakdown = PLATFORMS.map(p => {
+          const pRows = skuPerf.filter(r => (r.traffic_source ?? '').toUpperCase() === p.id)
+          const cRows = convs.filter(r => (r.traffic_source ?? '').toUpperCase() === p.id)
+          const spend = pRows.reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+          const totalLeads = cRows.reduce((s, r) => s + (r.mongo_real_lead_ccom ?? 0) + (r.mongo_real_lead_d2or ?? 0) + (r.mongo_real_lead_mpsh ?? 0) + (r.mongo_real_lead_ofls ?? 0), 0)
+          const purchases = cRows.reduce((s, r) => s + (r.mongo_purchase_ccom ?? 0), 0)
+          const revenue = cRows.reduce((s, r) => s + (r.mongo_purchase_ccom_revenue ?? 0), 0)
+          return {
+            platform: p.id, label: p.label, color: p.color, spend,
+            cprl: totalLeads > 0 ? spend / totalLeads : 0,
+            cpaCC: purchases > 0 ? spend / purchases : 0,
+            ccRoas: spend > 0 ? revenue / spend : 0,
+          }
+        }).filter(p => p.spend > 0)
+
+        return (
+          <div style={{ marginTop: 20 }}>
+            <AdSpendHealthCard
+              totalSpend={skuTotalSpend}
+              periodBudget={skuPeriodBudget}
+              dailyBudget={skuDailyBudget}
+              campaignBudgetTotal={skuCampaignBudget}
+              budgetDate={budgetDate}
+              platformBreakdown={platformBreakdown}
+            />
+          </div>
+        )
+      })()}
 
     </div>
   )

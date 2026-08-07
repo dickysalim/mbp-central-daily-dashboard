@@ -588,6 +588,62 @@ export function SkuPerformanceCard({
 
           {/* Ad Spend Health + Daily Budget */}
           {skuSpend > 0 && (() => {
+            const isPlatformCtx = totalAllPlatformsSpend != null && totalAllPlatformsSpend > 0
+            const delta    = skuDailyBudget > 0 ? skuDailyBudget - skuTargetDailyBudget : 0
+            const deltaPct = skuTargetDailyBudget > 0 ? (delta / skuTargetDailyBudget) * 100 : null
+
+            // ── Platform context: neutral informational design ──
+            if (isPlatformCtx) {
+              const spendShare = (skuSpend / totalAllPlatformsSpend) * 100
+              const budgetShare = skuTargetDailyBudget > 0 ? (skuDailyBudget / skuTargetDailyBudget) * 100 : 0
+              return (
+                <div style={{ display: 'flex', flexDirection: 'row', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap' as const }}>
+                  {/* Total Ad Spend */}
+                  <div style={{ flex: '1 1 auto', minWidth: 160 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+                      Total Ad Spend
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, marginBottom: 8 }}>
+                      {fmtRp(Math.round(skuSpend))}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)', marginBottom: 6 }}>
+                      of {fmtRp(Math.round(totalAllPlatformsSpend))} total
+                    </div>
+                    <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 3, marginBottom: 6 }}>
+                      <div style={{ height: '100%', width: `${spendShare}%`, background: skuColor, borderRadius: 3, transition: 'width 0.5s ease', opacity: 0.7 }} />
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: skuColor }}>
+                      {spendShare.toFixed(1)}%
+                      <span style={{ fontWeight: 500, fontSize: 11, opacity: 0.7, marginLeft: 3 }}>share</span>
+                    </div>
+                  </div>
+
+                  {/* Daily Budget */}
+                  {skuDailyBudget > 0 && (
+                    <div style={{ flex: '1 1 auto', minWidth: 160 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+                        Daily Budget
+                      </div>
+                      <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, marginBottom: 8 }}>
+                        {fmtRp(Math.round(skuDailyBudget))}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)', marginBottom: 6 }}>
+                        of {fmtRp(Math.round(skuTargetDailyBudget))} total
+                      </div>
+                      <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 3, marginBottom: 6 }}>
+                        <div style={{ height: '100%', width: `${budgetShare}%`, background: skuColor, borderRadius: 3, transition: 'width 0.5s ease', opacity: 0.7 }} />
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: skuColor }}>
+                        {budgetShare.toFixed(1)}%
+                        <span style={{ fontWeight: 500, fontSize: 11, opacity: 0.7, marginLeft: 3 }}>share</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
+            // ── SKU context: existing health indicator design ──
             const rawPct = skuPeriodBudget > 0 ? (skuSpend / skuPeriodBudget) * 100 : 0
             const barPct = Math.min(rawPct, 100)
             const spColor = rawPct === 0  ? '#818cf8'
@@ -602,8 +658,6 @@ export function SkuPerformanceCard({
               : rawPct >=  95 ? '🟢 On Track'
               : rawPct >=  85 ? '🟡 Slightly Under'
               :                 '🔴 Far Behind'
-            const delta    = skuDailyBudget > 0 ? skuDailyBudget - skuTargetDailyBudget : 0
-            const deltaPct = skuTargetDailyBudget > 0 ? (delta / skuTargetDailyBudget) * 100 : null
             return (
               <div style={{ display: 'flex', flexDirection: 'row', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' as const }}>
                 {/* Ad Spend Health */}
@@ -631,26 +685,6 @@ export function SkuPerformanceCard({
                       </div>
                     </>
                   )}
-                  {!skuPeriodBudget && totalAllPlatformsSpend != null && totalAllPlatformsSpend > 0 && (() => {
-                    const sharePct = (skuSpend / totalAllPlatformsSpend) * 100
-                    return (
-                      <>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.05em', textTransform: 'uppercase' as const, marginBottom: 5 }}>
-                          of {fmtRp(Math.round(totalAllPlatformsSpend))} total
-                        </div>
-                        <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 3, marginBottom: 6 }}>
-                          <div style={{ height: '100%', width: `${sharePct}%`, background: skuColor, borderRadius: 3, transition: 'width 0.5s ease' }} />
-                        </div>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-                          background: `${skuColor}15`, border: `1px solid ${skuColor}30`,
-                          borderRadius: 5, padding: '2px 6px' }}>
-                          <div style={{ width: 4, height: 4, borderRadius: '50%', background: skuColor }} />
-                          <span style={{ fontSize: 11, fontWeight: 700, color: skuColor }}>{sharePct.toFixed(1)}%</span>
-                          <span style={{ fontSize: 11, color: skuColor, opacity: 0.8 }}>of total spend</span>
-                        </div>
-                      </>
-                    )
-                  })()}
                 </div>
 
                 {/* Daily Budget Config */}
@@ -672,20 +706,7 @@ export function SkuPerformanceCard({
                         </>
                       )}
                     </div>
-                    {totalAllPlatformsSpend != null && skuTargetDailyBudget > 0 ? (() => {
-                      // Platform context: show share of total daily budget
-                      const sharePct = (skuDailyBudget / skuTargetDailyBudget) * 100
-                      return (
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-                          background: `${skuColor}15`, border: `1px solid ${skuColor}30`,
-                          borderRadius: 5, padding: '2px 6px' }}>
-                          <div style={{ width: 4, height: 4, borderRadius: '50%', background: skuColor }} />
-                          <span style={{ fontSize: 11, fontWeight: 700, color: skuColor }}>{sharePct.toFixed(1)}%</span>
-                          <span style={{ fontSize: 11, color: skuColor, opacity: 0.8 }}>of total</span>
-                        </div>
-                      )
-                    })() : deltaPct !== null && (() => {
-                      // SKU context: show above/below target
+                    {deltaPct !== null && (() => {
                       const absDelta = Math.abs(deltaPct)
                       const dClr = absDelta <= 5 ? '#34d399' : absDelta <= 10 ? '#fbbf24' : '#f87171'
                       return (
