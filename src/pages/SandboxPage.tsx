@@ -9,7 +9,7 @@ import { AdSpendHealthCard } from '../components/cards/AdSpendHealthCard'
 import { AdsPerformanceHealthCard, type SkuCprlRow } from '../components/cards/AdsPerformanceHealthCard'
 import { LeadsQualityCard, type SkuCpaCCRow } from '../components/cards/LeadsQualityCard'
 import { AtlPerformanceCard } from '../components/cards/AtlPerformanceCard'
-import { SkuPerformanceCard } from '../components/cards/SkuPerformanceCard'
+import { SkuPerformanceCard, type CampaignRow } from '../components/cards/SkuPerformanceCard'
 import { TotalRoasCard } from '../components/cards/TotalRoasCard'
 import superfoodImg  from '../assets/sku_images/Superfood.webp'
 import metafiberImg  from '../assets/sku_images/Metafiber.webp'
@@ -27,11 +27,12 @@ interface Ga4Row       { date: string; traffic_source: string; sku: string; ads_
 interface ConvRow      { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number; mongo_purchase_ccom: number; mongo_purchase_ccom_revenue: number }
 interface BrandBounds  { brand: string; earliest: string; latest: string; skus: string[] }
 interface SalesRow   { date: string; brand: string; sku: string; so_ccom_ca: number; so_ccom_crm: number; so_mpsh: number; so_d2or: number; so_ofls: number; rev_ccom_ca: number; rev_ccom_crm: number; rev_mpsh: number; rev_d2or: number; rev_ofls: number }
+interface CampaignDimRow { campaign_id: string; traffic_source: string; sku: string; funnel: string; campaign_name: string }
 interface ConsumerGoodsData {
   performance: AdPerfRow[]; campaign_budgets: CampaignBudgetRow[]; targets: TargetRow[]
   ga4: Ga4Row[]; conversions: ConvRow[]
   changelog: { date: string; brand: string; sku: string; platform: string; title: string; changelist: string | null }[]
-  campaign_dimension: unknown[]; sales: SalesRow[]
+  campaign_dimension: CampaignDimRow[]; sales: SalesRow[]
 }
 
 // Unified row merged from performance + ga4 + conversions (aggregated by date × sku)
@@ -467,6 +468,57 @@ export function SandboxPage() {
     return out
   }, [rawData])
 
+  // ── Per-SKU campaign breakdown (replaces /v2/campaign-breakdown endpoint) ──
+  const campaignBreakdownBySku = useMemo(() => {
+    if (!cgData) return {} as Record<string, CampaignRow[]>
+    const perf = cgData.performance
+    const ga4 = cgData.ga4
+    const conv = cgData.conversions
+    const dims = cgData.campaign_dimension as CampaignDimRow[]
+
+    // Build lookup: campaign_id+traffic_source → { campaign_name, funnel, sku }
+    const dimMap = new Map<string, CampaignDimRow>()
+    for (const d of dims) {
+      dimMap.set(`${d.traffic_source}|${d.campaign_id}`, d)
+    }
+
+    // Accumulate per (traffic_source, campaign_id, sku)
+    type Key = string // "traffic_source|campaign_id|sku"
+    const acc = new Map<Key, { ts: string; cid: string; sku: string; ad_spend: number; ga4_pv: number; ga4_vo: number; rl_ccom: number; rl_d2or: number; rl_mpsh: number; rl_ofls: number; pu_ccom: number }>()
+    const getOrInit = (ts: string, cid: string, sku: string) => {
+      const k = `${ts}|${cid}|${sku}`
+      let v = acc.get(k)
+      if (!v) { v = { ts, cid, sku, ad_spend: 0, ga4_pv: 0, ga4_vo: 0, rl_ccom: 0, rl_d2or: 0, rl_mpsh: 0, rl_ofls: 0, pu_ccom: 0 }; acc.set(k, v) }
+      return v
+    }
+    for (const r of perf) { const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.ad_spend += r.ad_spend }
+    for (const r of ga4) { const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.ga4_pv += r.ga4_page_view; v.ga4_vo += r.ga4_view_offer }
+    for (const r of conv) { const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.rl_ccom += r.mongo_real_lead_ccom; v.rl_d2or += r.mongo_real_lead_d2or; v.rl_mpsh += r.mongo_real_lead_mpsh; v.rl_ofls += r.mongo_real_lead_ofls; v.pu_ccom += r.mongo_purchase_ccom }
+
+    // Build CampaignRow[] per SKU
+    const out: Record<string, CampaignRow[]> = {}
+    for (const v of acc.values()) {
+      const dim = dimMap.get(`${v.ts}|${v.cid}`)
+      const row: CampaignRow = {
+        traffic_source: v.ts,
+        campaign_id: v.cid,
+        campaign_name: dim?.campaign_name ?? v.cid,
+        funnel: dim?.funnel ?? '-',
+        ad_spend: v.ad_spend,
+        ga4_page_view: v.ga4_pv,
+        ga4_view_offer: v.ga4_vo,
+        real_lead_ccom: v.rl_ccom,
+        real_lead_d2or: v.rl_d2or,
+        real_lead_mpsh: v.rl_mpsh,
+        real_lead_ofls: v.rl_ofls,
+        purchase_ccom: v.pu_ccom,
+      }
+      if (!out[v.sku]) out[v.sku] = []
+      out[v.sku].push(row)
+    }
+    return out
+  }, [cgData])
+
   // ── Per-SKU budget data ───────────────────────────────────────────────────────
   const campaignBudgetData = useMemo(() => cgData?.campaign_budgets ?? [], [cgData])
   const skuBudgets = useMemo(() => {
@@ -817,6 +869,7 @@ export function SandboxPage() {
                 cprlTarget={150_000}
                 cpaTarget={cpaTarget}
                 changelog={filteredChangelog}
+                campaignBreakdown={campaignBreakdownBySku[sku] ?? []}
                 skuSpend={skuBudgets[sku]?.spend ?? 0}
                 skuPeriodBudget={skuBudgets[sku]?.periodBudget ?? 0}
                 skuDailyBudget={skuBudgets[sku]?.dailyBudget ?? 0}

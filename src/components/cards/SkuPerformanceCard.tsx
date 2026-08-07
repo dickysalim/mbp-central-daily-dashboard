@@ -11,8 +11,6 @@
  */
 import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery, keepPreviousData } from '@tanstack/react-query'
-import { D1_WORKER_URL } from '../../config/dataSource'
 import { TARGET_CPR, TARGET_CPA_CC, fmtIDR } from '../../pages/ProductPerformancePage'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -55,6 +53,9 @@ export interface SkuPerformanceCardProps {
   cpaTarget?:     number
 
   changelog?:    ChangelogRow[]
+
+  // Campaign breakdown (computed from consumer-goods data)
+  campaignBreakdown?: CampaignRow[]
 
   // Per-SKU budget
   skuSpend?:             number
@@ -283,7 +284,7 @@ function Sparkline({
 
 // ── Campaign Performance Evaluator ───────────────────────────────────────────
 type FunnelLevel = 'ToFU00' | 'MoFU25' | 'BoFU50' | 'BoFU75' | 'Unknown'
-interface CampaignRow {
+export interface CampaignRow {
   traffic_source: string; campaign_id: string; campaign_name: string
   funnel: string; ad_spend: number
   ga4_page_view: number; ga4_view_offer: number
@@ -297,20 +298,9 @@ function mapFunnel(code: string): FunnelLevel {
 const FUNNEL_CLR: Record<FunnelLevel, string> = {
   ToFU00: '#818cf8', MoFU25: '#60a5fa', BoFU50: '#fbbf24', BoFU75: '#fb923c', Unknown: 'rgba(255,255,255,0.3)',
 }
-function CampaignEvaluator({ from, to, sku, cprlTarget, cpaTarget }: {
-  from: string; to: string; sku: string; cprlTarget: number; cpaTarget: number
+function CampaignEvaluator({ data, cprlTarget, cpaTarget }: {
+  data: CampaignRow[]; cprlTarget: number; cpaTarget: number
 }) {
-  const { data, isLoading } = useQuery<CampaignRow[]>({
-    queryKey: ['campaign-breakdown', from, to, sku],
-    queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/campaign-breakdown?from=${from}&to=${to}&sku=${sku}`)
-      if (!res.ok) throw new Error()
-      return res.json()
-    },
-    staleTime: 5 * 60_000,
-    placeholderData: keepPreviousData,
-    enabled: !!from && !!to,
-  })
 
   const metaRows = (data ?? []).filter(r => r.ad_spend > 0 && r.traffic_source === 'META')
   const tot = metaRows.reduce((t, r) => ({
@@ -346,7 +336,6 @@ function CampaignEvaluator({ from, to, sku, cprlTarget, cpaTarget }: {
 
   const F = { fontFamily: 'Inter, system-ui, sans-serif' }
 
-  if (isLoading) return <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, padding: '8px 0', ...F }}>Loading…</div>
   if (rows.length === 0) return <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11, padding: '8px 0', ...F }}>No Meta campaigns found.</div>
 
   return (
@@ -397,6 +386,7 @@ export function SkuPerformanceCard({
   cprlTarget = 150_000,
   cpaTarget  = 5_000_000,
   changelog  = [],
+  campaignBreakdown = [],
   skuSpend             = 0,
   skuPeriodBudget      = 0,
   skuDailyBudget       = 0,
@@ -950,12 +940,12 @@ export function SkuPerformanceCard({
         </div>
 
         {/* Campaign evaluator */}
-        {from && to && (
+        {campaignBreakdown.length > 0 && (
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.01em', color: 'rgba(255,255,255,0.90)', marginBottom: 2 }}>
               Campaign Evaluator · Meta Ads
             </div>
-            <CampaignEvaluator from={from} to={to} sku={sku} cprlTarget={cprlTarget} cpaTarget={cpaTarget} />
+            <CampaignEvaluator data={campaignBreakdown} cprlTarget={cprlTarget} cpaTarget={cpaTarget} />
           </div>
         )}
 
