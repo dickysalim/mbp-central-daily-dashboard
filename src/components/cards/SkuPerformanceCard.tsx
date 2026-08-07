@@ -66,6 +66,7 @@ export interface SkuPerformanceCardProps {
   // RoAS
   totalRoas?:   number
   roasTarget?:  number
+  roasLabel?:   string   // 'Total RoAS' (default) or 'CC RoAS' etc.
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -403,6 +404,7 @@ export function SkuPerformanceCard({
   budgetDate,
   totalRoas   = 0,
   roasTarget  = 6.59,
+  roasLabel   = 'Total RoAS',
 }: SkuPerformanceCardProps) {
   const label = skuLabel ?? sku
   const [open, setOpen] = useState(false)
@@ -459,7 +461,7 @@ export function SkuPerformanceCard({
       targetFontSize: 12,
     },
     {
-      key: `${sku}-roas`, label: 'Total RoAS', color: '#fbbf24',
+      key: `${sku}-roas`, label: roasLabel, color: '#fbbf24',
       series: [], higherIsBetter: true, fixedTarget: roasTarget,
       metricValue:   totalRoas > 0 ? totalRoas.toFixed(2) + '\u00d7' : '\u2014',
       metricSub:     `Target ${roasTarget}\u00d7`,
@@ -676,7 +678,7 @@ export function SkuPerformanceCard({
             )
           })()}
 
-          {/* 3 Metric columns: CPRL | CPA CC | Total RoAS */}
+          {/* 3 Metric columns: CPRL | CPA CC | RoAS */}
           <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
             {topCharts.map((c, idx) => {
               const vals = c.series.map(p => p.value).filter(v => v > 0)
