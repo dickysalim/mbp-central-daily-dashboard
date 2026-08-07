@@ -30,7 +30,7 @@ interface SalesRow   { date: string; brand: string; sku: string; so_ccom_ca: num
 interface ConsumerGoodsData {
   performance: AdPerfRow[]; campaign_budgets: CampaignBudgetRow[]; targets: TargetRow[]
   ga4: Ga4Row[]; conversions: ConvRow[]
-  changelog: { date: string; date_end: string | null; brand: string; sku: string; title: string; changelist: string; notion_page_url: string | null }[]
+  changelog: { date: string; brand: string; sku: string; platform: string; title: string; changelist: string | null }[]
   campaign_dimension: unknown[]; sales: SalesRow[]
 }
 

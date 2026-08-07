@@ -1,11 +1,8 @@
 export interface ChangelogRow {
-  id: number
-  day: string
-  headline: string
-  description: string
-  MNC: number
-  GOL: number
-  MCI: number
-  'MNC-B2B': number
-  'GOL-B2B': number
+  date:       string        // YYYY-MM-DD — used to plot chart markers
+  brand:      string        // e.g. "MNC", "GLOBAL"
+  sku:        string        // e.g. "MSF", "" for brand-level
+  platform:   string        // e.g. "META", "GOOGLE", ""
+  title:      string        // headline
+  changelist: string | null // body content
 }

@@ -246,7 +246,7 @@ export function LeadsQualityCard({
 
         {/* MIDDLE: chart */}
         {hasChart && (
-          <div style={{ flex: '1 1 auto', minWidth: 0, ...T.divider, display: 'flex', alignItems: 'center' }}>
+          <div style={{ flex: '0 0 320px', minWidth: 0, ...T.divider, display: 'flex', alignItems: 'center' }}>
             <div style={{ width: '100%', maxWidth: 320 }}>
               <CpaChart data={cpaSeries} changelog={changelog} />
             </div>
@@ -255,7 +255,7 @@ export function LeadsQualityCard({
 
         {/* RIGHT: Breakdown by Product (CPA CC per SKU) */}
         {skuCpaCC.length > 0 && (
-          <div style={{ flex: '0 0 180px', ...T.divider, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ flex: '1 1 auto', ...T.divider, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={T.section}>Breakdown by Product</div>
             {(() => {
               const maxCpa = Math.max(...skuCpaCC.map(s => s.cpaCC), 1)

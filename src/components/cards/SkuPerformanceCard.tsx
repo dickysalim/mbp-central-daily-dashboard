@@ -83,7 +83,7 @@ const T = {
 // ── Sparkline (same tokens as reference, supports fixed OR computed target) ──
 function Sparkline({
   data = [],           changelog, color, fmt, fmtShort, chartKey,
-  higherIsBetter, fixedTarget, targetFontSize = 14,
+  higherIsBetter, fixedTarget, targetFontSize = 14, filterSku,
 }: {
   data:            SkuPoint[]
   changelog:       ChangelogRow[]
@@ -94,6 +94,7 @@ function Sparkline({
   higherIsBetter:  boolean
   fixedTarget?:    number   // if provided, draw fixed line; otherwise use series avg
   targetFontSize?: number  // viewBox font size for target label (default 14)
+  filterSku?:      string  // if set, only show markers for this SKU or empty-sku entries
 }) {
   const VW = 320, VH = 140
   const PAD = { top: 10, right: 52, bottom: 20, left: 6 }
@@ -164,7 +165,15 @@ function Sparkline({
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
 
   const markers = data
-    .map((d, i) => ({ d, i, entry: changelog.find(c => c.date === d.date) }))
+    .map((d, i) => {
+      const entry = changelog.find(c => {
+        if (c.date !== d.date) return false
+        if (!filterSku) return true                     // brand-level chart: show all
+        const entrySku = (c.sku ?? '').trim()
+        return entrySku === '' || entrySku === filterSku // SKU-level: match or blank
+      })
+      return { d, i, entry }
+    })
     .filter((m): m is typeof m & { entry: ChangelogRow } => m.entry != null)
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -419,6 +428,13 @@ export function SkuPerformanceCard({
   const label = skuLabel ?? sku
   const [open, setOpen] = useState(false)
 
+  // SKU-level changelog: entries that match this SKU specifically,
+  // OR have no SKU set (applies to all SKUs). Trim to guard against whitespace.
+  const skuChangelog = changelog.filter(c => {
+    const entrySku = (c.sku ?? '').trim()
+    return entrySku === '' || entrySku === sku
+  })
+
   const divPct = (val: number, tgt: number) =>
     tgt > 0 ? Math.abs((val - tgt) / tgt * 100) : 0
 
@@ -554,7 +570,7 @@ export function SkuPerformanceCard({
         </div>
         {/* Sparkline */}
         <Sparkline
-          data={c.series} changelog={changelog}
+          data={c.series} changelog={changelog} filterSku={sku}
           color={c.color} fmt={c.fmt} fmtShort={c.fmtShort}
           chartKey={c.key} higherIsBetter={c.higherIsBetter}
           fixedTarget={c.fixedTarget}

@@ -245,7 +245,7 @@ export function AdsPerformanceHealthCard({
 
         {/* MIDDLE: chart */}
         {hasChart && (
-          <div style={{ flex: '1 1 auto', minWidth: 0, ...T.divider, display: 'flex', alignItems: 'center' }}>
+          <div style={{ flex: '0 0 320px', minWidth: 0, ...T.divider, display: 'flex', alignItems: 'center' }}>
             <div style={{ width: '100%', maxWidth: 320 }}>
               <CprlChart data={cprlSeries} changelog={changelog} />
             </div>
@@ -254,7 +254,7 @@ export function AdsPerformanceHealthCard({
 
         {/* RIGHT: Breakdown by Product (CPRL per SKU) */}
         {skuCprl.length > 0 && (
-          <div style={{ flex: '0 0 180px', ...T.divider, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ flex: '1 1 auto', ...T.divider, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={T.section}>Breakdown by Product</div>
             {(() => {
               const maxCprl = Math.max(...skuCprl.map(s => s.cprl), 1)
