@@ -5,6 +5,7 @@
  */
 import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { ChangelogModal } from '../ChangelogModal'
 
 const fmtRp  = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID')
 const fmtRpM = (n: number) => {
@@ -55,7 +56,8 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
   const innerW = W - PAD.left - PAD.right
   const innerH = H - PAD.top - PAD.bottom
   const [tooltip, setTooltip] = useState<{ x: number; y: number; p: CpaPoint } | null>(null)
-  const [clTooltip, setClTooltip] = useState<{ x: number; y: number; entry: ChangelogRow } | null>(null)
+  const [clTooltip, setClTooltip] = useState<{ x: number; y: number; entries: ChangelogRow[] } | null>(null)
+  const [modalEntries, setModalEntries] = useState<ChangelogRow[] | null>(null)
   const ref = useRef<SVGSVGElement>(null)
 
   if (data.length < 2) return null
@@ -95,8 +97,7 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
     }
   }
 
-  const clDates = new Set(changelog.map(c => c.date))
-  const markers = data.map((d, i) => ({ d, i, entry: changelog.find(c => c.date === d.date) })).filter((m): m is typeof m & { entry: ChangelogRow } => m.entry != null)
+  const markers = data.map((d, i) => ({ d, i, entries: changelog.filter(c => c.date === d.date) })).filter(m => m.entries.length > 0)
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const r = ref.current?.getBoundingClientRect(); if (!r) return
@@ -121,8 +122,9 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
         <polyline points={pts} fill="none" stroke="#f472b6" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {markers.map(m => (
           <g key={m.i}
-            onMouseEnter={(e) => setClTooltip({ x: e.clientX, y: e.clientY, entry: m.entry })}
+            onMouseEnter={(e) => setClTooltip({ x: e.clientX, y: e.clientY, entries: m.entries })}
             onMouseLeave={() => setClTooltip(null)}
+            onClick={() => { setClTooltip(null); setModalEntries(m.entries) }}
             style={{ cursor: 'pointer' }}>
             <rect x={xs(m.i) - 8} y={PAD.top - 14} width={16} height={18} fill="transparent" />
             <line x1={xs(m.i)} y1={PAD.top} x2={xs(m.i)} y2={PAD.top + innerH} stroke="#fbbf24" strokeOpacity="0.28" strokeWidth="1" strokeDasharray="2,2" />
@@ -172,27 +174,36 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
           border: '1px solid rgba(251,191,36,0.45)',
           borderRadius: 10,
           padding: '10px 14px',
-          maxWidth: 260,
+          maxWidth: 280, maxHeight: 400, overflowY: 'auto' as const,
           pointerEvents: 'none',
           backdropFilter: 'blur(16px)',
           fontFamily: 'Inter, system-ui, sans-serif',
           boxShadow: '0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(251,191,36,0.1)',
         }}>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: '#fbbf24', textTransform: 'uppercase', marginBottom: 5 }}>
-            Changelog · {clTooltip.entry.date}{clTooltip.entry.date_end ? ` → ${clTooltip.entry.date_end}` : ''}
+            Changelog · {clTooltip.entries[0].date}
+            {clTooltip.entries.length > 1 ? ` · ${clTooltip.entries.length} entries` : ''}
           </div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 6, lineHeight: 1.3 }}>
-            {clTooltip.entry.title}
-          </div>
-          {clTooltip.entry.changelist && (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-              {clTooltip.entry.changelist}
+          {clTooltip.entries.map((entry, idx) => (
+            <div key={idx}>
+              {idx > 0 && <div style={{ borderTop: '1px solid rgba(251,191,36,0.20)', margin: '8px 0' }} />}
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 4, lineHeight: 1.3 }}>
+                {entry.title}
+              </div>
+              {entry.changelist && (
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                  {entry.changelist}
+                </div>
+              )}
             </div>
-          )}
+          ))}
+          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', marginTop: 6, textAlign: 'center' }}>Click for full details</div>
         </div>,
         document.body
       )}
     </div>
+
+    {modalEntries && <ChangelogModal entries={modalEntries} onClose={() => setModalEntries(null)} />}
   )
 }
 

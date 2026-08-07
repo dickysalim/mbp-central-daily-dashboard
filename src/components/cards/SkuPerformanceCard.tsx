@@ -17,7 +17,9 @@ import { TARGET_CPR, TARGET_CPA_CC, fmtIDR } from '../../pages/ProductPerformanc
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface SkuPoint     { date: string; value: number }
-export interface ChangelogRow { date: string; date_end: string | null; brand: string; sku: string; title: string; changelist: string }
+import type { ChangelogRow } from '../../types/changelog'
+export type { ChangelogRow }
+import { ChangelogModal } from '../ChangelogModal'
 
 export interface SkuPerformanceCardProps {
   sku:           string
@@ -102,7 +104,8 @@ function Sparkline({
   const innerH = VH - PAD.top - PAD.bottom
 
   const [tooltip,   setTooltip]   = useState<{ px: number; x: number; y: number; p: SkuPoint } | null>(null)
-  const [clTooltip, setClTooltip] = useState<{ x: number; y: number; entry: ChangelogRow } | null>(null)
+  const [clTooltip, setClTooltip] = useState<{ x: number; y: number; entries: ChangelogRow[] } | null>(null)
+  const [modalEntries, setModalEntries] = useState<ChangelogRow[] | null>(null)
   const ref = useRef<SVGSVGElement>(null)
 
   if (data.length < 2) return (
@@ -166,15 +169,15 @@ function Sparkline({
 
   const markers = data
     .map((d, i) => {
-      const entry = changelog.find(c => {
+      const entries = changelog.filter(c => {
         if (c.date !== d.date) return false
-        if (!filterSku) return true                     // brand-level chart: show all
+        if (!filterSku) return true
         const entrySku = (c.sku ?? '').trim()
-        return entrySku === '' || entrySku === filterSku // SKU-level: match or blank
+        return entrySku === '' || entrySku === filterSku
       })
-      return { d, i, entry }
+      return { d, i, entries }
     })
-    .filter((m): m is typeof m & { entry: ChangelogRow } => m.entry != null)
+    .filter(m => m.entries.length > 0)
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const r = ref.current?.getBoundingClientRect(); if (!r) return
@@ -224,8 +227,9 @@ function Sparkline({
           {/* Changelog markers */}
           {markers.map(m => (
             <g key={m.i}
-              onMouseEnter={(e) => setClTooltip({ x: e.clientX, y: e.clientY, entry: m.entry })}
+              onMouseEnter={(e) => setClTooltip({ x: e.clientX, y: e.clientY, entries: m.entries })}
               onMouseLeave={() => setClTooltip(null)}
+              onClick={() => { setClTooltip(null); setModalEntries(m.entries) }}
               style={{ cursor: 'pointer' }}>
               <rect x={xs(m.i) - 8} y={PAD.top - 14} width={16} height={18} fill="transparent" />
               <line x1={xs(m.i)} y1={PAD.top} x2={xs(m.i)} y2={PAD.top + innerH}
@@ -267,22 +271,29 @@ function Sparkline({
             zIndex: 9999,
             background: 'rgba(10,11,15,0.97)',
             border: '1px solid rgba(251,191,36,0.45)',
-            borderRadius: 10, padding: '10px 14px', maxWidth: 260,
+            borderRadius: 10, padding: '10px 14px', maxWidth: 280, maxHeight: 400, overflowY: 'auto',
             pointerEvents: 'none', backdropFilter: 'blur(16px)',
             fontFamily: 'Inter, system-ui, sans-serif',
             boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
           }}>
             <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: '#fbbf24', textTransform: 'uppercase', marginBottom: 5 }}>
-              Changelog · {clTooltip.entry.date}{clTooltip.entry.date_end ? ` → ${clTooltip.entry.date_end}` : ''}
+              Changelog · {clTooltip.entries[0].date}
+              {clTooltip.entries.length > 1 ? ` · ${clTooltip.entries.length} entries` : ''}
             </div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 6, lineHeight: 1.3 }}>
-              {clTooltip.entry.title}
-            </div>
-            {clTooltip.entry.changelist && (
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {clTooltip.entry.changelist}
+            {clTooltip.entries.map((entry, idx) => (
+              <div key={idx}>
+                {idx > 0 && <div style={{ borderTop: '1px solid rgba(251,191,36,0.20)', margin: '8px 0' }} />}
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 4, lineHeight: 1.3 }}>
+                  {entry.title}
+                </div>
+                {entry.changelist && (
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                    {entry.changelist}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', marginTop: 6, textAlign: 'center' }}>Click for full details</div>
           </div>,
           document.body
         )}
@@ -298,6 +309,8 @@ function Sparkline({
       </div>
 
     </div>
+
+    {modalEntries && <ChangelogModal entries={modalEntries} onClose={() => setModalEntries(null)} />}
   )
 }
 
