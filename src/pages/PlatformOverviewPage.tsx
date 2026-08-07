@@ -740,7 +740,7 @@ export function PlatformOverviewPage() {
                     return (
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap',
-                        padding: '18px 22px', marginBottom: 16, marginTop: 4,
+                        padding: '18px 22px', marginBottom: 28, marginTop: 4,
                         background: 'rgba(129,140,248,0.04)',
                         border: '1px solid rgba(129,140,248,0.12)',
                         borderRadius: 10,
@@ -904,6 +904,12 @@ export function PlatformOverviewPage() {
                     )
                   })()}
 
+                  <div style={{
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 10,
+                    padding: '12px 16px',
+                    background: 'rgba(255,255,255,0.015)',
+                  }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'Inter, system-ui, sans-serif' }}>
                     <thead>
                       <tr>
@@ -915,9 +921,9 @@ export function PlatformOverviewPage() {
                               style={{
                                 textAlign: col === 'name' ? 'left' : 'right',
                                 padding: '6px 10px 8px',
-                                fontWeight: 700, fontSize: 10,
-                                letterSpacing: '0.08em',
-                                color: isActive ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                                fontWeight: 700, fontSize: 12,
+                                letterSpacing: '0.06em',
+                                color: isActive ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.50)',
                                 textTransform: 'uppercase',
                                 whiteSpace: 'nowrap',
                                 borderBottom: '1px solid rgba(255,255,255,0.07)',
@@ -932,9 +938,9 @@ export function PlatformOverviewPage() {
                           <th key={h} style={{
                             textAlign: 'right',
                             padding: '6px 10px 8px',
-                            fontWeight: 700, fontSize: 10,
-                            letterSpacing: '0.08em',
-                            color: optResults ? 'rgba(129,140,248,0.6)' : 'rgba(255,255,255,0.15)',
+                            fontWeight: 700, fontSize: 12,
+                            letterSpacing: '0.06em',
+                            color: optResults ? 'rgba(129,140,248,0.7)' : 'rgba(255,255,255,0.20)',
                             textTransform: 'uppercase',
                             whiteSpace: 'nowrap',
                             borderBottom: '1px solid rgba(255,255,255,0.07)',
@@ -1079,6 +1085,7 @@ export function PlatformOverviewPage() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
 
                   {/* ── Budget Spread Comparison Cards ── */}
