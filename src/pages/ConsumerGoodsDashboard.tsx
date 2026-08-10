@@ -45,7 +45,7 @@ interface AggRow {
 }
 export interface CprlPoint { date: string; value: number }
 
-export function ConsumerGoodsDashboard() {
+export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string }) {
   // ── Brand + date state ──
   const { data: brandBounds } = useQuery({
     queryKey: ['date-bounds'],
@@ -56,11 +56,8 @@ export function ConsumerGoodsDashboard() {
     },
     staleTime: 0,
   })
-  const brands = useMemo(() => (brandBounds?.map(b => b.brand) ?? []).filter(b => b !== 'MCI'), [brandBounds])
 
-  const [brand, setBrand] = useState('')
-  useEffect(() => { if (brands.length > 0 && !brand) setBrand(brands[0]) }, [brands, brand])
-  const activeBrand = brand || brands[0] || ''
+  const activeBrand = fixedBrand
   const activeBounds = useMemo(() => brandBounds?.find(b => b.brand === activeBrand), [brandBounds, activeBrand])
 
   const [from, setFrom] = useState('')
@@ -571,10 +568,10 @@ export function ConsumerGoodsDashboard() {
 
 
   // ── Loading screen ────────────────────────────────────────────────────────────
-  const isInitialLoad = cgLoading || (cgFetching && !cgData)
-  if (isInitialLoad || !activeBrand) {
+  const isInitialLoad = cgLoading || (cgFetching && !cgData) || !activeFrom || !cgData
+  if (isInitialLoad) {
     const steps = [
-      { label: 'Connecting to D1 database', done: !!activeBrand },
+      { label: 'Connecting to D1 database', done: !!activeFrom },
       { label: 'Fetching ad performance', done: false },
       { label: 'Joining GA4 + MongoDB data', done: false },
       { label: 'Computing KPIs & funnel metrics', done: false },
@@ -629,13 +626,13 @@ export function ConsumerGoodsDashboard() {
 
         {/* Title */}
         <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#818cf8', marginBottom: 6 }}>
-          Consumer Goods Dashboard
+          {activeBrand} Dashboard
         </div>
         <div style={{ fontSize: 22, fontWeight: 700, color: '#ffffff', marginBottom: 8 }}>
           Loading data…
         </div>
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', marginBottom: 40 }}>
-          {activeBrand ? `Fetching ${activeBrand} — ${activeFrom} → ${activeTo}` : 'Resolving brand bounds…'}
+          {activeFrom ? `Fetching ${activeBrand} — ${activeFrom} → ${activeTo}` : 'Resolving date bounds…'}
         </div>
 
         {/* Step checklist */}
@@ -718,12 +715,8 @@ export function ConsumerGoodsDashboard() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 40, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 8 }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#818cf8', boxShadow: '0 0 6px #818cf8aa' }} />
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: '#818cf8', textTransform: 'uppercase' }}>Consumer Goods Dashboard</span>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: '#818cf8', textTransform: 'uppercase' }}>{activeBrand} Dashboard</span>
         </div>
-        <select value={activeBrand} onChange={e => setBrand(e.target.value)}
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#ffffff', padding: '6px 10px', fontSize: 13 }}>
-          {brands.map(b => <option key={b} value={b}>{b}</option>)}
-        </select>
         <input type="date" value={activeFrom} onChange={e => setFrom(e.target.value)}
           style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#ffffff', padding: '6px 10px', fontSize: 13 }} />
         <span style={{ color: 'rgba(255,255,255,0.9)' }}>→</span>

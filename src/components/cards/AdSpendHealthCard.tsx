@@ -168,6 +168,7 @@ export function AdSpendHealthCard({
 
   return (
     <div style={{
+      flex: '1 1 340px', minWidth: 0,
       background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
       borderRadius: 14, padding: '20px 24px',
     }}>

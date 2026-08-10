@@ -212,7 +212,7 @@ export function TotalRoasCard({
 
   return (
     <div style={{
-      flex: '1.5 1 380px', minWidth: 0,
+      flex: '1.3 1 520px', minWidth: 0,
       background: 'rgba(255,255,255,0.04)',
       border: '1px solid rgba(255,255,255,0.09)',
       borderRadius: 14, padding: '24px 28px',
