@@ -788,6 +788,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             realLeadOfls={totalLeadOfls}
             cprlSeries={cprlSeries}
             changelog={filteredChangelog}
+            cprlTarget={fixedBrand === 'GOL' ? (cprlSeries.length > 0 ? Math.round(cprlSeries.reduce((s, p) => s + p.value, 0) / cprlSeries.length) : undefined) : undefined}
             skuCprl={(['MSF', 'MTA', 'MNS', 'M3P'] as const).map((sku): SkuCprlRow => {
               const d = allSkuData[sku]
               const rows = (rawData ?? []).filter(r => r.sku === sku)

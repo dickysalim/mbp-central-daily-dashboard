@@ -23,9 +23,10 @@ export interface AdsPerformanceHealthCardProps {
   cprlSeries?: CprlPoint[]
   changelog?: ChangelogRow[]
   skuCprl?: SkuCprlRow[]
+  cprlTarget?: number
 }
 
-const CPRL_TARGET = 150_000
+const DEFAULT_CPRL_TARGET = 150_000
 
 const CHANNELS = [
   { key: 'ccom', label: 'CCOM', color: '#818cf8' },
@@ -35,7 +36,7 @@ const CHANNELS = [
 ] as const
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
-function CprlChart({ data, changelog }: { data: CprlPoint[]; changelog: ChangelogRow[] }) {
+function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changelog: ChangelogRow[]; cprlTarget: number }) {
   const W = 320, H = 180, PAD = { top: 10, right: 52, bottom: 20, left: 6 }
   const innerW = W - PAD.left - PAD.right
   const innerH = H - PAD.top - PAD.bottom
@@ -47,14 +48,14 @@ function CprlChart({ data, changelog }: { data: CprlPoint[]; changelog: Changelo
   if (data.length < 2) return null
 
   const vals = data.map(d => d.value)
-  const minV = Math.min(...vals, CPRL_TARGET) * 0.96
-  const maxV = Math.max(...vals, CPRL_TARGET) * 1.04
+  const minV = Math.min(...vals, cprlTarget) * 0.96
+  const maxV = Math.max(...vals, cprlTarget) * 1.04
   const rng  = maxV - minV || 1
   const n    = vals.length
 
   const xs = (i: number) => PAD.left + (i / (n - 1)) * innerW
   const ys = (v: number) => PAD.top + innerH - ((v - minV) / rng) * innerH
-  const tY  = ys(CPRL_TARGET)
+  const tY  = ys(cprlTarget)
 
   const mX = (n - 1) / 2
   const mY = vals.reduce((a, b) => a + b, 0) / n
@@ -63,7 +64,7 @@ function CprlChart({ data, changelog }: { data: CprlPoint[]; changelog: Changelo
   const ic  = mY - slope * mX
   const tUp = slope > 0
   const tc  = tUp ? '#f87171' : '#34d399'
-  const rate = Math.abs((slope / CPRL_TARGET) * 100)
+  const rate = Math.abs((slope / cprlTarget) * 100)
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
 
@@ -160,8 +161,9 @@ function CprlChart({ data, changelog }: { data: CprlPoint[]; changelog: Changelo
 // ── Main card ─────────────────────────────────────────────────────────────────
 export function AdsPerformanceHealthCard({
   totalSpend, realLeadCcom, realLeadD2or, realLeadMpsh, realLeadOfls,
-  cprlSeries = [], changelog = [], skuCprl = [],
+  cprlSeries = [], changelog = [], skuCprl = [], cprlTarget,
 }: AdsPerformanceHealthCardProps) {
+  const CPRL_TARGET = cprlTarget ?? DEFAULT_CPRL_TARGET
   const vals  = { ccom: realLeadCcom, d2or: realLeadD2or, mpsh: realLeadMpsh, ofls: realLeadOfls }
   const total = realLeadCcom + realLeadD2or + realLeadMpsh + realLeadOfls
   const cprl  = total > 0 ? totalSpend / total : 0
@@ -212,7 +214,7 @@ export function AdsPerformanceHealthCard({
         {hasChart && (
           <div style={{ flex: '0 0 320px', minWidth: 0, ...T.divider, display: 'flex', alignItems: 'center' }}>
             <div style={{ width: '100%', maxWidth: 320 }}>
-              <CprlChart data={cprlSeries} changelog={changelog} />
+              <CprlChart data={cprlSeries} changelog={changelog} cprlTarget={CPRL_TARGET} />
             </div>
           </div>
         )}
