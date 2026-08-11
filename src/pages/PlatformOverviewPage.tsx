@@ -265,7 +265,7 @@ export function PlatformOverviewPage() {
           vo2l:   isMCI ? (vo > 0 ? (formSubs / vo) * 100 : 0) : (vo > 0 ? (leads / vo) * 100 : 0),
           cprl:   cprlTotal,
           cpaCC:  cpaTotal,
-          ccRoas: isMCI ? 0 : (spend > 0 ? ccRevenue / spend : 0),
+          ccRoas: isMCI ? (formSubs > 0 ? (formConv / formSubs) * 100 : 0) : (spend > 0 ? ccRevenue / spend : 0),
         },
         ctrSeries: byDate({ c: 0, i: 0 }, (p, r) => ({ c: p.c + r.link_click, i: p.i + r.impressions }))
           .map(([date, { c, i }]) => ({ date, value: i > 0 ? (c / i) * 100 : 0 })).filter(p => p.value > 0),
@@ -280,7 +280,7 @@ export function PlatformOverviewPage() {
                 .map(([date, { s, fc }]) => ({ date, spend: s, purchases: fc }))
             : byDate({ s: 0, p: 0 }, (p, r) => ({ s: p.s + r.ad_spend, p: p.p + r.purchase_ccom }))
                 .map(([date, { s, p }]) => ({ date, spend: s, purchases: p }))
-          const win = 7
+          const win = isMCI ? 21 : 7
           return daily.map((_, i) => {
             const slice = daily.slice(Math.max(0, i - win + 1), i + 1)
             const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
@@ -295,7 +295,10 @@ export function PlatformOverviewPage() {
               .map(([date, { f, vo }]) => ({ date, value: vo > 0 ? (f / vo) * 100 : 0 })).filter(p => p.value > 0)
           : byDate({ l: 0, vo: 0 }, (p, r) => ({ l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls, vo: p.vo + r.ga4_view_offer }))
               .map(([date, { l, vo }]) => ({ date, value: vo > 0 ? (l / vo) * 100 : 0 })).filter(p => p.value > 0),
-        ccRoasSeries: isMCI ? [] : (() => {
+        ccRoasSeries: isMCI
+          ? byDate({ fs: 0, fc: 0 }, (p, r) => ({ fs: p.fs + r.form_submission, fc: p.fc + r.form_conversion }))
+              .map(([date, { fs, fc }]) => ({ date, value: fs > 0 ? (fc / fs) * 100 : 0 })).filter(p => p.value > 0)
+          : (() => {
           const daily = byDate({ rev: 0, s: 0 }, (p, r) => ({ rev: p.rev + r.purchase_ccom_revenue, s: p.s + r.ad_spend }))
             .map(([date, { rev, s }]) => ({ date, rev, spend: s }))
           const win = 7
@@ -491,9 +494,10 @@ export function PlatformOverviewPage() {
                 totalAllPlatformsSpend={totalSpendAllPlatforms}
                 skuDailyBudget={platformBudgets[id] ?? 0}
                 skuTargetDailyBudget={totalDailyBudget}
-                totalRoas={activeBrand === 'MCI' ? undefined : d.totals.ccRoas}
+                totalRoas={d.totals.ccRoas}
                 roasTarget={activeBrand === 'MCI' ? undefined : 6.59}
-                roasLabel={activeBrand === 'MCI' ? undefined : 'CC RoAS'}
+                roasLabel={activeBrand === 'MCI' ? 'Visit Rate' : 'CC RoAS'}
+                roasIsPercentage={activeBrand === 'MCI'}
               />
             )
           })}

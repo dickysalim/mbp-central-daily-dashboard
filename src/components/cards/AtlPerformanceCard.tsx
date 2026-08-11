@@ -66,7 +66,7 @@ function Sparkline({
   const innerW = VW - PAD.left - PAD.right
   const innerH = VH - PAD.top - PAD.bottom
 
-  const [tooltip,   setTooltip]   = useState<{ px: number; x: number; y: number; p: AtlPoint } | null>(null)
+  const [tooltip,   setTooltip]   = useState<{ cx: number; cy: number; x: number; y: number; p: AtlPoint } | null>(null)
   const [clTooltip, setClTooltip] = useState<{ x: number; y: number; entries: ChangelogRow[] } | null>(null)
   const [modalEntries, setModalEntries] = useState<ChangelogRow[] | null>(null)
   const ref = useRef<SVGSVGElement>(null)
@@ -139,10 +139,14 @@ function Sparkline({
     .filter(m => m.entries.length > 0)
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const r = ref.current?.getBoundingClientRect(); if (!r) return
-    const relX = (e.clientX - r.left) / r.width
-    const idx  = Math.max(0, Math.min(n - 1, Math.round(relX * (n - 1))))
-    setTooltip({ px: e.clientX - r.left, x: xs(idx), y: ys(data[idx].value), p: data[idx] })
+    const svg = ref.current; if (!svg) return
+    const ctm = svg.getScreenCTM(); if (!ctm) return
+    const svgPt = svg.createSVGPoint()
+    svgPt.x = e.clientX
+    svgPt.y = e.clientY
+    const { x: svgX } = svgPt.matrixTransform(ctm.inverse())
+    const idx = Math.max(0, Math.min(n - 1, Math.round(((svgX - PAD.left) / innerW) * (n - 1))))
+    setTooltip({ cx: e.clientX, cy: e.clientY, x: xs(idx), y: ys(data[idx].value), p: data[idx] })
   }
 
   const sd     = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
@@ -217,8 +221,9 @@ function Sparkline({
         {/* Hover tooltip */}
         {tooltip && (
           <div style={{
-            position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap',
-            top: 0, left: tooltip.px > 200 ? tooltip.px - 115 : tooltip.px + 8,
+            position: 'fixed', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 9999,
+            top: tooltip.cy + 1,
+            left: tooltip.cx + 1,
             background: 'rgba(13,14,18,0.95)', border: `1px solid ${color}50`,
             borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
           }}>

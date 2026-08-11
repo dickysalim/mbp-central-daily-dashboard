@@ -430,10 +430,10 @@ export function GeneralOverviewPage() {
       return { date: dd.date, value: tsubs > 0 ? ts / tsubs : 0 }
     }).filter(p => p.value > 0)
 
-    // CPV series (7d MA)
+    // CPV series (21d MA)
     const cpvDaily = allDates.map(d => ({ date: d, spend: spendByDate.get(d) ?? 0, conv: convByDate.get(d) ?? 0 }))
     const cpvSeries = cpvDaily.map((dd, i) => {
-      const slice = cpvDaily.slice(Math.max(0, i - 6), i + 1)
+      const slice = cpvDaily.slice(Math.max(0, i - 20), i + 1)
       const ts = slice.reduce((s, d) => s + d.spend, 0)
       const tc = slice.reduce((s, d) => s + d.conv, 0)
       return { date: dd.date, value: tc > 0 ? ts / tc : 0 }

@@ -426,7 +426,7 @@ export function HealthcareDashboard() {
       byDate.set(r.date, { ...prev, conversions: prev.conversions + (r.mongo_form_conversion ?? 0) })
     }
     const daily = Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({ date, ...v }))
-    const window = 7
+    const window = 21
     return daily.map((_, i) => {
       const slice = daily.slice(Math.max(0, i - window + 1), i + 1)
       const totalSpend = slice.reduce((s, d) => s + d.spend, 0)

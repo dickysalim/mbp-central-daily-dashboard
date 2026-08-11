@@ -71,6 +71,7 @@ export interface SkuPerformanceCardProps {
   totalRoas?:   number
   roasTarget?:  number
   roasLabel?:   string   // 'Total RoAS' (default) or 'CC RoAS' etc.
+  roasIsPercentage?: boolean  // true for Visit Rate (shown as %) instead of multiplier (×)
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ function Sparkline({
   const innerW = VW - PAD.left - PAD.right
   const innerH = VH - PAD.top - PAD.bottom
 
-  const [tooltip,   setTooltip]   = useState<{ px: number; x: number; y: number; p: SkuPoint } | null>(null)
+  const [tooltip,   setTooltip]   = useState<{ cx: number; cy: number; x: number; y: number; p: SkuPoint } | null>(null)
   const [clTooltip, setClTooltip] = useState<{ x: number; y: number; entries: ChangelogRow[] } | null>(null)
   const [modalEntries, setModalEntries] = useState<ChangelogRow[] | null>(null)
   const ref = useRef<SVGSVGElement>(null)
@@ -182,10 +183,14 @@ function Sparkline({
     .filter(m => m.entries.length > 0)
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const r = ref.current?.getBoundingClientRect(); if (!r) return
-    const relX = (e.clientX - r.left) / r.width
-    const idx  = Math.max(0, Math.min(n - 1, Math.round(relX * (n - 1))))
-    setTooltip({ px: e.clientX - r.left, x: xs(idx), y: ys(data[idx].value), p: data[idx] })
+    const svg = ref.current; if (!svg) return
+    const ctm = svg.getScreenCTM(); if (!ctm) return
+    const svgPt = svg.createSVGPoint()
+    svgPt.x = e.clientX
+    svgPt.y = e.clientY
+    const { x: svgX } = svgPt.matrixTransform(ctm.inverse())
+    const idx = Math.max(0, Math.min(n - 1, Math.round(((svgX - PAD.left) / innerW) * (n - 1))))
+    setTooltip({ cx: e.clientX, cy: e.clientY, x: xs(idx), y: ys(data[idx].value), p: data[idx] })
   }
 
   const sd     = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
@@ -254,16 +259,18 @@ function Sparkline({
           <text x={VW - PAD.right} y={VH - 2} fontSize="10" fill="rgba(255,255,255,0.48)" textAnchor="end">{sd(data[n - 1].date)}</text>
         </svg>
 
-        {tooltip && (
+        {tooltip && createPortal(
           <div style={{
-            position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap',
-            top: 0, left: tooltip.px > 200 ? tooltip.px - 120 : tooltip.px + 8,
+            position: 'fixed', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 9999,
+            top: tooltip.cy + 1,
+            left: tooltip.cx + 1,
             background: 'rgba(13,14,18,0.95)', border: `1px solid ${color}50`,
             borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
           }}>
             <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginBottom: 1 }}>{sd(tooltip.p.date)}</div>
             <div style={{ fontSize: 11, fontWeight: 700, color }}>{fmt(tooltip.p.value)}</div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {clTooltip && <ChangelogTooltip x={clTooltip.x} y={clTooltip.y} entries={clTooltip.entries} />}
@@ -401,6 +408,7 @@ export function SkuPerformanceCard({
   totalRoas   = 0,
   roasTarget  = 6.59,
   roasLabel   = 'Total RoAS',
+  roasIsPercentage = false,
 }: SkuPerformanceCardProps) {
   const label = skuLabel ?? sku
   const [open, setOpen] = useState(false)
@@ -459,13 +467,13 @@ export function SkuPerformanceCard({
     {
       key: `${sku}-roas`, label: roasLabel, color: '#fbbf24',
       series: [], higherIsBetter: true, fixedTarget: roasTarget,
-      metricValue:   totalRoas > 0 ? totalRoas.toFixed(2) + '\u00d7' : '\u2014',
-      metricSub:     `Target ${roasTarget}\u00d7`,
+      metricValue:   totalRoas > 0 ? (roasIsPercentage ? totalRoas.toFixed(1) + '%' : totalRoas.toFixed(2) + '\u00d7') : '\u2014',
+      metricSub:     roasTarget ? (roasIsPercentage ? `Target ${roasTarget.toFixed(0)}%` : `Target ${roasTarget}\u00d7`) : '',
       statusLabel:   totalRoas > 0 ? (totalRoas >= roasTarget ? 'On Target' : totalRoas >= roasTarget * 0.9 ? 'Slightly Below' : 'Off Target') : null,
       statusGood:    totalRoas >= roasTarget,
       divergencePct: totalRoas > 0 ? divPct(totalRoas, roasTarget) : 0,
-      fmt:      (v) => v.toFixed(2) + '\u00d7',
-      fmtShort: (v) => v.toFixed(1) + '\u00d7',
+      fmt:      roasIsPercentage ? (v) => v.toFixed(1) + '%' : (v) => v.toFixed(2) + '\u00d7',
+      fmtShort: roasIsPercentage ? (v) => v.toFixed(0) + '%' : (v) => v.toFixed(1) + '\u00d7',
     },
   ]
 
@@ -797,156 +805,6 @@ export function SkuPerformanceCard({
             })}
 
           </div>
-
-          {/* Scale-Up Readiness */}
-          {(() => {
-            // Require at least 14 days of data for meaningful readiness signal
-            const cprlDataPoints = topCharts[0].series.filter(p => p.value > 0).length
-            if (cprlDataPoints < 14) {
-              const daysLeft = 14 - cprlDataPoints
-              return (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '7px 11px', borderRadius: 9,
-                  background: 'rgba(129,140,248,0.10)', border: '1px solid rgba(129,140,248,0.25)',
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: '#818cf8', letterSpacing: '-0.02em' }}>📊 Not Enough Data</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(129,140,248,0.75)', letterSpacing: '0.03em', textTransform: 'uppercase' as const, marginTop: 1, lineHeight: 1.4 }}>
-                      Minimum 14 days of available data needed for this feature
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: '#818cf8', opacity: 0.5 }}>{cprlDataPoints}/14</div>
-                </div>
-              )
-            }
-            // Compute rich scores: onTarget, offPct, convergence strength
-            const labels = [cprlLabel, cpaLabel, roasLabel ?? 'RoAS'] as const
-            const scores = topCharts.map((c, idx) => {
-              const vals = c.series.map(p => p.value).filter(v => v > 0)
-              const n = vals.length
-              let slopeRaw = 0
-              if (n >= 3) {
-                const mX  = (n - 1) / 2
-                const avg = vals.reduce((s, v) => s + v, 0) / n
-                slopeRaw = vals.reduce((s, v, i) => s + (i - mX) * (v - avg), 0) /
-                           vals.reduce((s, _, i) => s + (i - mX) ** 2, 1)
-              }
-              // Normalize slope: % of target per day (positive = moving toward target)
-              const target = c.fixedTarget || 1
-              const slopePctPerDay = c.higherIsBetter
-                ? (slopeRaw / target) * 100        // higher is better: positive slope = converging
-                : -(slopeRaw / target) * 100        // lower is better:  negative slope = converging
-              // Off-target %: positive = bad (above target for cost, below for RoAS)
-              const offPct = c.divergencePct
-              const onTarget = c.statusGood
-              // Convergence tiers
-              const convStrength = slopePctPerDay > 3 ? 'strong' as const
-                                 : slopePctPerDay > 0.5 ? 'weak' as const
-                                 : slopePctPerDay > -0.5 ? 'flat' as const
-                                 : 'diverging' as const
-              return { label: labels[idx], onTarget, offPct, slopePctPerDay, convStrength, hasTrend: n >= 3 }
-            })
-
-            const cprl  = scores[0]
-            const cpaCC = scores[1]
-            const roas  = scores[2]
-
-            // Build detail flags shown on the sublabel
-            const cprlOff  = cprl.onTarget ? '' : `${cprlLabel} +${cprl.offPct.toFixed(0)}% off`
-            const cprlConv = cprl.hasTrend
-              ? `${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/d ${cprl.slopePctPerDay >= 0 ? '↘' : '↗'}`
-              : ''
-
-            let rLabel: string, sublabelStats: string, sublabelMsg: string, color: string, glow: string
-
-            const cprlStr = cprl.convStrength === 'strong' ? 'strong convergence' : 'steady'
-
-            // ── Branch 1: All green → Scale Up
-            if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && roas.onTarget && cpaCC.onTarget) {
-              rLabel = '🚀 Scale Up Budget'
-              sublabelStats = `${cprlLabel} on target · RoAS on target · ${cpaLabel} healthy`
-              sublabelMsg = `Increase daily budget 20–30% and monitor ${cprlLabel} closely`
-              color = '#34d399'; glow = 'rgba(52,211,153,0.15)'
-
-            // ── Branch 2: CPRL ✅ + RoAS ✅ + CPA CC ❌ → Scale Up Potential?
-            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && roas.onTarget && !cpaCC.onTarget) {
-              rLabel = '⚡ Scale Up Potential?'
-              sublabelStats = `${cprlLabel} on target · RoAS on target · ${cpaLabel} +${cpaCC.offPct.toFixed(0)}% off`
-              sublabelMsg = `Produce more Bottom Funnel creatives — ${cprlLabel} + RoAS are solid`
-              color = '#34d399'; glow = 'rgba(52,211,153,0.10)'
-
-            // ── Branch 3: CPRL ✅ + RoAS ❌ + CPA CC ✅ → Hold — RoAS Lagging
-            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && !roas.onTarget && cpaCC.onTarget) {
-              rLabel = '⚡ Hold — RoAS Lagging'
-              sublabelStats = `${cprlLabel} on target · ${cpaLabel} healthy · RoAS ${roas.offPct.toFixed(0)}% below`
-              sublabelMsg = `Produce more Bottom Funnel creatives — push purchase intent`
-              color = '#fbbf24'; glow = 'rgba(251,191,36,0.12)'
-
-            // ── Branch 4: CPRL ✅ + RoAS ❌ + CPA CC ❌ → Hold — Both Lagging
-            } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && !roas.onTarget && !cpaCC.onTarget) {
-              rLabel = `⚡ Hold — RoAS & ${cpaLabel} Lagging`
-              sublabelStats = `${cprlLabel} on target · RoAS ${roas.offPct.toFixed(0)}% off · ${cpaLabel} +${cpaCC.offPct.toFixed(0)}% off`
-              sublabelMsg = `Produce more Bottom Funnel creatives — top funnel is working`
-              color = '#fbbf24'; glow = 'rgba(251,191,36,0.12)'
-
-            // ── Branch 5: CPRL on target but flat/diverging → Caution
-            } else if (cprl.onTarget && (cprl.convStrength === 'flat' || cprl.convStrength === 'diverging')) {
-              const drift = cprl.convStrength === 'diverging'
-                ? `diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day`
-                : 'trend is flat'
-              rLabel = `⚠️ Caution — ${cprlLabel} Drifting`
-              sublabelStats = `${cprlLabel} on target · trend ${drift}`
-              sublabelMsg = `Test new creatives before any budget changes`
-              color = '#fb923c'; glow = 'rgba(251,146,60,0.12)'
-
-            // ── Branch 6: CPRL off target but recovering
-            } else if (!cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak')) {
-              const speed = cprl.convStrength === 'strong' ? 'strong' : 'slow'
-              rLabel = cprl.convStrength === 'strong' ? '⚠️ Recovering — Almost There' : '⚠️ Recovering — Slowly'
-              sublabelStats = `${cprlLabel} +${cprl.offPct.toFixed(0)}% off · ${speed} recovery (${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day)`
-              sublabelMsg = `Test new creative hooks to accelerate convergence`
-              color = '#fb923c'; glow = 'rgba(251,146,60,0.12)'
-
-            // ── Branch 7: CPRL off target, flat
-            } else if (!cprl.onTarget && cprl.convStrength === 'flat') {
-              rLabel = `🔧 Stalled — ${cprlLabel} Stuck`
-              sublabelStats = `${cprlLabel} +${cprl.offPct.toFixed(0)}% off · no improvement trend`
-              sublabelMsg = `Replace underperforming creatives — test new hooks and angles`
-              color = '#f87171'; glow = 'rgba(248,113,113,0.12)'
-
-            } else {
-              // Branch 8: CPRL off target and diverging
-              rLabel = '🔧 Optimize Ads First'
-              sublabelStats = `${cprlLabel} +${cprl.offPct.toFixed(0)}% off · diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day`
-              sublabelMsg = `Pause weakest ad sets and test fresh creatives immediately`
-              color = '#f87171'; glow = 'rgba(248,113,113,0.12)'
-            }
-
-            // Dot color based on convergence strength
-            const dotColor = (s: typeof scores[0]) =>
-              s.onTarget && (s.convStrength === 'strong' || s.convStrength === 'weak') ? '#34d399'
-              : s.onTarget && s.convStrength === 'flat' ? '#a3e635'
-              : s.onTarget && s.convStrength === 'diverging' ? '#fbbf24'
-              : !s.onTarget && (s.convStrength === 'strong') ? '#fbbf24'
-              : !s.onTarget && (s.convStrength === 'weak') ? '#fb923c'
-              : '#f87171'
-
-            return (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '7px 11px', borderRadius: 9,
-                background: glow, border: `1px solid ${color}30`,
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color, letterSpacing: '-0.02em' }}>{rLabel}</div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: `${color}99`, letterSpacing: '0.01em', marginTop: 2, lineHeight: 1.3 }}>{sublabelStats}</div>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: `${color}cc`, marginTop: 2, lineHeight: 1.4 }}>{sublabelMsg}</div>
-                </div>
-              </div>
-            )
-          })()}
-
 
 
         </div> {/* right content */}
