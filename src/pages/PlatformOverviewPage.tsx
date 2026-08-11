@@ -282,8 +282,16 @@ export function PlatformOverviewPage() {
         ctrSeries: byDate({ c: 0, i: 0 }, (p, r) => ({ c: p.c + r.link_click, i: p.i + r.impressions }))
           .map(([date, { c, i }]) => ({ date, value: i > 0 ? (c / i) * 100 : 0 })).filter(p => p.value > 0 && p.date >= activeFrom),
         cprlSeries: isMCI
-          ? byDate({ s: 0, f: 0 }, (p, r) => ({ s: p.s + r.ad_spend, f: p.f + r.form_submission }))
-              .map(([date, { s, f }]) => ({ date, value: f > 0 ? s / f : 0 })).filter(p => p.value > 0 && p.date >= activeFrom)
+          ? (() => {
+              const daily = byDate({ s: 0, f: 0 }, (p, r) => ({ s: p.s + r.ad_spend, f: p.f + r.form_submission }))
+                .map(([date, { s, f }]) => ({ date, spend: s, subs: f }))
+              return daily.map((_, i) => {
+                const slice = daily.slice(Math.max(0, i - 6), i + 1)
+                const ts = slice.reduce((s, d) => s + d.spend, 0)
+                const tf = slice.reduce((s, d) => s + d.subs, 0)
+                return { date: daily[i].date, value: tf > 0 ? ts / tf : 0 }
+              }).filter(p => p.value > 0 && p.date >= activeFrom)
+            })()
           : byDate({ s: 0, l: 0 }, (p, r) => ({ s: p.s + r.ad_spend, l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls }))
               .map(([date, { s, l }]) => ({ date, value: l > 0 ? s / l : 0 })).filter(p => p.value > 0 && p.date >= activeFrom),
         cpaSeries: (() => {
@@ -892,7 +900,7 @@ export function PlatformOverviewPage() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase' }}>Optimize For</span>
                           <div style={{ display: 'flex', gap: 6 }}>
-                            {([['CPRL', 'cprl'], ['CPA CC', 'cpaCC']] as const).map(([label, val]) => {
+                            {([[activeBrand === 'MCI' ? 'CPR' : 'CPRL', 'cprl'], [activeBrand === 'MCI' ? 'CPV' : 'CPA CC', 'cpaCC']] as [string, string][]).map(([label, val]) => {
                               const active = optTarget === val
                               return (
                                 <button
@@ -992,7 +1000,7 @@ export function PlatformOverviewPage() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'Inter, system-ui, sans-serif' }}>
                     <thead>
                       <tr>
-                        {([['Campaign Name', 'name'], ['Funnel', 'funnel'], ['CPRL', 'cprl'], ['CPA CC', 'cpaCC'], ['Daily Budget', 'dailyBudget']] as const).map(([label, col]) => {
+                        {([[activeBrand === 'MCI' ? 'Campaign Name' : 'Campaign Name', 'name'], ['Funnel', 'funnel'], [activeBrand === 'MCI' ? 'CPR' : 'CPRL', 'cprl'], [activeBrand === 'MCI' ? 'CPV' : 'CPA CC', 'cpaCC'], ['Daily Budget', 'dailyBudget']] as [string, string][]).map(([label, col]) => {
                           const isActive = campSortCol === col
                           return (
                             <th key={col}
@@ -1013,7 +1021,7 @@ export function PlatformOverviewPage() {
                             </th>
                           )
                         })}
-                        {['New Budget', 'Change', 'Delta', 'P. CPRL', 'P. CPA CC'].map(h => (
+                        {['New Budget', 'Change', 'Delta', `P. ${activeBrand === 'MCI' ? 'CPR' : 'CPRL'}`, `P. ${activeBrand === 'MCI' ? 'CPV' : 'CPA CC'}`].map(h => (
                           <th key={h} style={{
                             textAlign: 'right',
                             padding: '6px 10px 8px',
@@ -1253,7 +1261,7 @@ export function PlatformOverviewPage() {
                         {/* CPRL & CPA CC */}
                         <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: 24 }}>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: 4 }}>{metricsLabel} CPRL</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: 4 }}>{metricsLabel} {activeBrand === 'MCI' ? 'CPR' : 'CPRL'}</div>
                             <div style={{ fontSize: 18, fontWeight: 800, color: cprl > 0 ? '#fff' : 'rgba(255,255,255,0.25)', letterSpacing: '-0.03em' }}>
                               {cprl > 0 ? fmtRpM(Math.round(cprl)) : '—'}
                             </div>
@@ -1269,7 +1277,7 @@ export function PlatformOverviewPage() {
                             })()}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: 4 }}>{metricsLabel} CPA CC</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: 4 }}>{metricsLabel} {activeBrand === 'MCI' ? 'CPV' : 'CPA CC'}</div>
                             <div style={{ fontSize: 18, fontWeight: 800, color: cpaCC > 0 ? '#fff' : 'rgba(255,255,255,0.25)', letterSpacing: '-0.03em' }}>
                               {cpaCC > 0 ? fmtRpM(Math.round(cpaCC)) : '—'}
                             </div>
