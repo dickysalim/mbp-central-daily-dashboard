@@ -59,7 +59,7 @@ export function PlatformOverviewPage() {
     },
     staleTime: 0,
   })
-  const brands = useMemo(() => (brandBounds?.map(b => b.brand) ?? []).filter(b => b !== 'MCI'), [brandBounds])
+  const brands = useMemo(() => brandBounds?.map(b => b.brand) ?? [], [brandBounds])
 
   const [brand, setBrand] = useState('')
   useEffect(() => { if (brands.length > 0 && !brand) setBrand(brands[0]) }, [brands, brand])
