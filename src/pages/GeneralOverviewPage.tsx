@@ -5,13 +5,11 @@ import { useState, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import { dateStr, capToH2, PRESETS } from './ProductPerformancePage'
-import { fmtRp, fmtRpM } from '../utils/format'
-import { ChangelogModal } from '../components/ChangelogModal'
-import { ChangelogTooltip } from '../components/ChangelogTooltip'
 import type { ChangelogRow } from '../types/changelog'
 import mncLogo from '../assets/brand_logos/MNC.webp'
 import golLogo from '../assets/brand_logos/GOL.webp'
 import mciLogo from '../assets/brand_logos/MCI.webp'
+import { SkuPerformanceCard } from '../components/cards/SkuPerformanceCard'
 
 interface BrandBounds { brand: string; earliest: string; latest: string; skus: string[] }
 
@@ -20,183 +18,6 @@ interface PerfRow { date: string; sku: string; ad_spend: number; impressions: nu
 interface ConvRow { date: string; sku: string; mongo_real_lead_ccom?: number; mongo_real_lead_d2or?: number; mongo_real_lead_mpsh?: number; mongo_real_lead_ofls?: number; mongo_purchase_ccom?: number; mongo_purchase_ccom_revenue?: number }
 interface SalesRow { date: string; rev_ccom_ca?: number; rev_ccom_crm?: number; rev_mpsh?: number; rev_d2or?: number; rev_ofls?: number }
 interface BrandData { performance: PerfRow[]; conversions: ConvRow[]; sales: SalesRow[]; [k: string]: unknown }
-
-// ── Overview Chart (identical to MNC CprlChart/CpaChart) ──
-function OverviewChart({ data, color, unit, changelog = [], target, targetLabel, higherIsBetter = false, formatFn }: {
-  data: { date: string; value: number }[]
-  color: string
-  unit: string
-  changelog?: ChangelogRow[]
-  target?: number
-  targetLabel?: string
-  higherIsBetter?: boolean
-  formatFn?: (v: number) => string
-}) {
-  const W = 320, H = 180, PAD = { top: 10, right: target ? 52 : 10, bottom: 20, left: 6 }
-  const innerW = W - PAD.left - PAD.right
-  const innerH = H - PAD.top - PAD.bottom
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; p: { date: string; value: number }; pxX: number; pxY: number } | null>(null)
-  const [clTooltip, setClTooltip] = useState<{ x: number; y: number; entries: ChangelogRow[] } | null>(null)
-  const [modalEntries, setModalEntries] = useState<ChangelogRow[] | null>(null)
-  const ref = useRef<SVGSVGElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  if (data.length < 2) return null
-
-  const vals = data.map(d => d.value)
-  const minV = Math.min(...vals, target ?? Infinity) * 0.96
-  const maxV = Math.max(...vals, target ?? -Infinity) * 1.04
-  const rng = maxV - minV || 1
-  const n = vals.length
-
-  const xs = (i: number) => PAD.left + (i / (n - 1)) * innerW
-  const ys = (v: number) => PAD.top + innerH - ((v - minV) / rng) * innerH
-
-  const mX = (n - 1) / 2
-  const mY = vals.reduce((a, b) => a + b, 0) / n
-  const slope = vals.reduce((s, v, i) => s + (i - mX) * (v - mY), 0) /
-                vals.reduce((s, _, i) => s + (i - mX) ** 2, 0)
-  const ic = mY - slope * mX
-  const tUp = slope > 0
-  // For cost metrics (lower is better): slope>0 = diverging (red), slope<0 = converging (green)
-  // For value metrics (higher is better): slope>0 = converging (green), slope<0 = diverging (red)
-  const tc = higherIsBetter ? (tUp ? '#34d399' : '#f87171') : (tUp ? '#f87171' : '#34d399')
-  const converging = higherIsBetter ? tUp : !tUp
-  const rate = target ? Math.abs((slope / target) * 100) : Math.abs((slope / mY) * 100)
-
-  const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
-
-  // Target zones
-  const above: string[] = [], below: string[] = []
-  if (target != null) {
-    const tY = ys(target)
-    for (let i = 0; i < n - 1; i++) {
-      const ya = ys(data[i].value), yb = ys(data[i + 1].value)
-      const xa = xs(i), xb = xs(i + 1)
-      const aA = ya < tY, bA = yb < tY
-      if (aA && bA)        { above.push(`${xa},${tY} ${xa},${ya} ${xb},${yb} ${xb},${tY}`) }
-      else if (!aA && !bA) { below.push(`${xa},${tY} ${xa},${ya} ${xb},${yb} ${xb},${tY}`) }
-      else {
-        const t = (tY - ya) / (yb - ya), xi = xa + t * (xb - xa)
-        if (aA) { above.push(`${xa},${tY} ${xa},${ya} ${xi},${tY}`); below.push(`${xi},${tY} ${xb},${yb} ${xb},${tY}`) }
-        else    { below.push(`${xa},${tY} ${xa},${ya} ${xi},${tY}`); above.push(`${xi},${tY} ${xb},${yb} ${xb},${tY}`) }
-      }
-    }
-  } else {
-    const fillPts = `${xs(0)},${PAD.top + innerH} ${pts} ${xs(n - 1)},${PAD.top + innerH}`
-    below.push(fillPts)
-  }
-
-  const aboveColor = higherIsBetter ? '#34d399' : '#f87171'
-  const belowColor = higherIsBetter ? '#f87171' : '#34d399'
-
-  const markers = data.map((d, i) => ({ d, i, entries: changelog.filter(c => c.date === d.date) })).filter(m => m.entries.length > 0)
-
-  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const r = ref.current?.getBoundingClientRect(); if (!r) return
-    const svgX = (e.clientX - r.left) / r.width * W
-    const idx = Math.max(0, Math.min(n - 1, Math.round(((svgX - PAD.left) / innerW) * (n - 1))))
-    // Store tooltip in pixel coords relative to container
-    const pxX = (xs(idx) / W) * r.width
-    const pxY = (ys(data[idx].value) / H) * r.height
-    setTooltip({ x: xs(idx), y: ys(data[idx].value), p: data[idx], pxX, pxY })
-  }
-  const sd = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-  const fmt = formatFn ?? ((v: number) => fmtRp(Math.round(v)))
-
-  return (
-    <>
-    <div ref={containerRef} style={{ position: 'relative' }}>
-      <svg ref={ref} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet"
-        onMouseMove={onMove} onMouseLeave={() => setTooltip(null)}
-        style={{ display: 'block', overflow: 'visible', cursor: 'crosshair', width: '100%', height: 'auto' }}>
-        {above.map((p, i) => <polygon key={`a${i}`} points={p} fill={aboveColor} fillOpacity="0.1" />)}
-        {below.map((p, i) => <polygon key={`b${i}`} points={p} fill={belowColor} fillOpacity={target != null ? '0.1' : '0.06'} />)}
-        {target != null && (
-          <>
-            <line x1={PAD.left} y1={ys(target)} x2={W - PAD.right} y2={ys(target)} stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
-            <text x={W - PAD.right + 3} y={ys(target) + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">{targetLabel ?? ''}</text>
-          </>
-        )}
-        <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)} stroke={tc} strokeOpacity="0.45" strokeWidth="1.8" strokeDasharray="4,3" />
-        <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-        {markers.map(m => (
-          <g key={m.i}
-            onMouseEnter={(e) => setClTooltip({ x: e.clientX, y: e.clientY, entries: m.entries })}
-            onMouseLeave={() => setClTooltip(null)}
-            onClick={() => { setClTooltip(null); setModalEntries(m.entries) }}
-            style={{ cursor: 'pointer' }}>
-            <rect x={xs(m.i) - 8} y={PAD.top - 14} width={16} height={18} fill="transparent" />
-            <line x1={xs(m.i)} y1={PAD.top} x2={xs(m.i)} y2={PAD.top + innerH} stroke="#fbbf24" strokeOpacity="0.28" strokeWidth="1" strokeDasharray="2,2" />
-            <polygon points={`${xs(m.i)},${PAD.top - 1} ${xs(m.i) - 4},${PAD.top - 8} ${xs(m.i) + 4},${PAD.top - 8}`} fill="#fbbf24" opacity="0.9" />
-          </g>
-        ))}
-        {tooltip && (
-          <g>
-            <line x1={tooltip.x} y1={PAD.top} x2={tooltip.x} y2={PAD.top + innerH} stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
-            <circle cx={tooltip.x} cy={tooltip.y} r="4.5" fill={color} stroke="#0d0e12" strokeWidth="1.5" />
-          </g>
-        )}
-        <text x={PAD.left} y={H - 2} fontSize="10" fill="rgba(255,255,255,0.65)" textAnchor="start">{sd(data[0].date)}</text>
-        <text x={xs(n - 1)} y={H - 2} fontSize="10" fill="rgba(255,255,255,0.65)" textAnchor="end">{sd(data[n - 1].date)}</text>
-      </svg>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8 }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: `${tc}12`, border: `1px solid ${tc}28`, borderRadius: 4, padding: '3px 7px' }}>
-          <span style={{ fontSize: 9, fontWeight: 800, color: tc }}>{converging ? '↓' : '↑'}</span>
-          <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{converging ? 'Converging' : 'Diverging'}</span>
-          <span style={{ fontSize: 9, color: tc, opacity: 1 }}>{rate.toFixed(1)}%/d</span>
-        </div>
-      </div>
-
-      {tooltip && (
-        <div style={{
-          position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap',
-          top: Math.max(0, tooltip.pxY - 38),
-          left: tooltip.pxX > (containerRef.current?.offsetWidth ?? 200) * 0.6 ? tooltip.pxX - 130 : tooltip.pxX + 8,
-          background: 'rgba(13,14,18,0.95)', border: `1px solid ${color}55`,
-          borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
-        }}>
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginBottom: 1 }}>{sd(tooltip.p.date)}</div>
-          <div style={{ fontSize: 11, fontWeight: 700, color }}>{fmt(tooltip.p.value)} {unit}</div>
-        </div>
-      )}
-
-      {clTooltip && <ChangelogTooltip x={clTooltip.x} y={clTooltip.y} entries={clTooltip.entries} />}
-    </div>
-
-    {modalEntries && <ChangelogModal entries={modalEntries} onClose={() => setModalEntries(null)} />}
-    </>
-  )
-}
-
-// ── Status pill (lower is better — for CPRL/CPA) ──
-function StatusPill({ value, target }: { value: number; target: number }) {
-  const div = value > 0 ? ((value - target) / target) * 100 : null
-  if (div === null) return null
-  const sc = div <= 0 ? '#34d399' : div <= 10 ? '#fbbf24' : '#f87171'
-  const sl = div <= 0 ? '🟢 On Target' : div <= 10 ? '🟡 Slightly Over' : '🔴 Over Target'
-  return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 6, background: `${sc}15`, border: `1px solid ${sc}30`, borderRadius: 5, padding: '2px 6px' }}>
-      <div style={{ width: 4, height: 4, borderRadius: '50%', background: sc }} />
-      <span style={{ fontSize: 9, fontWeight: 700, color: sc }}>{sl}</span>
-      <span style={{ fontSize: 8, color: sc, opacity: 0.8 }}>{div > 0 ? '+' : ''}{div.toFixed(1)}%</span>
-    </div>
-  )
-}
-
-// ── ROAS status pill (higher is better) ──
-function RoasStatusPill({ roas }: { roas: number }) {
-  if (roas <= 0) return null
-  const sc = roas >= 3 ? '#34d399' : roas >= 2 ? '#fbbf24' : '#f87171'
-  const sl = roas >= 3 ? '🟢 Healthy' : roas >= 2 ? '🟡 Moderate' : '🔴 Low'
-  return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 6, background: `${sc}15`, border: `1px solid ${sc}30`, borderRadius: 5, padding: '2px 6px' }}>
-      <div style={{ width: 4, height: 4, borderRadius: '50%', background: sc }} />
-      <span style={{ fontSize: 9, fontWeight: 700, color: sc }}>{sl}</span>
-    </div>
-  )
-}
 
 export function GeneralOverviewPage() {
   // ── Date bounds ──
@@ -459,10 +280,10 @@ export function GeneralOverviewPage() {
       return { date: dd.date, value: tc > 0 ? ts / tc : 0 }
     }).filter(p => p.value > 0).filter(p => p.date >= mciRange.from)
 
-    // Visit Rate series (7d MA) = form_conversion / form_submission
+    // Visit Rate series (21d MA, same as CPV) = form_conversion / form_submission
     const vrDaily = allDates.map(d => ({ date: d, subs: subsByDate.get(d) ?? 0, conv: convByDate.get(d) ?? 0 }))
     const visitRateSeries = vrDaily.map((dd, i) => {
-      const slice = vrDaily.slice(Math.max(0, i - 6), i + 1)
+      const slice = vrDaily.slice(Math.max(0, i - 20), i + 1)
       const tsubs = slice.reduce((s, d) => s + d.subs, 0)
       const tconv = slice.reduce((s, d) => s + d.conv, 0)
       return { date: dd.date, value: tsubs > 0 ? (tconv / tsubs) * 100 : 0 }
@@ -523,368 +344,118 @@ export function GeneralOverviewPage() {
       </div>
 
       {/* ── Content ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 40, width: '100%' }}>
 
-        {/* ── MNC Brand Snapshot ── */}
-        <div style={{
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.09)',
-          borderRadius: 14, padding: '20px 22px',
-          overflow: 'hidden',
-          display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 0,
-        }}>
-          {/* Left — Logo + Brand */}
-          <div style={{
-            flex: '0 0 140px', display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-            paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 18,
-          }}>
-            <img src={mncLogo} alt="MNC" style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, marginBottom: 8 }} />
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 2 }}>mGanik Nutrition</div>
-            <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.07em' }}>MNC</div>
+        {/* MNC Brand Snapshot */}
+        {mncLoading || !mnc ? (
+          <div style={{ padding: "20px 0", textAlign: "center", color: "rgba(255,255,255,0.2)", fontSize: 12 }}>
+            {mncLoading ? "Loading MNC data…" : "No data available"}
           </div>
+        ) : (
+          <SkuPerformanceCard
+            sku="MNC"
+            skuLabel="MNC"
+            productName="mGanik Nutrition"
+            skuColor="#f97316"
+            imageSrc={mncLogo}
+            totalCprl={mnc.cprl}
+            totalCpaCC={mnc.cpaCC}
+            cprlSeries={mnc.cprlSeries}
+            cpaSeries={mnc.cpaSeries}
+            totalCtr={0}
+            totalLpvo={0}
+            totalVo2l={0}
+            ctrSeries={[]}
+            lpvoSeries={[]}
+            vo2lSeries={[]}
+            globalCtrAvg={0}
+            globalLpvoAvg={0}
+            globalVo2lAvg={0}
+            cprlTarget={150_000}
+            cpaTarget={2_000_000}
+            changelog={mnc.changelog}
+            totalRoas={mnc.roas}
+            roasTarget={6.59}
+            roasLabel="RoAS"
+            roasSeries={mnc.roasSeries}
+            compactLayout
+          />
+        )}
 
-          {/* Right — Content */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.45)' }}>Brand Snapshot</span>
-              {mnc && (
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
-                  Ad Spend: {fmtRpM(mnc.totalSpend)}
-                </span>
-              )}
-            </div>
-
-          {mncLoading || !mnc ? (
-            <div style={{ padding: '20px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>
-              {mncLoading ? 'Loading MNC data…' : 'No data available'}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 0 }}>
-
-              {/* ── CPRL ── */}
-              <div style={{ flex: '1 1 0', padding: '0 24px 0 0' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Ads Performance
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>CPRL</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {mnc.cprl > 0 ? fmtRp(Math.round(mnc.cprl)) : '—'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Real Leads</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{mnc.totalLeads.toLocaleString('id-ID')}</div>
-                  </div>
-                </div>
-                <StatusPill value={mnc.cprl} target={150_000} />
-                <div style={{ marginTop: 10 }}>
-                  <OverviewChart data={mnc.cprlSeries} color="#818cf8" unit="/ lead" target={150_000} targetLabel="150K" changelog={mnc.changelog} />
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div style={{ width: 1, background: 'rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
-
-              {/* ── CPA CC ── */}
-              <div style={{ flex: '1 1 0', padding: '0 24px' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Leads Quality
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>CPA CC</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {mnc.cpaCC > 0 ? fmtRpM(Math.round(mnc.cpaCC)) : '—'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Purchases CC</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{mnc.totalPurchases.toLocaleString('id-ID')}</div>
-                  </div>
-                </div>
-                <StatusPill value={mnc.cpaCC} target={2_000_000} />
-                <div style={{ marginTop: 10 }}>
-                  <OverviewChart data={mnc.cpaSeries} color="#f472b6" unit="/ purchase" target={2_000_000} targetLabel="2M" changelog={mnc.changelog} formatFn={(v) => fmtRpM(Math.round(v))} />
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div style={{ width: 1, background: 'rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
-
-              {/* ── ROAS ── */}
-              <div style={{ flex: '1 1 0', padding: '0 0 0 24px' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  RoAS Health
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>ROAS</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {mnc.roas > 0 ? `${mnc.roas.toFixed(2)}x` : '—'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Revenue</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{fmtRpM(mnc.totalRevenue)}</div>
-                  </div>
-                </div>
-                <RoasStatusPill roas={mnc.roas} />
-                <div style={{ marginTop: 10 }}>
-                  <OverviewChart data={mnc.roasSeries} color="#34d399" unit="x" target={6.59} targetLabel="6.59x" changelog={mnc.changelog} higherIsBetter formatFn={(v) => `${v.toFixed(2)}x`} />
-                </div>
-              </div>
-
-            </div>
-          )}
-          </div>{/* end right */}
-        </div>
-
-        {/* ── GOL Brand Snapshot ── */}
-        <div style={{
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.09)',
-          borderRadius: 14, padding: '20px 22px',
-          overflow: 'hidden',
-          display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 0,
-        }}>
-          {/* Left — Logo + Brand */}
-          <div style={{
-            flex: '0 0 140px', display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-            paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 18,
-          }}>
-            <img src={golLogo} alt="GOL" style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, marginBottom: 8 }} />
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 2 }}>GOLO</div>
-            <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.07em' }}>GOL</div>
+        {/* GOL Brand Snapshot */}
+        {golLoading || !gol ? (
+          <div style={{ padding: "20px 0", textAlign: "center", color: "rgba(255,255,255,0.2)", fontSize: 12 }}>
+            {golLoading ? "Loading GOL data…" : "No data available"}
           </div>
+        ) : (
+          <SkuPerformanceCard
+            sku="GOL"
+            skuLabel="GOL"
+            productName="GOLO"
+            skuColor="#84cc16"
+            imageSrc={golLogo}
+            totalCprl={gol.cprl}
+            totalCpaCC={gol.cpaCC}
+            cprlSeries={gol.cprlSeries}
+            cpaSeries={gol.cpaSeries}
+            totalCtr={0}
+            totalLpvo={0}
+            totalVo2l={0}
+            ctrSeries={[]}
+            lpvoSeries={[]}
+            vo2lSeries={[]}
+            globalCtrAvg={0}
+            globalLpvoAvg={0}
+            globalVo2lAvg={0}
+            cprlTarget={gol.cprlSeries.length > 0 ? Math.round(gol.cprlSeries.reduce((s, p) => s + p.value, 0) / gol.cprlSeries.length) : 150_000}
+            cpaTarget={2_000_000}
+            changelog={gol.changelog}
+            totalRoas={gol.roas}
+            roasTarget={6.59}
+            roasLabel="RoAS"
+            roasSeries={gol.roasSeries}
+            compactLayout
+          />
+        )}
 
-          {/* Right — Content */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.45)' }}>Brand Snapshot</span>
-              {gol && (
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
-                  Ad Spend: {fmtRpM(gol.totalSpend)}
-                </span>
-              )}
-            </div>
-
-          {golLoading || !gol ? (
-            <div style={{ padding: '20px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>
-              {golLoading ? 'Loading GOL data…' : 'No data available'}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 0 }}>
-
-              {/* ── CPRL ── */}
-              <div style={{ flex: '1 1 0', padding: '0 24px 0 0' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Ads Performance
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>CPRL</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {gol.cprl > 0 ? fmtRp(Math.round(gol.cprl)) : '—'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Real Leads</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{gol.totalLeads.toLocaleString('id-ID')}</div>
-                  </div>
-                </div>
-                {(() => {
-                  const avg = gol.cprlSeries.length > 0 ? Math.round(gol.cprlSeries.reduce((s, p) => s + p.value, 0) / gol.cprlSeries.length) : 0
-                  const label = avg >= 1_000_000 ? `${(avg / 1_000_000).toFixed(1)}M` : avg >= 1_000 ? `${Math.round(avg / 1_000)}K` : `${avg}`
-                  return (
-                    <>
-                      <StatusPill value={gol.cprl} target={avg || 150_000} />
-                      <div style={{ marginTop: 10 }}>
-                        <OverviewChart data={gol.cprlSeries} color="#818cf8" unit="/ lead" target={avg || 150_000} targetLabel={`${label} avg`} changelog={gol.changelog} />
-                      </div>
-                    </>
-                  )
-                })()}
-              </div>
-
-              {/* Divider */}
-              <div style={{ width: 1, background: 'rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
-
-              {/* ── CPA CC ── */}
-              <div style={{ flex: '1 1 0', padding: '0 24px' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Leads Quality
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>CPA CC</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {gol.cpaCC > 0 ? fmtRpM(Math.round(gol.cpaCC)) : '—'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Purchases CC</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{gol.totalPurchases.toLocaleString('id-ID')}</div>
-                  </div>
-                </div>
-                <StatusPill value={gol.cpaCC} target={2_000_000} />
-                <div style={{ marginTop: 10 }}>
-                  <OverviewChart data={gol.cpaSeries} color="#f472b6" unit="/ purchase" target={2_000_000} targetLabel="2M" changelog={gol.changelog} formatFn={(v) => fmtRpM(Math.round(v))} />
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div style={{ width: 1, background: 'rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
-
-              {/* ── ROAS ── */}
-              <div style={{ flex: '1 1 0', padding: '0 0 0 24px' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  RoAS Health
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>ROAS</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {gol.roas > 0 ? `${gol.roas.toFixed(2)}x` : '—'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Revenue</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{fmtRpM(gol.totalRevenue)}</div>
-                  </div>
-                </div>
-                <RoasStatusPill roas={gol.roas} />
-                <div style={{ marginTop: 10 }}>
-                  <OverviewChart data={gol.roasSeries} color="#34d399" unit="x" target={6.59} targetLabel="6.59x" changelog={gol.changelog} higherIsBetter formatFn={(v) => `${v.toFixed(2)}x`} />
-                </div>
-              </div>
-
-            </div>
-          )}
-          </div>{/* end right */}
-        </div>
-
-        {/* ── MCI Brand Snapshot ── */}
-        <div style={{
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.09)',
-          borderRadius: 14, padding: '20px 22px',
-          overflow: 'hidden',
-          display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 0,
-        }}>
-          {/* Left — Logo + Brand */}
-          <div style={{
-            flex: '0 0 140px', display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-            paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 18,
-          }}>
-            <img src={mciLogo} alt="MCI" style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, marginBottom: 8 }} />
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 2 }}>mGanik Care</div>
-            <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.07em' }}>MCI</div>
+        {/* MCI Brand Snapshot */}
+        {mciLoading || !mci ? (
+          <div style={{ padding: "20px 0", textAlign: "center", color: "rgba(255,255,255,0.2)", fontSize: 12 }}>
+            {mciLoading ? "Loading MCI data…" : "No data available"}
           </div>
-
-          {/* Right — Content */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.45)' }}>Brand Snapshot</span>
-              {mci && (
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
-                  Ad Spend: {fmtRpM(mci.totalSpend)}
-                </span>
-              )}
-            </div>
-
-          {mciLoading || !mci ? (
-            <div style={{ padding: '20px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>
-              {mciLoading ? 'Loading MCI data…' : 'No data available'}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 0 }}>
-
-              {/* ── CPR ── */}
-              <div style={{ flex: '1 1 0', padding: '0 24px 0 0' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Ads Performance
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>CPR (Cost/Result)</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {mci.cpr > 0 ? fmtRp(Math.round(mci.cpr)) : '—'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Form Submissions</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{mci.totalFormSubs.toLocaleString('id-ID')}</div>
-                  </div>
-                </div>
-                <StatusPill value={mci.cpr} target={100_000} />
-                <div style={{ marginTop: 10 }}>
-                  <OverviewChart data={mci.cprSeries} color="#818cf8" unit="/ result" target={100_000} targetLabel="100K" changelog={mci.changelog} />
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div style={{ width: 1, background: 'rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
-
-              {/* ── CPV ── */}
-              <div style={{ flex: '1 1 0', padding: '0 24px' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Leads Quality
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>CPV (Cost/Visit)</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {mci.cpv > 0 ? fmtRpM(Math.round(mci.cpv)) : '—'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Form Conversions</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{mci.totalFormConv.toLocaleString('id-ID')}</div>
-                  </div>
-                </div>
-                <StatusPill value={mci.cpv} target={500_000} />
-                <div style={{ marginTop: 10 }}>
-                  <OverviewChart data={mci.cpvSeries} color="#f472b6" unit="/ visit" target={500_000} targetLabel="500K" changelog={mci.changelog} formatFn={(v) => fmtRpM(Math.round(v))} />
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div style={{ width: 1, background: 'rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
-
-              {/* ── Visit Rate ── */}
-              <div style={{ flex: '1 1 0', padding: '0 0 0 24px' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Visit Rate
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Conv / Subs</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {mci.visitRate > 0 ? `${mci.visitRate.toFixed(1)}%` : '—'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>First Visits</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{mci.totalVisits.toLocaleString('id-ID')}</div>
-                  </div>
-                </div>
-                <div style={{ marginTop: 10 }}>
-                  <OverviewChart data={mci.visitRateSeries} color="#34d399" unit="%" changelog={mci.changelog} higherIsBetter formatFn={(v) => `${v.toFixed(1)}%`} />
-                </div>
-              </div>
-
-            </div>
-          )}
-          </div>{/* end right */}
-        </div>
+        ) : (
+          <SkuPerformanceCard
+            sku="MCI"
+            skuLabel="MCI"
+            productName="mGanik Care"
+            skuColor="#34d399"
+            imageSrc={mciLogo}
+            totalCprl={mci.cpr}
+            totalCpaCC={mci.cpv}
+            cprlSeries={mci.cprSeries}
+            cpaSeries={mci.cpvSeries}
+            totalCtr={0}
+            totalLpvo={0}
+            totalVo2l={0}
+            ctrSeries={[]}
+            lpvoSeries={[]}
+            vo2lSeries={[]}
+            globalCtrAvg={0}
+            globalLpvoAvg={0}
+            globalVo2lAvg={0}
+            cprlTarget={100_000}
+            cpaTarget={500_000}
+            cprlLabel="CPR"
+            cpaLabel="CPV"
+            changelog={mci.changelog}
+            totalRoas={mci.visitRate}
+            roasTarget={50}
+            roasLabel="Visit Rate"
+            roasIsPercentage={true}
+            roasSeries={mci.visitRateSeries}
+            compactLayout
+          />
+        )}
 
       </div>
     </div>

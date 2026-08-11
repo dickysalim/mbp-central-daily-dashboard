@@ -72,6 +72,10 @@ export interface SkuPerformanceCardProps {
   roasTarget?:  number
   roasLabel?:   string   // 'Total RoAS' (default) or 'CC RoAS' etc.
   roasIsPercentage?: boolean  // true for Visit Rate (shown as %) instead of multiplier (×)
+  roasSeries?:  SkuPoint[]   // Daily RoAS/VisitRate series for sparkline
+
+  // Layout variant
+  compactLayout?: boolean  // true = thumbnail on top centered, charts always visible, no collapse
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -409,6 +413,8 @@ export function SkuPerformanceCard({
   roasTarget  = 6.59,
   roasLabel   = 'Total RoAS',
   roasIsPercentage = false,
+  roasSeries  = [],
+  compactLayout = false,
 }: SkuPerformanceCardProps) {
   const label = skuLabel ?? sku
   const [open, setOpen] = useState(false)
@@ -466,7 +472,7 @@ export function SkuPerformanceCard({
     },
     {
       key: `${sku}-roas`, label: roasLabel, color: '#fbbf24',
-      series: [], higherIsBetter: true, fixedTarget: roasTarget,
+      series: roasSeries, higherIsBetter: true, fixedTarget: roasTarget,
       metricValue:   totalRoas > 0 ? (roasIsPercentage ? totalRoas.toFixed(1) + '%' : totalRoas.toFixed(2) + '\u00d7') : '\u2014',
       metricSub:     roasTarget ? (roasIsPercentage ? `Target ${roasTarget.toFixed(0)}%` : `Target ${roasTarget}\u00d7`) : '',
       statusLabel:   totalRoas > 0 ? (totalRoas >= roasTarget ? 'On Target' : totalRoas >= roasTarget * 0.9 ? 'Slightly Below' : 'Off Target') : null,
@@ -561,6 +567,90 @@ export function SkuPerformanceCard({
           fixedTarget={c.fixedTarget}
           targetFontSize={c.targetFontSize}
         />
+      </div>
+    )
+  }
+
+  // ── Compact layout: left thumbnail, CPRL+CPA upfront, RoAS/VisitRate collapsed ──
+  if (compactLayout) {
+    const cprlChart = topCharts[0]  // CPRL / CPR
+    const cpaChart  = topCharts[1]  // CPA CC / CPV
+    const roasChart = topCharts[2]  // RoAS / Visit Rate
+
+    return (
+      <div style={{
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.09)',
+        borderRadius: 14, padding: '20px 22px',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        display: 'flex', flexDirection: 'column',
+      }}>
+
+        {/* ── MAIN ROW: Image | CPRL + CPA CC charts ── */}
+        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 0 }}>
+
+          {/* Image + product identity */}
+          <div style={{
+            flex: '0 0 120px', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+            paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 18,
+          }}>
+            {imageSrc
+              ? <img src={imageSrc} alt={productName ?? label} style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, marginBottom: 8 }} />
+              : <div style={{ width: '100%', aspectRatio: '1/1', borderRadius: 10, marginBottom: 8, background: `${skuColor}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 20, fontWeight: 800, color: skuColor }}>{label}</span>
+                </div>
+            }
+            {productName && (
+              <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 3 }}>{productName}</div>
+            )}
+            <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.07em' }}>{label}</div>
+          </div>
+
+          {/* Right: CPRL + CPA CC charts side by side */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'stretch' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <ChartCol c={cprlChart} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0, paddingLeft: 16, borderLeft: '1px solid rgba(255,255,255,0.06)', marginLeft: 16 }}>
+              <ChartCol c={cpaChart} />
+            </div>
+          </div>
+        </div>
+
+        {/* ── COLLAPSE TOGGLE ── */}
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{
+            all: 'unset', display: 'flex', alignItems: 'center', gap: 8,
+            cursor: 'pointer', marginTop: 16, paddingTop: 12,
+            borderTop: '1px solid rgba(255,255,255,0.09)', width: '100%',
+          }}
+        >
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.48)', textTransform: 'uppercase' }}>
+            {open ? 'Hide details' : `${roasLabel}`}
+          </span>
+          <svg
+            width="12" height="12" viewBox="0 0 24 24"
+            fill="none" stroke="rgba(255,255,255,0.40)" strokeWidth="2.5"
+            strokeLinecap="round" strokeLinejoin="round"
+            style={{
+              marginLeft: 'auto', flexShrink: 0,
+              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s ease',
+            }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        {/* ── COLLAPSED: RoAS / Visit Rate chart ── */}
+        <div style={{ overflow: 'hidden', maxHeight: open ? '600px' : '0', transition: 'max-height 0.3s ease' }}>
+          <div style={{ paddingTop: 14, marginTop: 14, borderTop: '1px solid rgba(255,255,255,0.09)' }}>
+            <ChartCol c={roasChart} />
+          </div>
+        </div>
+
       </div>
     )
   }

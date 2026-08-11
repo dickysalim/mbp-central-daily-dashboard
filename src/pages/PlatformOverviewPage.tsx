@@ -470,7 +470,7 @@ export function PlatformOverviewPage() {
           const totalDailyBudget = Object.values(platformBudgets).reduce((s, v) => s + v, 0)
 
           return (
-        <div style={{ display: 'grid', gridTemplateColumns: activePlatforms.length >= 2 ? 'repeat(2, 1fr)' : '1fr', gap: 40 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 40 }}>
           {activePlatforms.map(({ id, label, color, imageSrc }) => {
             const d = allPlatformData[id]
             if (!d) return null
@@ -497,7 +497,7 @@ export function PlatformOverviewPage() {
                 globalCtrAvg={globalCtrAvg}
                 globalLpvoAvg={globalLpvoAvg}
                 globalVo2lAvg={globalVo2lAvg}
-                cprlTarget={activeBrand === 'MCI' ? 100_000 : 150_000}
+                cprlTarget={activeBrand === 'MCI' ? 100_000 : activeBrand === 'GOL' ? (d.cprlSeries.length > 0 ? Math.round(d.cprlSeries.reduce((s: number, p: {value: number}) => s + p.value, 0) / d.cprlSeries.length) : 150_000) : 150_000}
                 cpaTarget={activeBrand === 'MCI' ? 500_000 : 2_000_000}
                 cprlLabel={activeBrand === 'MCI' ? 'CPR' : undefined}
                 cpaLabel={activeBrand === 'MCI' ? 'CPV' : undefined}
