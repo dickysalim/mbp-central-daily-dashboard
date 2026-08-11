@@ -103,7 +103,7 @@ function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changel
         {above.map((p, i) => <polygon key={`a${i}`} points={p} fill="#f87171" fillOpacity="0.1" />)}
         {below.map((p, i) => <polygon key={`b${i}`} points={p} fill="#34d399" fillOpacity="0.1" />)}
         <line x1={PAD.left} y1={tY} x2={W - PAD.right} y2={tY} stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
-        <text x={W - PAD.right + 3} y={tY + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">150K</text>
+        <text x={W - PAD.right + 3} y={tY + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">{cprlTarget >= 1_000_000 ? `${(cprlTarget / 1_000_000).toFixed(1)}M` : `${Math.round(cprlTarget / 1_000)}K`}</text>
         <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)} stroke={tc} strokeOpacity="0.45" strokeWidth="1.8" strokeDasharray="4,3" />
         <polyline points={pts} fill="none" stroke="#818cf8" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {markers.map(m => (
