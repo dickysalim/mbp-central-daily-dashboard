@@ -15,6 +15,7 @@ import superfoodImg  from '../assets/sku_images/Superfood.webp'
 import metafiberImg  from '../assets/sku_images/Metafiber.webp'
 import nightsureImg  from '../assets/sku_images/Nightsure.webp'
 import threePeptideImg from '../assets/sku_images/3Peptide.webp'
+import ginsengImg    from '../assets/sku_images/Ginseng.webp'
 
 const fmtFull = (n: number) =>
   'Rp ' + Math.round(n).toLocaleString('id-ID')
@@ -845,6 +846,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
               { s: 'MTA', productName: 'Metafiber',  skuColor: '#818cf8', imageSrc: metafiberImg,   cpaTarget: 2_000_000 },
               { s: 'MNS', productName: 'Nightsure',  skuColor: '#34d399', imageSrc: nightsureImg,   cpaTarget: 2_000_000 },
               { s: 'M3P', productName: '3Peptide',   skuColor: '#f472b6', imageSrc: threePeptideImg, cpaTarget: 2_000_000 },
+              { s: 'GIN', productName: 'Ginseng',    skuColor: '#ef4444', imageSrc: ginsengImg,     cpaTarget: 2_000_000 },
             ].find(m => m.s === sku)
             
             const productName = meta?.productName ?? sku
@@ -876,7 +878,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
                 globalCtrAvg={globalCtrAvg}
                 globalLpvoAvg={globalLpvoAvg}
                 globalVo2lAvg={globalVo2lAvg}
-                cprlTarget={150_000}
+                cprlTarget={fixedBrand === 'GOL' ? (d.cprlSeries.length > 0 ? Math.round(d.cprlSeries.reduce((s: number, p: {value: number}) => s + p.value, 0) / d.cprlSeries.length) : 150_000) : 150_000}
                 cpaTarget={cpaTarget}
                 changelog={filteredChangelog}
                 campaignBreakdown={campaignBreakdownBySku[sku] ?? []}

@@ -9,6 +9,9 @@ import { fmtRp, fmtRpM } from '../utils/format'
 import { ChangelogModal } from '../components/ChangelogModal'
 import { ChangelogTooltip } from '../components/ChangelogTooltip'
 import type { ChangelogRow } from '../types/changelog'
+import mncLogo from '../assets/brand_logos/MNC.webp'
+import golLogo from '../assets/brand_logos/GOL.webp'
+import mciLogo from '../assets/brand_logos/MCI.webp'
 
 interface BrandBounds { brand: string; earliest: string; latest: string; skus: string[] }
 
@@ -456,9 +459,20 @@ export function GeneralOverviewPage() {
       return { date: dd.date, value: tc > 0 ? ts / tc : 0 }
     }).filter(p => p.value > 0).filter(p => p.date >= mciRange.from)
 
+    // Visit Rate series (7d MA) = form_conversion / form_submission
+    const vrDaily = allDates.map(d => ({ date: d, subs: subsByDate.get(d) ?? 0, conv: convByDate.get(d) ?? 0 }))
+    const visitRateSeries = vrDaily.map((dd, i) => {
+      const slice = vrDaily.slice(Math.max(0, i - 6), i + 1)
+      const tsubs = slice.reduce((s, d) => s + d.subs, 0)
+      const tconv = slice.reduce((s, d) => s + d.conv, 0)
+      return { date: dd.date, value: tsubs > 0 ? (tconv / tsubs) * 100 : 0 }
+    }).filter(p => p.value > 0).filter(p => p.date >= mciRange.from)
+
+    const visitRate = totalFormSubs > 0 ? (totalFormConv / totalFormSubs) * 100 : 0
+
     const changelog = (mciData.changelog ?? []) as ChangelogRow[]
 
-    return { totalSpend, totalFormSubs, totalFormConv, totalVisits, cpr, cpv, cprSeries, cpvSeries, changelog }
+    return { totalSpend, totalFormSubs, totalFormConv, totalVisits, cpr, cpv, visitRate, cprSeries, cpvSeries, visitRateSeries, changelog }
   }, [mciData, mciRange])
 
   return (
@@ -515,20 +529,32 @@ export function GeneralOverviewPage() {
         <div style={{
           background: 'rgba(255,255,255,0.04)',
           border: '1px solid rgba(255,255,255,0.09)',
-          borderRadius: 14, padding: '24px 28px',
+          borderRadius: 14, padding: '20px 22px',
           overflow: 'hidden',
+          display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 0,
         }}>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f97316', boxShadow: '0 0 8px #f9731688' }} />
-            <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>MNC</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.35)', marginLeft: 4 }}>Brand Snapshot</span>
-            {mnc && (
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
-                Ad Spend: {fmtRpM(mnc.totalSpend)}
-              </span>
-            )}
+          {/* Left — Logo + Brand */}
+          <div style={{
+            flex: '0 0 140px', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+            paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 18,
+          }}>
+            <img src={mncLogo} alt="MNC" style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, marginBottom: 8 }} />
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 2 }}>mGanik Nutrition</div>
+            <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.07em' }}>MNC</div>
           </div>
+
+          {/* Right — Content */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.45)' }}>Brand Snapshot</span>
+              {mnc && (
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
+                  Ad Spend: {fmtRpM(mnc.totalSpend)}
+                </span>
+              )}
+            </div>
 
           {mncLoading || !mnc ? (
             <div style={{ padding: '20px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>
@@ -614,26 +640,39 @@ export function GeneralOverviewPage() {
 
             </div>
           )}
+          </div>{/* end right */}
         </div>
 
         {/* ── GOL Brand Snapshot ── */}
         <div style={{
           background: 'rgba(255,255,255,0.04)',
           border: '1px solid rgba(255,255,255,0.09)',
-          borderRadius: 14, padding: '24px 28px',
+          borderRadius: 14, padding: '20px 22px',
           overflow: 'hidden',
+          display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 0,
         }}>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#84cc16', boxShadow: '0 0 8px #84cc1688' }} />
-            <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>GOL</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.35)', marginLeft: 4 }}>Brand Snapshot</span>
-            {gol && (
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
-                Ad Spend: {fmtRpM(gol.totalSpend)}
-              </span>
-            )}
+          {/* Left — Logo + Brand */}
+          <div style={{
+            flex: '0 0 140px', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+            paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 18,
+          }}>
+            <img src={golLogo} alt="GOL" style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, marginBottom: 8 }} />
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 2 }}>GOLO</div>
+            <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.07em' }}>GOL</div>
           </div>
+
+          {/* Right — Content */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.45)' }}>Brand Snapshot</span>
+              {gol && (
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
+                  Ad Spend: {fmtRpM(gol.totalSpend)}
+                </span>
+              )}
+            </div>
 
           {golLoading || !gol ? (
             <div style={{ padding: '20px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>
@@ -727,26 +766,39 @@ export function GeneralOverviewPage() {
 
             </div>
           )}
+          </div>{/* end right */}
         </div>
 
         {/* ── MCI Brand Snapshot ── */}
         <div style={{
           background: 'rgba(255,255,255,0.04)',
           border: '1px solid rgba(255,255,255,0.09)',
-          borderRadius: 14, padding: '24px 28px',
+          borderRadius: 14, padding: '20px 22px',
           overflow: 'hidden',
+          display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 0,
         }}>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 8px #34d39988' }} />
-            <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>MCI</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.35)', marginLeft: 4 }}>Brand Snapshot</span>
-            {mci && (
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
-                Ad Spend: {fmtRpM(mci.totalSpend)}
-              </span>
-            )}
+          {/* Left — Logo + Brand */}
+          <div style={{
+            flex: '0 0 140px', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+            paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.09)', marginRight: 18,
+          }}>
+            <img src={mciLogo} alt="MCI" style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, marginBottom: 8 }} />
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 2 }}>mGanik Care</div>
+            <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.07em' }}>MCI</div>
           </div>
+
+          {/* Right — Content */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.45)' }}>Brand Snapshot</span>
+              {mci && (
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
+                  Ad Spend: {fmtRpM(mci.totalSpend)}
+                </span>
+              )}
+            </div>
 
           {mciLoading || !mci ? (
             <div style={{ padding: '20px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>
@@ -807,30 +859,31 @@ export function GeneralOverviewPage() {
               {/* Divider */}
               <div style={{ width: 1, background: 'rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
 
-              {/* ── GA4 Visits (info only, no chart) ── */}
+              {/* ── Visit Rate ── */}
               <div style={{ flex: '1 1 0', padding: '0 0 0 24px' }}>
                 <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Website Traffic
+                  Visit Rate
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
                   <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>First Visits</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Conv / Subs</div>
                     <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                      {mci.totalVisits.toLocaleString('id-ID')}
+                      {mci.visitRate > 0 ? `${mci.visitRate.toFixed(1)}%` : '—'}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>Ad Spend</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{fmtRpM(mci.totalSpend)}</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 4 }}>First Visits</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>{mci.totalVisits.toLocaleString('id-ID')}</div>
                   </div>
                 </div>
-                <div style={{ marginTop: 28, padding: '20px 0', textAlign: 'center', color: 'rgba(255,255,255,0.12)', fontSize: 11 }}>
-                  No RoAS data for MCI
+                <div style={{ marginTop: 10 }}>
+                  <OverviewChart data={mci.visitRateSeries} color="#34d399" unit="%" changelog={mci.changelog} higherIsBetter formatFn={(v) => `${v.toFixed(1)}%`} />
                 </div>
               </div>
 
             </div>
           )}
+          </div>{/* end right */}
         </div>
 
       </div>
