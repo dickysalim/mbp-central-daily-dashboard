@@ -243,6 +243,15 @@ export function GeneralOverviewPage() {
   const activeFrom = from
   const activeTo = to
 
+  // Pre-fetch buffer: fetch 21 extra days before display range so MAs are warmed up
+  const MA_BUFFER_DAYS = 21
+  const bufferFrom = (displayFrom: string, earliest: string) => {
+    const d = new Date(displayFrom + 'T00:00:00')
+    d.setDate(d.getDate() - MA_BUFFER_DAYS)
+    const buf = dateStr(d)
+    return buf < earliest ? earliest : buf
+  }
+
   const applyPreset = (days: number) => {
     if (!activeBounds) return
     const latest = capToH2(activeBounds.latest)
@@ -280,10 +289,11 @@ export function GeneralOverviewPage() {
 
   // ── MNC data fetch ──
   const mncRange = useMemo(() => clamp(activeFrom, activeTo, mncBounds), [activeFrom, activeTo, mncBounds])
+  const mncFetchFrom = useMemo(() => mncBounds ? bufferFrom(mncRange.from, mncBounds.earliest) : mncRange.from, [mncRange.from, mncBounds])
   const { data: mncData, isLoading: mncLoading } = useQuery({
-    queryKey: ['overview-mnc', mncRange.from, mncRange.to, refreshNonce],
+    queryKey: ['overview-mnc', mncFetchFrom, mncRange.to, refreshNonce],
     queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/consumer-goods?brand=MNC&from=${mncRange.from}&to=${mncRange.to}${refreshNonce > 0 ? '&bust=' + Date.now() : ''}`)
+      const res = await fetch(`${D1_WORKER_URL}/v2/consumer-goods?brand=MNC&from=${mncFetchFrom}&to=${mncRange.to}${refreshNonce > 0 ? '&bust=' + Date.now() : ''}`)
       return (await res.json()) as BrandData
     },
     enabled: !!mncRange.from && !!mncRange.to,
@@ -291,15 +301,20 @@ export function GeneralOverviewPage() {
   })
 
   // ── Shared brand metrics computation ──
-  function computeBrandMetrics(bd: BrandData) {
+  function computeBrandMetrics(bd: BrandData, displayFrom: string, displayTo: string) {
     const perf = bd.performance ?? []
     const conv = bd.conversions ?? []
     const sales = bd.sales ?? []
 
-    const totalSpend = perf.reduce((s, r) => s + (r.ad_spend ?? 0), 0)
-    const totalLeads = conv.reduce((s, r) => s + (r.mongo_real_lead_ccom ?? 0) + (r.mongo_real_lead_d2or ?? 0) + (r.mongo_real_lead_mpsh ?? 0) + (r.mongo_real_lead_ofls ?? 0), 0)
-    const totalPurchases = conv.reduce((s, r) => s + (r.mongo_purchase_ccom ?? 0), 0)
-    const totalRevenue = sales.reduce((s, r) => s + (r.rev_ccom_ca ?? 0) + (r.rev_ccom_crm ?? 0) + (r.rev_mpsh ?? 0) + (r.rev_d2or ?? 0) + (r.rev_ofls ?? 0), 0)
+    // Filter to display range for totals
+    const perfDisplay = perf.filter(r => r.date >= displayFrom && r.date <= displayTo)
+    const convDisplay = conv.filter(r => r.date >= displayFrom && r.date <= displayTo)
+    const salesDisplay = sales.filter(r => r.date >= displayFrom && r.date <= displayTo)
+
+    const totalSpend = perfDisplay.reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+    const totalLeads = convDisplay.reduce((s, r) => s + (r.mongo_real_lead_ccom ?? 0) + (r.mongo_real_lead_d2or ?? 0) + (r.mongo_real_lead_mpsh ?? 0) + (r.mongo_real_lead_ofls ?? 0), 0)
+    const totalPurchases = convDisplay.reduce((s, r) => s + (r.mongo_purchase_ccom ?? 0), 0)
+    const totalRevenue = salesDisplay.reduce((s, r) => s + (r.rev_ccom_ca ?? 0) + (r.rev_ccom_crm ?? 0) + (r.rev_mpsh ?? 0) + (r.rev_d2or ?? 0) + (r.rev_ofls ?? 0), 0)
 
     const cprl = totalLeads > 0 ? totalSpend / totalLeads : 0
     const cpaCC = totalPurchases > 0 ? totalSpend / totalPurchases : 0
@@ -323,7 +338,7 @@ export function GeneralOverviewPage() {
       const sp = spendByDate.get(d) ?? 0
       const ld = leadsByDate.get(d) ?? 0
       return { date: d, value: ld > 0 ? sp / ld : 0 }
-    }).filter(p => p.value > 0)
+    }).filter(p => p.value > 0).filter(p => p.date >= displayFrom)
 
     const cpaDaily = allDates.map(d => ({ date: d, spend: spendByDate.get(d) ?? 0, purchases: purchByDate.get(d) ?? 0 }))
     const cpaSeries = cpaDaily.map((dd, i) => {
@@ -331,7 +346,7 @@ export function GeneralOverviewPage() {
       const ts = slice.reduce((s, d) => s + d.spend, 0)
       const tp = slice.reduce((s, d) => s + d.purchases, 0)
       return { date: dd.date, value: tp > 0 ? ts / tp : 0 }
-    }).filter(p => p.value > 0)
+    }).filter(p => p.value > 0).filter(p => p.date >= displayFrom)
 
     const revByDate = new Map<string, number>()
     for (const r of sales) {
@@ -345,7 +360,7 @@ export function GeneralOverviewPage() {
       const ts = slice.reduce((s, d) => s + d.spend, 0)
       const tr = slice.reduce((s, d) => s + d.rev, 0)
       return { date: dd.date, value: ts > 0 ? tr / ts : 0 }
-    }).filter(p => p.value > 0)
+    }).filter(p => p.value > 0).filter(p => p.date >= displayFrom)
 
     const changelog = (bd.changelog ?? []) as ChangelogRow[]
 
@@ -353,14 +368,15 @@ export function GeneralOverviewPage() {
   }
 
   // ── MNC computed metrics ──
-  const mnc = useMemo(() => mncData ? computeBrandMetrics(mncData) : null, [mncData])
+  const mnc = useMemo(() => mncData ? computeBrandMetrics(mncData, mncRange.from, mncRange.to) : null, [mncData, mncRange])
 
   // ── GOL data fetch ──
   const golRange = useMemo(() => clamp(activeFrom, activeTo, golBounds), [activeFrom, activeTo, golBounds])
+  const golFetchFrom = useMemo(() => golBounds ? bufferFrom(golRange.from, golBounds.earliest) : golRange.from, [golRange.from, golBounds])
   const { data: golData, isLoading: golLoading } = useQuery({
-    queryKey: ['overview-gol', golRange.from, golRange.to, refreshNonce],
+    queryKey: ['overview-gol', golFetchFrom, golRange.to, refreshNonce],
     queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/consumer-goods?brand=GOL&from=${golRange.from}&to=${golRange.to}${refreshNonce > 0 ? '&bust=' + Date.now() : ''}`)
+      const res = await fetch(`${D1_WORKER_URL}/v2/consumer-goods?brand=GOL&from=${golFetchFrom}&to=${golRange.to}${refreshNonce > 0 ? '&bust=' + Date.now() : ''}`)
       return (await res.json()) as BrandData
     },
     enabled: !!golRange.from && !!golRange.to,
@@ -368,14 +384,15 @@ export function GeneralOverviewPage() {
   })
 
   // ── GOL computed metrics ──
-  const gol = useMemo(() => golData ? computeBrandMetrics(golData) : null, [golData])
+  const gol = useMemo(() => golData ? computeBrandMetrics(golData, golRange.from, golRange.to) : null, [golData, golRange])
 
   // ── MCI data fetch ──
   const mciRange = useMemo(() => clamp(activeFrom, activeTo, mciBounds), [activeFrom, activeTo, mciBounds])
+  const mciFetchFrom = useMemo(() => mciBounds ? bufferFrom(mciRange.from, mciBounds.earliest) : mciRange.from, [mciRange.from, mciBounds])
   const { data: mciData, isLoading: mciLoading } = useQuery({
-    queryKey: ['overview-mci', mciRange.from, mciRange.to, refreshNonce],
+    queryKey: ['overview-mci', mciFetchFrom, mciRange.to, refreshNonce],
     queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/consumer-goods?brand=MCI&from=${mciRange.from}&to=${mciRange.to}${refreshNonce > 0 ? '&bust=' + Date.now() : ''}`)
+      const res = await fetch(`${D1_WORKER_URL}/v2/consumer-goods?brand=MCI&from=${mciFetchFrom}&to=${mciRange.to}${refreshNonce > 0 ? '&bust=' + Date.now() : ''}`)
       return (await res.json()) as BrandData
     },
     enabled: !!mciRange.from && !!mciRange.to,
@@ -390,10 +407,10 @@ export function GeneralOverviewPage() {
     const conv = mciData.conversions ?? []
     const ga4 = (mciData.ga4 ?? []) as { date: string; ga4_first_visit?: number; ga4_page_view?: number }[]
 
-    const totalSpend = perf.reduce((s, r) => s + (r.ad_spend ?? 0), 0)
-    const totalFormSubs = conv.reduce((s, r) => s + ((r as any).mongo_form_submission ?? 0), 0)
-    const totalFormConv = conv.reduce((s, r) => s + ((r as any).mongo_form_conversion ?? 0), 0)
-    const totalVisits = ga4.reduce((s, r) => s + (r.ga4_first_visit ?? 0), 0)
+    const totalSpend = perf.filter(r => r.date >= mciRange.from && r.date <= mciRange.to).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+    const totalFormSubs = conv.filter(r => r.date >= mciRange.from && r.date <= mciRange.to).reduce((s, r) => s + ((r as any).mongo_form_submission ?? 0), 0)
+    const totalFormConv = conv.filter(r => r.date >= mciRange.from && r.date <= mciRange.to).reduce((s, r) => s + ((r as any).mongo_form_conversion ?? 0), 0)
+    const totalVisits = ga4.filter(r => r.date >= mciRange.from && r.date <= mciRange.to).reduce((s, r) => s + (r.ga4_first_visit ?? 0), 0)
 
     const cpr = totalFormSubs > 0 ? totalSpend / totalFormSubs : 0
     const cpv = totalFormConv > 0 ? totalSpend / totalFormConv : 0
@@ -428,7 +445,7 @@ export function GeneralOverviewPage() {
       const ts = slice.reduce((s, d) => s + d.spend, 0)
       const tsubs = slice.reduce((s, d) => s + d.subs, 0)
       return { date: dd.date, value: tsubs > 0 ? ts / tsubs : 0 }
-    }).filter(p => p.value > 0)
+    }).filter(p => p.value > 0).filter(p => p.date >= mciRange.from)
 
     // CPV series (21d MA)
     const cpvDaily = allDates.map(d => ({ date: d, spend: spendByDate.get(d) ?? 0, conv: convByDate.get(d) ?? 0 }))
@@ -437,12 +454,12 @@ export function GeneralOverviewPage() {
       const ts = slice.reduce((s, d) => s + d.spend, 0)
       const tc = slice.reduce((s, d) => s + d.conv, 0)
       return { date: dd.date, value: tc > 0 ? ts / tc : 0 }
-    }).filter(p => p.value > 0)
+    }).filter(p => p.value > 0).filter(p => p.date >= mciRange.from)
 
     const changelog = (mciData.changelog ?? []) as ChangelogRow[]
 
     return { totalSpend, totalFormSubs, totalFormConv, totalVisits, cpr, cpv, cprSeries, cpvSeries, changelog }
-  }, [mciData])
+  }, [mciData, mciRange])
 
   return (
     <div style={{

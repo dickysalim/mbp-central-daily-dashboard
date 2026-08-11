@@ -292,6 +292,17 @@ export function HealthcareDashboard() {
   }, [activeBounds, initialized])
   const activeFrom = from || activeBounds?.earliest || ''
   const activeTo = to || capToH2(activeBounds?.latest || '')
+
+  // Pre-fetch buffer: fetch 21 extra days before display range so MAs are warmed up
+  const MA_BUFFER_DAYS = 21
+  const fetchFrom = useMemo(() => {
+    if (!activeFrom) return activeFrom
+    const d = new Date(activeFrom + 'T00:00:00')
+    d.setDate(d.getDate() - MA_BUFFER_DAYS)
+    const earliest = activeBounds?.earliest ?? activeFrom
+    const buf = dateStr(d)
+    return buf < earliest ? earliest : buf
+  }, [activeFrom, activeBounds])
   const applyPreset = (days: number) => {
     if (!activeBounds) return
     const latest = capToH2(activeBounds.latest)
@@ -324,12 +335,12 @@ export function HealthcareDashboard() {
   }
 
   const { data: cgData, isLoading: cgLoading, isFetching: cgFetching } = useQuery({
-    queryKey: ['consumer-goods', activeFrom, activeTo, activeBrand, refreshNonce],
+    queryKey: ['consumer-goods', fetchFrom, activeTo, activeBrand, refreshNonce],
     queryFn: async () => {
-      if (!activeFrom || !activeTo) return null
+      if (!fetchFrom || !activeTo) return null
       const bust = refreshNonce > 0 ? `&_r=${refreshNonce}` : ''
       const res = await fetch(
-        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${activeFrom}&to=${activeTo}${bust}`
+        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${fetchFrom}&to=${activeTo}${bust}`
       )
       if (!res.ok) throw new Error('consumer-goods fetch failed')
       const data = res.json() as Promise<ConsumerGoodsData>
@@ -337,14 +348,14 @@ export function HealthcareDashboard() {
       if (spinRef.current) { clearInterval(spinRef.current); spinRef.current = null }
       return data
     },
-    enabled: !!activeFrom && !!activeTo,
+    enabled: !!fetchFrom && !!activeTo,
     staleTime: 5 * 60_000,
   })
 
   // ── Computed metrics ──
   const totalSpend = useMemo(() =>
-    (cgData?.performance ?? []).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
-  , [cgData])
+    (cgData?.performance ?? []).filter(r => r.date >= activeFrom && r.date <= activeTo).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+  , [cgData, activeFrom, activeTo])
 
   const MCI_SKUS = new Set(['CEK', 'A1C', 'WCA'])
 
@@ -352,12 +363,13 @@ export function HealthcareDashboard() {
     const map = new Map<string, number>()
     for (const r of cgData?.performance ?? []) {
       if (!r.sku || r.sku === '-' || !MCI_SKUS.has(r.sku)) continue
+      if (r.date < activeFrom || r.date > activeTo) continue
       map.set(r.sku, (map.get(r.sku) ?? 0) + (r.ad_spend ?? 0))
     }
     return Array.from(map.entries())
       .map(([sku, spend]) => ({ sku, spend }))
       .sort((a, b) => b.spend - a.spend)
-  }, [cgData])
+  }, [cgData, activeFrom, activeTo])
 
   const campaignBudgets = useMemo(() =>
     (cgData?.campaign_budgets ?? [])
@@ -367,6 +379,23 @@ export function HealthcareDashboard() {
     campaignBudgets.reduce((s, r) => s + r.daily_budget, 0)
   , [campaignBudgets])
   const budgetDate = cgData?.campaign_budgets?.[0]?.date ?? ''
+
+  // ── Target ad spend data ──
+  const targetData = useMemo(() => (cgData?.targets ?? []).filter(r => r.date >= activeFrom && r.date <= activeTo), [cgData, activeFrom, activeTo])
+  const totalTarget = useMemo(() => targetData.reduce((s, r) => s + r.daily_ad_spend, 0), [targetData])
+  const latestTargetBySku = useMemo(() => {
+    const map = new Map<string, { date: string; sku: string; daily_ad_spend: number }>()
+    for (const r of targetData) {
+      const prev = map.get(r.sku)
+      if (!prev || r.date > prev.date) map.set(r.sku, r)
+    }
+    return Array.from(map.values())
+  }, [targetData])
+  const dailyBudget = useMemo(() => latestTargetBySku.reduce((s, r) => s + r.daily_ad_spend, 0), [latestTargetBySku])
+  const periodBudget = totalTarget
+  const barPct = periodBudget > 0 ? Math.min((totalSpend / periodBudget) * 100, 100) : 0
+  const healthColor = barPct === 0 ? '#818cf8' : barPct > 115 ? '#f87171' : barPct >= 105 ? '#fbbf24' : barPct >= 95 ? '#34d399' : barPct >= 85 ? '#fbbf24' : '#f87171'
+  const healthLabel = barPct === 0 ? 'No Data' : barPct > 115 ? '🔴 Over Budget' : barPct >= 105 ? '🟡 Slightly Over' : barPct >= 95 ? '🟢 On Track' : barPct >= 85 ? '🟡 Slightly Under' : '🔴 Far Behind'
 
   // Branch data for pie charts
   const formByBranch = useMemo(() =>
@@ -383,11 +412,11 @@ export function HealthcareDashboard() {
 
   // ── Form totals from conversions data ──
   const totalFormSubmissions = useMemo(() =>
-    (cgData?.conversions ?? []).reduce((s, r) => s + (r.mongo_form_submission ?? 0), 0)
-  , [cgData])
+    (cgData?.conversions ?? []).filter(r => r.date >= activeFrom && r.date <= activeTo).reduce((s, r) => s + (r.mongo_form_submission ?? 0), 0)
+  , [cgData, activeFrom, activeTo])
   const totalFormConversions = useMemo(() =>
-    (cgData?.conversions ?? []).reduce((s, r) => s + (r.mongo_form_conversion ?? 0), 0)
-  , [cgData])
+    (cgData?.conversions ?? []).filter(r => r.date >= activeFrom && r.date <= activeTo).reduce((s, r) => s + (r.mongo_form_conversion ?? 0), 0)
+  , [cgData, activeFrom, activeTo])
 
   // CPR = Ad Spend / Form Submissions (daily 7-day moving average)
   const cprSeries = useMemo(() => {
@@ -409,8 +438,8 @@ export function HealthcareDashboard() {
       const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
       const totalSubs = slice.reduce((s, d) => s + d.submissions, 0)
       return { date: daily[i].date, value: totalSubs > 0 ? totalSpend / totalSubs : 0 }
-    }).filter(p => p.value > 0)
-  }, [cgData])
+    }).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [cgData, activeFrom])
 
   // CPV = Ad Spend / Form Conversions (daily 7-day moving average)
   const cpvSeries = useMemo(() => {
@@ -432,25 +461,25 @@ export function HealthcareDashboard() {
       const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
       const totalConv = slice.reduce((s, d) => s + d.conversions, 0)
       return { date: daily[i].date, value: totalConv > 0 ? totalSpend / totalConv : 0 }
-    }).filter(p => p.value > 0)
-  }, [cgData])
+    }).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [cgData, activeFrom])
 
   // Per-SKU CPR and CPV
   const skuCpr = useMemo(() => {
     return (['CEK', 'A1C', 'WCA'] as const).map(sku => {
-      const spend = (cgData?.performance ?? []).filter(r => r.sku === sku).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
-      const subs = (cgData?.conversions ?? []).filter(r => r.sku === sku).reduce((s, r) => s + (r.mongo_form_submission ?? 0), 0)
+      const spend = (cgData?.performance ?? []).filter(r => r.sku === sku && r.date >= activeFrom && r.date <= activeTo).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+      const subs = (cgData?.conversions ?? []).filter(r => r.sku === sku && r.date >= activeFrom && r.date <= activeTo).reduce((s, r) => s + (r.mongo_form_submission ?? 0), 0)
       return { sku, cpr: subs > 0 ? spend / subs : 0, submissions: subs }
     }).filter(s => s.submissions > 0)
-  }, [cgData])
+  }, [cgData, activeFrom, activeTo])
 
   const skuCpv = useMemo(() => {
     return (['CEK', 'A1C', 'WCA'] as const).map(sku => {
-      const spend = (cgData?.performance ?? []).filter(r => r.sku === sku).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
-      const conv = (cgData?.conversions ?? []).filter(r => r.sku === sku).reduce((s, r) => s + (r.mongo_form_conversion ?? 0), 0)
+      const spend = (cgData?.performance ?? []).filter(r => r.sku === sku && r.date >= activeFrom && r.date <= activeTo).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+      const conv = (cgData?.conversions ?? []).filter(r => r.sku === sku && r.date >= activeFrom && r.date <= activeTo).reduce((s, r) => s + (r.mongo_form_conversion ?? 0), 0)
       return { sku, cpv: conv > 0 ? spend / conv : 0, conversions: conv }
     }).filter(s => s.conversions > 0)
-  }, [cgData])
+  }, [cgData, activeFrom, activeTo])
 
   // ── ATL metrics ──
   const totalImpressions = useMemo(() =>
@@ -636,30 +665,42 @@ export function HealthcareDashboard() {
                 <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1, marginTop: 6, whiteSpace: 'nowrap' }}>
                   {fmtRp(Math.round(totalSpend))}
                 </div>
+                {periodBudget > 0 && (
+                  <>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.40)', marginBottom: 4 }}>Target {fmtRp(Math.round(periodBudget))}</div>
+                  <div style={{ height: 5, background: 'rgba(255,255,255,0.07)', borderRadius: 3 }}>
+                    <div style={{ height: '100%', width: `${barPct}%`, background: healthColor, borderRadius: 3, transition: 'width 0.5s ease' }} />
+                  </div>
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '3px 8px', marginTop: 6,
+                    background: `${healthColor}12`, border: `1px solid ${healthColor}30`,
+                    borderRadius: 5,
+                  }}>
+                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: healthColor }} />
+                    <span style={{ fontSize: 11, fontWeight: 700, color: healthColor }}>{healthLabel}</span>
+                    <span style={{ fontSize: 11, color: healthColor, opacity: 0.8 }}>{(totalSpend / periodBudget * 100).toFixed(1)}%</span>
+                  </div>
+                  </>
+                )}
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.35)', marginTop: 6 }}>
                   {numDays} days · avg {fmtRpM(totalSpend / numDays)}/day
                 </div>
+                {dailyBudget > 0 && (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.50)', marginTop: 4 }}>
+                    Target Daily: <span style={{ color: '#fff', fontWeight: 800 }}>{fmtRpM(dailyBudget)}</span><span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.35)' }}>/day</span>
+                  </div>
+                )}
               </div>
 
-              {/* Campaign Budget Config */}
+              {/* Daily Ad Spend */}
               {campaignBudgetTotal > 0 && (
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.09)', paddingTop: 10 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase' }}>Ad Spend Config</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase' }}>Daily Ad Spend</div>
                   <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', marginTop: 5 }}>
                     {fmtRpM(campaignBudgetTotal)}<span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>/day</span>
                   </div>
                   {budgetDate && <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>as of {budgetDate}</div>}
-                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {campaignBudgets.slice(0, 8).map((c, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                        <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.40)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{c.campaign_name}</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>{fmtRpM(c.daily_budget)}</span>
-                      </div>
-                    ))}
-                    {campaignBudgets.length > 8 && (
-                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', marginTop: 2 }}>+{campaignBudgets.length - 8} more campaigns</div>
-                    )}
-                  </div>
                 </div>
               )}
             </div>

@@ -273,14 +273,24 @@ export function AdSpendHealthCard({
                     </div>
                   </>
                 )}
+                {dailyBudget > 0 && (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.50)', marginTop: 4 }}>
+                    Target Daily: <span style={{ color: '#fff', fontWeight: 800 }}>{fmtIDR(dailyBudget)}</span><span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.35)' }}>/day</span>
+                  </div>
+                )}
               </div>
-              {(campaignBudgetTotal > 0 || dailyBudget > 0) && (
+              {campaignBudgetTotal > 0 && (
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.09)', paddingTop: 10 }}>
-                  <div style={T.section}>Daily Budget / Target</div>
+                  <div style={T.section}>{dailyBudget > 0 ? 'Daily Budget / Target' : 'Daily Ad Spend'}</div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 5 }}>
                     <span style={{ fontSize: 15, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{fmtIDR(campaignBudgetTotal)}</span>
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>/</span>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: 'rgba(255,255,255,0.8)', letterSpacing: '-0.02em' }}>{fmtIDR(dailyBudget)}</span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>/day</span>
+                    {dailyBudget > 0 && (
+                      <>
+                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', fontWeight: 600, marginLeft: 4 }}>vs</span>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: 'rgba(255,255,255,0.8)', letterSpacing: '-0.02em' }}>{fmtIDR(dailyBudget)}</span>
+                      </>
+                    )}
                   </div>
                   {campaignBudgetTotal > 0 && dailyBudget > 0 && (
                     <div style={{ fontSize: 10, marginTop: 4, fontWeight: 600, color: delta < 0 ? '#f87171' : '#34d399' }}>
@@ -298,8 +308,10 @@ export function AdSpendHealthCard({
                   const skuColor = SKU_COLORS[s.sku] ?? 'rgba(255,255,255,0.68)'
                   const skuDelta = s.spend - s.target
                   const skuDeltaPct = s.target > 0 ? (skuDelta / s.target) * 100 : 0
-                  const barPct = s.target > 0 ? Math.min((s.spend / s.target) * 100, 100) : 0
+                  const maxSpend = Math.max(...skuSpend.map(x => x.spend), 1)
+                  const barPctVal = s.target > 0 ? Math.min((s.spend / s.target) * 100, 100) : Math.min((s.spend / maxSpend) * 100, 100)
                   const dc = s.target === 0 ? 'rgba(255,255,255,0.4)' : Math.abs(skuDeltaPct) <= 10 ? '#34d399' : Math.abs(skuDeltaPct) <= 20 ? '#fbbf24' : '#f87171'
+                  const barColor = s.target > 0 ? dc : skuColor
                   return (
                     <div key={s.sku}>
                       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -309,11 +321,9 @@ export function AdSpendHealthCard({
                         </div>
                         {s.target > 0 && <span style={{ fontSize: 13, fontWeight: 800, color: dc }}>{skuDelta >= 0 ? '+' : ''}{skuDeltaPct.toFixed(0)}%</span>}
                       </div>
-                      {s.target > 0 && (
-                        <div style={T.barTrack}>
-                          <div style={{ height: '100%', width: `${barPct}%`, background: dc, borderRadius: 2, transition: 'width 0.4s ease' }} />
-                        </div>
-                      )}
+                      <div style={T.barTrack}>
+                        <div style={{ height: '100%', width: `${barPctVal}%`, background: barColor, borderRadius: 2, transition: 'width 0.4s ease' }} />
+                      </div>
                     </div>
                   )
                 })}

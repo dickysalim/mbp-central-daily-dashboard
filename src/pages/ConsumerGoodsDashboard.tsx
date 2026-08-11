@@ -57,8 +57,10 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
     staleTime: 0,
   })
 
+  const MA_BUFFER_DAYS = 21
   const activeBrand = fixedBrand
   const activeBounds = useMemo(() => brandBounds?.find(b => b.brand === activeBrand), [brandBounds, activeBrand])
+  const skuList = useMemo(() => activeBounds?.skus ?? [], [activeBounds])
 
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -76,6 +78,16 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
   }, [activeBrand, activeBounds, lastBrand])
   const activeFrom = from || activeBounds?.earliest || ''
   const activeTo = to || capToH2(activeBounds?.latest || '')
+
+  const fetchFrom = useMemo(() => {
+    if (!activeFrom) return activeFrom
+    const d = new Date(activeFrom + 'T00:00:00')
+    d.setDate(d.getDate() - MA_BUFFER_DAYS)
+    const earliest = activeBounds?.earliest ?? activeFrom
+    const buf = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+    return buf < earliest ? earliest : buf
+  }, [activeFrom, activeBounds])
+
   const applyPreset = (days: number) => {
     if (!activeBounds) return
     const latest = capToH2(activeBounds.latest)
@@ -113,7 +125,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       if (!activeFrom || !activeTo || !activeBrand) return null
       const bust = refreshNonce > 0 ? `&_r=${refreshNonce}` : ''
       const res = await fetch(
-        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${activeFrom}&to=${activeTo}${bust}`
+        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${fetchFrom}&to=${activeTo}${bust}`
       )
       if (!res.ok) throw new Error('consumer-goods fetch failed')
       const data = res.json() as Promise<ConsumerGoodsData>
@@ -162,7 +174,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date))
   }, [cgData])
 
-  const targetData       = useMemo(() => cgData?.targets         ?? [], [cgData])
+  const targetData       = useMemo(() => (cgData?.targets         ?? []).filter(r => r.date >= activeFrom), [cgData, activeFrom])
   const filteredChangelog = useMemo(() => cgData?.changelog      ?? [], [cgData])
 
   // Latest target per SKU (replaces /v2/daily-budget-setting)
@@ -176,7 +188,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
   }, [targetData])
 
 
-  const totalSpend = useMemo(() => (rawData ?? []).reduce((s, r) => s + r.ad_spend, 0), [rawData])
+  const totalSpend = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.ad_spend, 0), [rawData, activeFrom])
   const totalTarget = useMemo(() => targetData.reduce((s, r) => s + r.daily_ad_spend, 0), [targetData])
   // Daily budget: sum of latest target value per SKU
   const dailyBudget = useMemo(() => latestTargetBySku.reduce((s, r) => s + r.daily_ad_spend, 0), [latestTargetBySku])
@@ -187,17 +199,16 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
 
   // Per-SKU ad spend vs target breakdown
   const skuSpend = useMemo(() => {
-    const skuList = ['MSF', 'MTA', 'MNS', 'M3P'] as const
     return skuList.map(sku => {
-      const spend = (rawData ?? []).filter(r => r.sku === sku).reduce((s, r) => s + r.ad_spend, 0)
+      const spend = (rawData ?? []).filter(r => r.sku === sku && r.date >= activeFrom).reduce((s, r) => s + r.ad_spend, 0)
       const target = targetData.filter(r => r.sku === sku).reduce((s, r) => s + r.daily_ad_spend, 0)
       return { sku, spend, target }
     }).filter(s => s.spend > 0 || s.target > 0)
-  }, [rawData, targetData])
+  }, [rawData, targetData, skuList])
 
   // RoAS revenue metrics
-  const ccAdsRevenue    = useMemo(() => (cgData?.conversions ?? []).reduce((s, r) => s + (r.mongo_purchase_ccom_revenue ?? 0), 0), [cgData])
-  const totalSalesRevenue = useMemo(() => (cgData?.sales ?? []).reduce((s, r) => s + (r.rev_ccom_ca ?? 0) + (r.rev_ccom_crm ?? 0) + (r.rev_mpsh ?? 0) + (r.rev_d2or ?? 0) + (r.rev_ofls ?? 0), 0), [cgData])
+  const ccAdsRevenue    = useMemo(() => (cgData?.conversions ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + (r.mongo_purchase_ccom_revenue ?? 0), 0), [cgData, activeFrom])
+  const totalSalesRevenue = useMemo(() => (cgData?.sales ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + (r.rev_ccom_ca ?? 0) + (r.rev_ccom_crm ?? 0) + (r.rev_mpsh ?? 0) + (r.rev_d2or ?? 0) + (r.rev_ofls ?? 0), 0), [cgData, activeFrom])
 
   // Daily RoAS series (total revenue / ad spend per day) + 7-day moving average
   const roasDailySeries = useMemo(() => {
@@ -231,8 +242,8 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
       ma.push({ date: daily[i].date, value: totalSpend > 0 ? totalRev / totalSpend : 0 })
     }
-    return ma.filter(p => p.value > 0)
-  }, [cgData, rawData])
+    return ma.filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [cgData, rawData, activeFrom])
 
   // CC RoAS daily series (CC ads revenue / ad spend per day) + 7-day moving average
   const ccRoasDailySeries = useMemo(() => {
@@ -261,32 +272,31 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
       ma.push({ date: daily[i].date, value: totalSpend > 0 ? totalRev / totalSpend : 0 })
     }
-    return ma.filter(p => p.value > 0)
-  }, [cgData, rawData])
+    return ma.filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [cgData, rawData, activeFrom])
 
 
   // Per-SKU RoAS breakdown (sales revenue vs ad spend)
   const skuRoas = useMemo(() => {
-    const skuList = ['MSF', 'MTA', 'MNS', 'M3P'] as const
     return skuList.map(sku => {
       const revenue = (cgData?.sales ?? [])
-        .filter(r => r.sku === sku)
+        .filter(r => r.sku === sku && r.date >= activeFrom)
         .reduce((s, r) => s + (r.rev_ccom_ca ?? 0) + (r.rev_ccom_crm ?? 0) + (r.rev_mpsh ?? 0) + (r.rev_d2or ?? 0) + (r.rev_ofls ?? 0), 0)
-      const spend = (rawData ?? []).filter(r => r.sku === sku).reduce((s, r) => s + r.ad_spend, 0)
+      const spend = (rawData ?? []).filter(r => r.sku === sku && r.date >= activeFrom).reduce((s, r) => s + r.ad_spend, 0)
       return { sku, revenue, spend, roas: spend > 0 ? revenue / spend : 0 }
     }).filter(s => s.spend > 0 || s.revenue > 0)
-  }, [cgData, rawData])
+  }, [cgData, rawData, activeFrom, skuList])
 
-  const totalLeadCcom = useMemo(() => (rawData ?? []).reduce((s, r) => s + r.real_lead_ccom, 0), [rawData])
+  const totalLeadCcom = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.real_lead_ccom, 0), [rawData, activeFrom])
 
-  const totalLeadD2or = useMemo(() => (rawData ?? []).reduce((s, r) => s + r.real_lead_d2or, 0), [rawData])
-  const totalLeadMpsh = useMemo(() => (rawData ?? []).reduce((s, r) => s + r.real_lead_mpsh, 0), [rawData])
-  const totalLeadOfls = useMemo(() => (rawData ?? []).reduce((s, r) => s + r.real_lead_ofls, 0), [rawData])
+  const totalLeadD2or = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.real_lead_d2or, 0), [rawData, activeFrom])
+  const totalLeadMpsh = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.real_lead_mpsh, 0), [rawData, activeFrom])
+  const totalLeadOfls = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.real_lead_ofls, 0), [rawData, activeFrom])
 
   // Daily CPRL series (grouped by date)
   const cprlSeries = useMemo((): CprlPoint[] => {
     const byDate = new Map<string, { spend: number; leads: number }>()
-    for (const r of rawData ?? []) {
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
       const prev = byDate.get(r.date) ?? { spend: 0, leads: 0 }
       byDate.set(r.date, {
         spend: prev.spend + r.ad_spend,
@@ -296,11 +306,11 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
     return Array.from(byDate.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, { spend, leads }]) => ({ date, value: leads > 0 ? spend / leads : 0 }))
-      .filter(p => p.value > 0)
-  }, [rawData])
+      .filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [rawData, activeFrom])
 
   // CPA CC totals + daily series + SKU breakdown
-  const totalPurchaseCcom = useMemo(() => (rawData ?? []).reduce((s, r) => s + r.purchase_ccom, 0), [rawData])
+  const totalPurchaseCcom = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.purchase_ccom, 0), [rawData, activeFrom])
   const cpaSeries = useMemo(() => {
     const byDate = new Map<string, { spend: number; purchases: number }>()
     for (const r of rawData ?? []) {
@@ -317,12 +327,12 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
       const totalPurchases = slice.reduce((s, d) => s + d.purchases, 0)
       return { date: daily[i].date, value: totalPurchases > 0 ? totalSpend / totalPurchases : 0 }
-    }).filter(p => p.value > 0)
-  }, [rawData])
+    }).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [rawData, activeFrom])
 
   const purchaseBySku = useMemo(() => {
     const bySku = new Map<string, number>()
-    for (const r of rawData ?? []) {
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
       bySku.set(r.sku, (bySku.get(r.sku) ?? 0) + r.purchase_ccom)
     }
     return Array.from(bySku.entries())
@@ -332,43 +342,43 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
   }, [rawData])
 
   // ATL metrics: CPM, CTR, First Visit Ratio
-  const totalImpressions = useMemo(() => (rawData ?? []).reduce((s, r) => s + r.impressions, 0), [rawData])
-  const totalLinkClicks  = useMemo(() => (rawData ?? []).reduce((s, r) => s + r.link_click, 0), [rawData])
-  const totalFirstVisit  = useMemo(() => (rawData ?? []).reduce((s, r) => s + (r.ga4_first_visit ?? 0), 0), [rawData])
-  const totalPageView    = useMemo(() => (rawData ?? []).reduce((s, r) => s + (r.ga4_page_view ?? 0), 0), [rawData])
+  const totalImpressions = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.impressions, 0), [rawData, activeFrom])
+  const totalLinkClicks  = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.link_click, 0), [rawData, activeFrom])
+  const totalFirstVisit  = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + (r.ga4_first_visit ?? 0), 0), [rawData, activeFrom])
+  const totalPageView    = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + (r.ga4_page_view ?? 0), 0), [rawData, activeFrom])
 
   const cpmSeries = useMemo(() => {
     const byDate = new Map<string, { spend: number; impr: number }>()
-    for (const r of rawData ?? []) {
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
       const p = byDate.get(r.date) ?? { spend: 0, impr: 0 }
       byDate.set(r.date, { spend: p.spend + r.ad_spend, impr: p.impr + r.impressions })
     }
     return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b))
       .map(([date, { spend, impr }]) => ({ date, value: impr > 0 ? (spend / impr) * 1000 : 0 }))
-      .filter(p => p.value > 0)
-  }, [rawData])
+      .filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [rawData, activeFrom])
 
   const ctrSeries = useMemo(() => {
     const byDate = new Map<string, { clicks: number; impr: number }>()
-    for (const r of rawData ?? []) {
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
       const p = byDate.get(r.date) ?? { clicks: 0, impr: 0 }
       byDate.set(r.date, { clicks: p.clicks + r.link_click, impr: p.impr + r.impressions })
     }
     return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b))
       .map(([date, { clicks, impr }]) => ({ date, value: impr > 0 ? (clicks / impr) * 100 : 0 }))
-      .filter(p => p.value > 0)
-  }, [rawData])
+      .filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [rawData, activeFrom])
 
   const fvSeries = useMemo(() => {
     const byDate = new Map<string, { fv: number; pv: number }>()
-    for (const r of rawData ?? []) {
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
       const p = byDate.get(r.date) ?? { fv: 0, pv: 0 }
       byDate.set(r.date, { fv: p.fv + (r.ga4_first_visit ?? 0), pv: p.pv + (r.ga4_page_view ?? 0) })
     }
     return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b))
       .map(([date, { fv, pv }]) => ({ date, value: pv > 0 ? (fv / pv) * 100 : 0 }))
-      .filter(p => p.value > 0)
-  }, [rawData])
+      .filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [rawData, activeFrom])
 
   // ── Global averages (used as benchmark target lines in SKU charts) ──
   const globalCtrAvg = useMemo(() => {
@@ -378,18 +388,18 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
 
   const globalLpvoAvg = useMemo(() => {
     const byDate = new Map<string, { vo: number; pv: number }>()
-    for (const r of rawData ?? []) {
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
       const p = byDate.get(r.date) ?? { vo: 0, pv: 0 }
       byDate.set(r.date, { vo: p.vo + (r.ga4_view_offer ?? 0), pv: p.pv + r.ga4_page_view })
     }
     const series = Array.from(byDate.values())
       .map(({ vo, pv }) => pv > 0 ? (vo / pv) * 100 : 0).filter(v => v > 0)
     return series.length > 0 ? series.reduce((s, v) => s + v, 0) / series.length : 0
-  }, [rawData])
+  }, [rawData, activeFrom])
 
   const globalVo2lAvg = useMemo(() => {
     const byDate = new Map<string, { leads: number; vo: number }>()
-    for (const r of rawData ?? []) {
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
       const leads = r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls
       const p = byDate.get(r.date) ?? { leads: 0, vo: 0 }
       byDate.set(r.date, { leads: p.leads + leads, vo: p.vo + (r.ga4_view_offer ?? 0) })
@@ -397,12 +407,11 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
     const series = Array.from(byDate.values())
       .map(({ leads, vo }) => vo > 0 ? (leads / vo) * 100 : 0).filter(v => v > 0)
     return series.length > 0 ? series.reduce((s, v) => s + v, 0) / series.length : 0
-  }, [rawData])
+  }, [rawData, activeFrom])
 
   // ── Per-SKU data (all 4 MNC SKUs computed together) ────────────────────────────────
   const allSkuData = useMemo(() => {
-    const skuList = ['MSF', 'MTA', 'MNS', 'M3P'] as const
-    type SkuKey = typeof skuList[number]
+    type SkuKey = string
     type Point = { date: string; value: number }
     type SkuOut = {
       totals: { ctr: number; lpvo: number; vo2l: number; cprl: number; cpaCC: number }
@@ -413,10 +422,11 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
 
     for (const sku of skuList) {
       const rows = (rawData ?? []).filter(r => r.sku === sku)
+      const displayRows = rows.filter(r => r.date >= activeFrom)
 
       // Totals
       let spend = 0, leads = 0, purchase = 0, clicks = 0, impr = 0, vo = 0, pv = 0
-      for (const r of rows) {
+      for (const r of displayRows) {
         spend    += r.ad_spend
         leads    += r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls
         purchase += r.purchase_ccom
@@ -442,9 +452,9 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
           cpaCC: purchase > 0 ? spend / purchase        : 0,
         },
         ctrSeries: byDate({ c: 0, i: 0 }, (p, r) => ({ c: p.c + r.link_click, i: p.i + r.impressions }))
-          .map(([date, { c, i }]) => ({ date, value: i > 0 ? (c / i) * 100 : 0 })).filter(p => p.value > 0),
+          .map(([date, { c, i }]) => ({ date, value: i > 0 ? (c / i) * 100 : 0 })).filter(p => p.value > 0).filter(p => p.date >= activeFrom),
         cprlSeries: byDate({ s: 0, l: 0 }, (p, r) => ({ s: p.s + r.ad_spend, l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls }))
-          .map(([date, { s, l }]) => ({ date, value: l > 0 ? s / l : 0 })).filter(p => p.value > 0),
+          .map(([date, { s, l }]) => ({ date, value: l > 0 ? s / l : 0 })).filter(p => p.value > 0).filter(p => p.date >= activeFrom),
         cpaSeries: (() => {
           const daily = byDate({ s: 0, p: 0 }, (p, r) => ({ s: p.s + r.ad_spend, p: p.p + r.purchase_ccom }))
             .map(([date, { s, p }]) => ({ date, spend: s, purchases: p }))
@@ -454,16 +464,16 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
             const totalPurchases = slice.reduce((s, d) => s + d.purchases, 0)
             return { date: daily[i].date, value: totalPurchases > 0 ? totalSpend / totalPurchases : 0 }
-          }).filter(p => p.value > 0)
+          }).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
         })(),
         lpvoSeries: byDate({ vo: 0, pv: 0 }, (p, r) => ({ vo: p.vo + (r.ga4_view_offer ?? 0), pv: p.pv + r.ga4_page_view }))
-          .map(([date, { vo, pv }]) => ({ date, value: pv > 0 ? (vo / pv) * 100 : 0 })).filter(p => p.value > 0),
+          .map(([date, { vo, pv }]) => ({ date, value: pv > 0 ? (vo / pv) * 100 : 0 })).filter(p => p.value > 0).filter(p => p.date >= activeFrom),
         vo2lSeries: byDate({ l: 0, vo: 0 }, (p, r) => ({ l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls, vo: p.vo + (r.ga4_view_offer ?? 0) }))
-          .map(([date, { l, vo }]) => ({ date, value: vo > 0 ? (l / vo) * 100 : 0 })).filter(p => p.value > 0),
+          .map(([date, { l, vo }]) => ({ date, value: vo > 0 ? (l / vo) * 100 : 0 })).filter(p => p.value > 0).filter(p => p.date >= activeFrom),
       }
     }
     return out
-  }, [rawData])
+  }, [rawData, activeFrom, skuList])
 
   // ── Per-SKU campaign breakdown (replaces /v2/campaign-breakdown endpoint) ──
   const campaignBreakdownBySku = useMemo(() => {
@@ -488,9 +498,9 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       if (!v) { v = { ts, cid, sku, ad_spend: 0, ga4_pv: 0, ga4_vo: 0, rl_ccom: 0, rl_d2or: 0, rl_mpsh: 0, rl_ofls: 0, pu_ccom: 0 }; acc.set(k, v) }
       return v
     }
-    for (const r of perf) { const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.ad_spend += r.ad_spend }
-    for (const r of ga4) { const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.ga4_pv += r.ga4_page_view; v.ga4_vo += r.ga4_view_offer }
-    for (const r of conv) { const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.rl_ccom += r.mongo_real_lead_ccom; v.rl_d2or += r.mongo_real_lead_d2or; v.rl_mpsh += r.mongo_real_lead_mpsh; v.rl_ofls += r.mongo_real_lead_ofls; v.pu_ccom += r.mongo_purchase_ccom }
+    for (const r of perf) { if (r.date < activeFrom) continue; const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.ad_spend += r.ad_spend }
+    for (const r of ga4) { if (r.date < activeFrom) continue; const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.ga4_pv += r.ga4_page_view; v.ga4_vo += r.ga4_view_offer }
+    for (const r of conv) { if (r.date < activeFrom) continue; const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.rl_ccom += r.mongo_real_lead_ccom; v.rl_d2or += r.mongo_real_lead_d2or; v.rl_mpsh += r.mongo_real_lead_mpsh; v.rl_ofls += r.mongo_real_lead_ofls; v.pu_ccom += r.mongo_purchase_ccom }
 
     // Build CampaignRow[] per SKU
     const out: Record<string, CampaignRow[]> = {}
@@ -514,15 +524,14 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       out[v.sku].push(row)
     }
     return out
-  }, [cgData])
+  }, [cgData, activeFrom])
 
   // ── Per-SKU budget data ───────────────────────────────────────────────────────
   const campaignBudgetData = useMemo(() => cgData?.campaign_budgets ?? [], [cgData])
   const skuBudgets = useMemo(() => {
-    const skuList = ['MSF', 'MTA', 'MNS', 'M3P'] as const
     const out = {} as Record<string, { spend: number; periodBudget: number; dailyBudget: number; targetDailyBudget: number; budgetDate: string }>
     for (const sku of skuList) {
-      const rows           = rawData.filter(r => r.sku === sku)
+      const rows           = rawData.filter(r => r.sku === sku && r.date >= activeFrom)
       const spend          = rows.reduce((s, r) => s + r.ad_spend, 0)
       // Period budget = SUM of daily targets in range (matches global totalTarget logic)
       const periodBudget   = targetData.filter(r => r.sku === sku).reduce((s, r) => s + r.daily_ad_spend, 0)
@@ -539,7 +548,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       }
     }
     return out
-  }, [rawData, targetData, latestTargetBySku, campaignBudgetData])
+  }, [rawData, targetData, latestTargetBySku, campaignBudgetData, skuList])
 
 
 
@@ -789,11 +798,11 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             cprlSeries={cprlSeries}
             changelog={filteredChangelog}
             cprlTarget={fixedBrand === 'GOL' ? (cprlSeries.length > 0 ? Math.round(cprlSeries.reduce((s, p) => s + p.value, 0) / cprlSeries.length) : undefined) : undefined}
-            skuCprl={(['MSF', 'MTA', 'MNS', 'M3P'] as const).map((sku): SkuCprlRow => {
+            skuCprl={skuList.map((sku): SkuCprlRow => {
               const d = allSkuData[sku]
               const rows = (rawData ?? []).filter(r => r.sku === sku)
               const leads = rows.reduce((s, r) => s + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls, 0)
-              return { sku, cprl: d.totals.cprl, leads }
+              return { sku, cprl: d?.totals.cprl ?? 0, leads }
             })}
           />
 
@@ -804,11 +813,11 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             purchaseBySku={purchaseBySku}
             cpaSeries={cpaSeries}
             changelog={filteredChangelog}
-            skuCpaCC={(['MSF', 'MTA', 'MNS', 'M3P'] as const).map((sku): SkuCpaCCRow => {
+            skuCpaCC={skuList.map((sku): SkuCpaCCRow => {
               const d = allSkuData[sku]
               const rows = (rawData ?? []).filter(r => r.sku === sku)
               const purchases = rows.reduce((s, r) => s + r.purchase_ccom, 0)
-              return { sku, cpaCC: d.totals.cpaCC, purchases }
+              return { sku, cpaCC: d?.totals.cpaCC ?? 0, purchases }
             })}
           />
 
@@ -830,13 +839,20 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
         {/* SKU Performance Cards — 2×2 grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 40, marginTop: 20 }}>
 
-          {([
-            { sku: 'MSF', productName: 'Superfood',  skuColor: '#f97316', imageSrc: superfoodImg,   cpaTarget: 2_000_000 },
-            { sku: 'MTA', productName: 'Metafiber',  skuColor: '#818cf8', imageSrc: metafiberImg,   cpaTarget: 2_000_000 },
-            { sku: 'MNS', productName: 'Nightsure',  skuColor: '#34d399', imageSrc: nightsureImg,   cpaTarget: 2_000_000 },
-            { sku: 'M3P', productName: '3Peptide',   skuColor: '#f472b6', imageSrc: threePeptideImg, cpaTarget: 2_000_000 },
-          ] as const).map(({ sku, productName, skuColor, imageSrc, cpaTarget }) => {
-            const d = allSkuData[sku as 'MSF' | 'MTA' | 'MNS' | 'M3P']
+          {skuList.map((sku) => {
+            const meta = [
+              { s: 'MSF', productName: 'Superfood',  skuColor: '#f97316', imageSrc: superfoodImg,   cpaTarget: 2_000_000 },
+              { s: 'MTA', productName: 'Metafiber',  skuColor: '#818cf8', imageSrc: metafiberImg,   cpaTarget: 2_000_000 },
+              { s: 'MNS', productName: 'Nightsure',  skuColor: '#34d399', imageSrc: nightsureImg,   cpaTarget: 2_000_000 },
+              { s: 'M3P', productName: '3Peptide',   skuColor: '#f472b6', imageSrc: threePeptideImg, cpaTarget: 2_000_000 },
+            ].find(m => m.s === sku)
+            
+            const productName = meta?.productName ?? sku
+            const skuColor = meta?.skuColor ?? '#818cf8'
+            const imageSrc = meta?.imageSrc
+            const cpaTarget = meta?.cpaTarget ?? 2_000_000
+
+            const d = allSkuData[sku]
             if (!d) return null
             return (
               <SkuPerformanceCard

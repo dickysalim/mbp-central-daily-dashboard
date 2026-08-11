@@ -100,6 +100,7 @@ export function PlatformOverviewPage() {
     }
   }
 
+  const MA_BUFFER_DAYS = 21
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [lastBrand, setLastBrand] = useState('')
@@ -116,6 +117,17 @@ export function PlatformOverviewPage() {
   }, [activeBrand, activeBounds, lastBrand])
   const activeFrom = from || activeBounds?.earliest || ''
   const activeTo = to || capToH2(activeBounds?.latest || '')
+
+  const fetchFrom = useMemo(() => {
+    if (!activeFrom) return activeFrom
+    const d = new Date(activeFrom + 'T00:00:00')
+    d.setDate(d.getDate() - MA_BUFFER_DAYS)
+    // Clamp to earliest available
+    const earliest = activeBounds?.earliest ?? activeFrom
+    const buf = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+    return buf < earliest ? earliest : buf
+  }, [activeFrom, activeBounds])
+
   const applyPreset = (days: number) => {
     if (!activeBounds) return
     const latest = capToH2(activeBounds.latest)
@@ -148,12 +160,12 @@ export function PlatformOverviewPage() {
   }
 
   const { data: cgData, isLoading: cgLoading, isFetching: cgFetching } = useQuery({
-    queryKey: ['consumer-goods', activeFrom, activeTo, activeBrand, refreshNonce],
+    queryKey: ['consumer-goods', fetchFrom, activeTo, activeBrand, refreshNonce],
     queryFn: async () => {
-      if (!activeFrom || !activeTo || !activeBrand) return null
+      if (!fetchFrom || !activeTo || !activeBrand) return null
       const bust = refreshNonce > 0 ? `&_r=${refreshNonce}` : ''
       const res = await fetch(
-        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${activeFrom}&to=${activeTo}${bust}`
+        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${fetchFrom}&to=${activeTo}${bust}`
       )
       if (!res.ok) throw new Error('consumer-goods fetch failed')
       const data = res.json() as Promise<ConsumerGoodsData>
@@ -161,7 +173,7 @@ export function PlatformOverviewPage() {
       if (spinRef.current) { clearInterval(spinRef.current); spinRef.current = null }
       return data
     },
-    enabled: !!activeFrom && !!activeTo && !!activeBrand,
+    enabled: !!fetchFrom && !!activeTo && !!activeBrand,
     staleTime: 5 * 60_000,
   })
 
@@ -229,7 +241,7 @@ export function PlatformOverviewPage() {
       // Totals
       let spend = 0, leads = 0, purchase = 0, ccRevenue = 0, clicks = 0, impr = 0, vo = 0, pv = 0
       let formSubs = 0, formConv = 0
-      for (const r of rows) {
+      for (const r of rows.filter(r => r.date >= activeFrom && r.date <= activeTo)) {
         spend    += r.ad_spend
         leads    += r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls
         purchase += r.purchase_ccom
@@ -268,12 +280,12 @@ export function PlatformOverviewPage() {
           ccRoas: isMCI ? (formSubs > 0 ? (formConv / formSubs) * 100 : 0) : (spend > 0 ? ccRevenue / spend : 0),
         },
         ctrSeries: byDate({ c: 0, i: 0 }, (p, r) => ({ c: p.c + r.link_click, i: p.i + r.impressions }))
-          .map(([date, { c, i }]) => ({ date, value: i > 0 ? (c / i) * 100 : 0 })).filter(p => p.value > 0),
+          .map(([date, { c, i }]) => ({ date, value: i > 0 ? (c / i) * 100 : 0 })).filter(p => p.value > 0 && p.date >= activeFrom),
         cprlSeries: isMCI
           ? byDate({ s: 0, f: 0 }, (p, r) => ({ s: p.s + r.ad_spend, f: p.f + r.form_submission }))
-              .map(([date, { s, f }]) => ({ date, value: f > 0 ? s / f : 0 })).filter(p => p.value > 0)
+              .map(([date, { s, f }]) => ({ date, value: f > 0 ? s / f : 0 })).filter(p => p.value > 0 && p.date >= activeFrom)
           : byDate({ s: 0, l: 0 }, (p, r) => ({ s: p.s + r.ad_spend, l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls }))
-              .map(([date, { s, l }]) => ({ date, value: l > 0 ? s / l : 0 })).filter(p => p.value > 0),
+              .map(([date, { s, l }]) => ({ date, value: l > 0 ? s / l : 0 })).filter(p => p.value > 0 && p.date >= activeFrom),
         cpaSeries: (() => {
           const daily = isMCI
             ? byDate({ s: 0, fc: 0 }, (p, r) => ({ s: p.s + r.ad_spend, fc: p.fc + r.form_conversion }))
@@ -286,18 +298,18 @@ export function PlatformOverviewPage() {
             const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
             const totalPurchases = slice.reduce((s, d) => s + d.purchases, 0)
             return { date: daily[i].date, value: totalPurchases > 0 ? totalSpend / totalPurchases : 0 }
-          }).filter(p => p.value > 0)
+          }).filter(p => p.value > 0 && p.date >= activeFrom)
         })(),
         lpvoSeries: byDate({ vo: 0, pv: 0 }, (p, r) => ({ vo: p.vo + r.ga4_view_offer, pv: p.pv + r.ga4_page_view }))
-          .map(([date, { vo, pv }]) => ({ date, value: pv > 0 ? (vo / pv) * 100 : 0 })).filter(p => p.value > 0),
+          .map(([date, { vo, pv }]) => ({ date, value: pv > 0 ? (vo / pv) * 100 : 0 })).filter(p => p.value > 0 && p.date >= activeFrom),
         vo2lSeries: isMCI
           ? byDate({ f: 0, vo: 0 }, (p, r) => ({ f: p.f + r.form_submission, vo: p.vo + r.ga4_view_offer }))
-              .map(([date, { f, vo }]) => ({ date, value: vo > 0 ? (f / vo) * 100 : 0 })).filter(p => p.value > 0)
+              .map(([date, { f, vo }]) => ({ date, value: vo > 0 ? (f / vo) * 100 : 0 })).filter(p => p.value > 0 && p.date >= activeFrom)
           : byDate({ l: 0, vo: 0 }, (p, r) => ({ l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls, vo: p.vo + r.ga4_view_offer }))
-              .map(([date, { l, vo }]) => ({ date, value: vo > 0 ? (l / vo) * 100 : 0 })).filter(p => p.value > 0),
+              .map(([date, { l, vo }]) => ({ date, value: vo > 0 ? (l / vo) * 100 : 0 })).filter(p => p.value > 0 && p.date >= activeFrom),
         ccRoasSeries: isMCI
           ? byDate({ fs: 0, fc: 0 }, (p, r) => ({ fs: p.fs + r.form_submission, fc: p.fc + r.form_conversion }))
-              .map(([date, { fs, fc }]) => ({ date, value: fs > 0 ? (fc / fs) * 100 : 0 })).filter(p => p.value > 0)
+              .map(([date, { fs, fc }]) => ({ date, value: fs > 0 ? (fc / fs) * 100 : 0 })).filter(p => p.value > 0 && p.date >= activeFrom)
           : (() => {
           const daily = byDate({ rev: 0, s: 0 }, (p, r) => ({ rev: p.rev + r.purchase_ccom_revenue, s: p.s + r.ad_spend }))
             .map(([date, { rev, s }]) => ({ date, rev, spend: s }))
@@ -307,12 +319,12 @@ export function PlatformOverviewPage() {
             const totalRev = slice.reduce((s, d) => s + d.rev, 0)
             const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
             return { date: daily[i].date, value: totalSpend > 0 ? totalRev / totalSpend : 0 }
-          }).filter(p => p.value > 0)
+          }).filter(p => p.value > 0 && p.date >= activeFrom)
         })(),
       }
     }
     return out
-  }, [rawData, activeBrand])
+  }, [rawData, activeBrand, activeFrom, activeTo])
 
   // ── Global averages (cross-platform benchmarks for target lines) ──
   const globalCtrAvg = useMemo(() => {
@@ -514,23 +526,35 @@ export function PlatformOverviewPage() {
         const targets = cgData.targets ?? []
         const budgets = cgData.campaign_budgets ?? []
 
-        // Total spend for selected SKU in period
-        const skuTotalSpend = perf.filter(r => r.sku === selectedSku).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+        const isMCI = activeBrand === 'MCI'
+
+        // Total spend for selected SKU in period (MCI: all SKUs)
+        const skuTotalSpend = isMCI
+          ? perf.filter(r => r.date >= activeFrom && r.date <= activeTo).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+          : perf.filter(r => r.sku === selectedSku && r.date >= activeFrom && r.date <= activeTo).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
 
         // Period budget (sum of daily targets across the date range)
-        const skuPeriodBudget = targets.filter(r => r.sku === selectedSku).reduce((s, r) => s + (r.daily_ad_spend ?? 0), 0)
+        const skuPeriodBudget = isMCI
+          ? targets.reduce((s, r) => s + (r.daily_ad_spend ?? 0), 0)
+          : targets.filter(r => r.sku === selectedSku).reduce((s, r) => s + (r.daily_ad_spend ?? 0), 0)
 
-        // Daily budget: latest target for this SKU
-        const skuTargets = targets.filter(r => r.sku === selectedSku).sort((a, b) => b.date.localeCompare(a.date))
+        // Daily budget: latest target for this SKU (MCI: all)
+        const skuTargets = isMCI
+          ? targets.sort((a, b) => b.date.localeCompare(a.date))
+          : targets.filter(r => r.sku === selectedSku).sort((a, b) => b.date.localeCompare(a.date))
         const skuDailyBudget = skuTargets[0]?.daily_ad_spend ?? 0
 
-        // Campaign budget: sum of campaign budgets for this SKU
-        const skuCampaignBudget = budgets.filter(r => r.sku === selectedSku).reduce((s, r) => s + (r.daily_budget ?? 0), 0)
+        // Campaign budget: sum of campaign budgets (MCI: all)
+        const skuCampaignBudget = isMCI
+          ? budgets.reduce((s, r) => s + (r.daily_budget ?? 0), 0)
+          : budgets.filter(r => r.sku === selectedSku).reduce((s, r) => s + (r.daily_budget ?? 0), 0)
         const budgetDate = budgets[0]?.date ?? ''
 
-        // Per-platform breakdown for this SKU (with CPRL, CPA CC, CC RoAS)
-        const skuPerf = perf.filter(r => r.sku === selectedSku)
-        const convs = (cgData.conversions ?? []).filter(r => r.sku === selectedSku)
+        // Per-platform breakdown (MCI: all SKUs)
+        const skuPerf = isMCI ? perf : perf.filter(r => r.sku === selectedSku)
+        const convs = isMCI
+          ? (cgData.conversions ?? [])
+          : (cgData.conversions ?? []).filter(r => r.sku === selectedSku)
         const platformBreakdown = PLATFORMS.map(p => {
           const pRows = skuPerf.filter(r => (r.traffic_source ?? '').toUpperCase() === p.id)
           const cRows = convs.filter(r => (r.traffic_source ?? '').toUpperCase() === p.id)
@@ -555,8 +579,12 @@ export function PlatformOverviewPage() {
         const dimMap = new Map<string, CampaignDimRow>()
         for (const d of dims) dimMap.set(`${d.traffic_source}|${d.campaign_id}`, d)
 
-        const ga4 = (cgData.ga4 ?? []).filter(r => r.sku === selectedSku)
-        const conv = (cgData.conversions ?? []).filter(r => r.sku === selectedSku)
+        const ga4 = isMCI
+          ? (cgData.ga4 ?? [])
+          : (cgData.ga4 ?? []).filter(r => r.sku === selectedSku)
+        const conv = isMCI
+          ? (cgData.conversions ?? [])
+          : (cgData.conversions ?? []).filter(r => r.sku === selectedSku)
 
         // Accumulate per (traffic_source, campaign_id)
         type CampAcc = { ts: string; cid: string; spend: number; rl: number; pu: number }
@@ -583,15 +611,24 @@ export function PlatformOverviewPage() {
 
         // Build campaign budget lookup: campaign_name → daily_budget
         const budgetByName = new Map<string, number>()
-        for (const b of budgets.filter(r => r.sku === selectedSku)) {
+        const budgetFiltered = isMCI ? budgets : budgets.filter(r => r.sku === selectedSku)
+        for (const b of budgetFiltered) {
           budgetByName.set(b.campaign_name, (budgetByName.get(b.campaign_name) ?? 0) + (b.daily_budget ?? 0))
+        }
+
+        // Also build campaign name lookup from budgets (fallback for SRCH etc.)
+        const nameByTsCid = new Map<string, string>()
+        for (const b of budgets) {
+          if (b.campaign_name && b.campaign_id) {
+            nameByTsCid.set(`${b.traffic_source}|${b.campaign_id}`, b.campaign_name)
+          }
         }
 
         const campaignRows = Array.from(campMap.values())
           .filter(v => v.spend > 0)
           .map(v => {
             const dim = dimMap.get(`${v.ts}|${v.cid}`)
-            const name = dim?.campaign_name ?? v.cid
+            const name = dim?.campaign_name ?? nameByTsCid.get(`${v.ts}|${v.cid}`) ?? v.cid
             const funnel = dim?.funnel ?? '-'
             const cprl = v.rl > 0 ? v.spend / v.rl : 0
             const cpaCC = v.pu > 0 ? v.spend / v.pu : 0
@@ -652,12 +689,13 @@ export function PlatformOverviewPage() {
                 }}>
                   {/* Header: SKU picker + Budget stats */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-                    {/* Left: Title + SKU tabs */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                     {/* Left: Title + SKU tabs (hidden for MCI) */}
+                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{
                         fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
                         color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase',
                       }}>Campaign Breakdown</div>
+                      {!isMCI && (<>
                       <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)' }} />
                       {orderedSkus.map(sku => {
                         const isActive = sku === selectedSku
@@ -683,6 +721,7 @@ export function PlatformOverviewPage() {
                           </button>
                         )
                       })}
+                      </>)}
                     </div>
                   </div>
 
