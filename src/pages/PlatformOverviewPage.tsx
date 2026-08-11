@@ -20,7 +20,7 @@ import searchAdsImg from '../assets/ads_platform_images/Google Search Ads.webp'
 // ── Types (same as ConsumerGoodsDashboard) ────────────────────────────────────────────
 interface AdPerfRow    { date: string; traffic_source: string; ads_platform_campaign_id: string; sku: string; ad_spend: number; impressions: number; link_click: number }
 interface Ga4Row       { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }
-interface ConvRow      { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number; mongo_purchase_ccom: number; mongo_purchase_ccom_revenue: number }
+interface ConvRow      { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number; mongo_purchase_ccom: number; mongo_purchase_ccom_revenue: number; mongo_form_submission?: number; mongo_form_conversion?: number }
 interface BrandBounds  { brand: string; earliest: string; latest: string; skus: string[] }
 interface CampaignBudgetRow { date: string; traffic_source: string; campaign_name: string; sku: string; daily_budget: number }
 interface TargetRow { date: string; sku: string; daily_ad_spend: number }
@@ -39,6 +39,7 @@ interface PlatAggRow {
   real_lead_ccom: number; real_lead_d2or: number; real_lead_mpsh: number; real_lead_ofls: number
   purchase_ccom: number; purchase_ccom_revenue: number
   ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number
+  form_submission: number; form_conversion: number
 }
 
 // Platform config
@@ -172,6 +173,7 @@ export function PlatformOverviewPage() {
       real_lead_ccom: 0, real_lead_d2or: 0, real_lead_mpsh: 0, real_lead_ofls: 0,
       purchase_ccom: 0, purchase_ccom_revenue: 0,
       ga4_first_visit: 0, ga4_page_view: 0, ga4_view_offer: 0,
+      form_submission: 0, form_conversion: 0,
     })
     const map = new Map<string, PlatAggRow>()
     const k = (date: string, plat: string) => `${date}|${plat}`
@@ -199,6 +201,8 @@ export function PlatformOverviewPage() {
         real_lead_ofls: p.real_lead_ofls + (r.mongo_real_lead_ofls ?? 0),
         purchase_ccom:  p.purchase_ccom  + (r.mongo_purchase_ccom ?? 0),
         purchase_ccom_revenue: p.purchase_ccom_revenue + (r.mongo_purchase_ccom_revenue ?? 0),
+        form_submission: p.form_submission + (r.mongo_form_submission ?? 0),
+        form_conversion: p.form_conversion + (r.mongo_form_conversion ?? 0),
       })
     }
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date))
@@ -208,6 +212,8 @@ export function PlatformOverviewPage() {
 
   // ── Per-platform computed metrics (same shape as allSkuData in ConsumerGoodsDashboard) ──
   const allPlatformData = useMemo(() => {
+    if (!rawData.length) return {} as Record<string, PlatOut>
+    const isMCI = activeBrand === 'MCI'
     type Point = { date: string; value: number }
     type PlatOut = {
       totals: { ctr: number; lpvo: number; vo2l: number; cprl: number; cpaCC: number; ccRoas: number }
@@ -222,6 +228,7 @@ export function PlatformOverviewPage() {
 
       // Totals
       let spend = 0, leads = 0, purchase = 0, ccRevenue = 0, clicks = 0, impr = 0, vo = 0, pv = 0
+      let formSubs = 0, formConv = 0
       for (const r of rows) {
         spend    += r.ad_spend
         leads    += r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls
@@ -231,6 +238,8 @@ export function PlatformOverviewPage() {
         impr     += r.impressions
         vo       += r.ga4_view_offer
         pv       += r.ga4_page_view
+        formSubs += r.form_submission
+        formConv += r.form_conversion
       }
 
       // Daily series helper
@@ -240,23 +249,37 @@ export function PlatformOverviewPage() {
         return Array.from(m.entries()).sort(([a], [b]) => a.localeCompare(b))
       }
 
+      // For MCI: CPRL slot = CPR (spend / form_submission), CPA slot = CPV (spend / form_conversion), RoAS = empty
+      const cprlTotal = isMCI
+        ? (formSubs > 0 ? spend / formSubs : 0)
+        : (leads > 0 ? spend / leads : 0)
+      const cpaTotal = isMCI
+        ? (formConv > 0 ? spend / formConv : 0)
+        : (purchase > 0 ? spend / purchase : 0)
+
       out[plat.id] = {
         totalSpend: spend,
         totals: {
           ctr:    impr > 0 ? (clicks / impr) * 100 : 0,
           lpvo:   pv   > 0 ? (vo     / pv)   * 100 : 0,
-          vo2l:   vo   > 0 ? (leads  / vo)   * 100 : 0,
-          cprl:   leads    > 0 ? spend / leads      : 0,
-          cpaCC:  purchase > 0 ? spend / purchase   : 0,
-          ccRoas: spend    > 0 ? ccRevenue / spend  : 0,
+          vo2l:   isMCI ? (vo > 0 ? (formSubs / vo) * 100 : 0) : (vo > 0 ? (leads / vo) * 100 : 0),
+          cprl:   cprlTotal,
+          cpaCC:  cpaTotal,
+          ccRoas: isMCI ? 0 : (spend > 0 ? ccRevenue / spend : 0),
         },
         ctrSeries: byDate({ c: 0, i: 0 }, (p, r) => ({ c: p.c + r.link_click, i: p.i + r.impressions }))
           .map(([date, { c, i }]) => ({ date, value: i > 0 ? (c / i) * 100 : 0 })).filter(p => p.value > 0),
-        cprlSeries: byDate({ s: 0, l: 0 }, (p, r) => ({ s: p.s + r.ad_spend, l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls }))
-          .map(([date, { s, l }]) => ({ date, value: l > 0 ? s / l : 0 })).filter(p => p.value > 0),
+        cprlSeries: isMCI
+          ? byDate({ s: 0, f: 0 }, (p, r) => ({ s: p.s + r.ad_spend, f: p.f + r.form_submission }))
+              .map(([date, { s, f }]) => ({ date, value: f > 0 ? s / f : 0 })).filter(p => p.value > 0)
+          : byDate({ s: 0, l: 0 }, (p, r) => ({ s: p.s + r.ad_spend, l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls }))
+              .map(([date, { s, l }]) => ({ date, value: l > 0 ? s / l : 0 })).filter(p => p.value > 0),
         cpaSeries: (() => {
-          const daily = byDate({ s: 0, p: 0 }, (p, r) => ({ s: p.s + r.ad_spend, p: p.p + r.purchase_ccom }))
-            .map(([date, { s, p }]) => ({ date, spend: s, purchases: p }))
+          const daily = isMCI
+            ? byDate({ s: 0, fc: 0 }, (p, r) => ({ s: p.s + r.ad_spend, fc: p.fc + r.form_conversion }))
+                .map(([date, { s, fc }]) => ({ date, spend: s, purchases: fc }))
+            : byDate({ s: 0, p: 0 }, (p, r) => ({ s: p.s + r.ad_spend, p: p.p + r.purchase_ccom }))
+                .map(([date, { s, p }]) => ({ date, spend: s, purchases: p }))
           const win = 7
           return daily.map((_, i) => {
             const slice = daily.slice(Math.max(0, i - win + 1), i + 1)
@@ -267,9 +290,12 @@ export function PlatformOverviewPage() {
         })(),
         lpvoSeries: byDate({ vo: 0, pv: 0 }, (p, r) => ({ vo: p.vo + r.ga4_view_offer, pv: p.pv + r.ga4_page_view }))
           .map(([date, { vo, pv }]) => ({ date, value: pv > 0 ? (vo / pv) * 100 : 0 })).filter(p => p.value > 0),
-        vo2lSeries: byDate({ l: 0, vo: 0 }, (p, r) => ({ l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls, vo: p.vo + r.ga4_view_offer }))
-          .map(([date, { l, vo }]) => ({ date, value: vo > 0 ? (l / vo) * 100 : 0 })).filter(p => p.value > 0),
-        ccRoasSeries: (() => {
+        vo2lSeries: isMCI
+          ? byDate({ f: 0, vo: 0 }, (p, r) => ({ f: p.f + r.form_submission, vo: p.vo + r.ga4_view_offer }))
+              .map(([date, { f, vo }]) => ({ date, value: vo > 0 ? (f / vo) * 100 : 0 })).filter(p => p.value > 0)
+          : byDate({ l: 0, vo: 0 }, (p, r) => ({ l: p.l + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls, vo: p.vo + r.ga4_view_offer }))
+              .map(([date, { l, vo }]) => ({ date, value: vo > 0 ? (l / vo) * 100 : 0 })).filter(p => p.value > 0),
+        ccRoasSeries: isMCI ? [] : (() => {
           const daily = byDate({ rev: 0, s: 0 }, (p, r) => ({ rev: p.rev + r.purchase_ccom_revenue, s: p.s + r.ad_spend }))
             .map(([date, { rev, s }]) => ({ date, rev, spend: s }))
           const win = 7
@@ -283,7 +309,7 @@ export function PlatformOverviewPage() {
       }
     }
     return out
-  }, [rawData])
+  }, [rawData, activeBrand])
 
   // ── Global averages (cross-platform benchmarks for target lines) ──
   const globalCtrAvg = useMemo(() => {
@@ -456,16 +482,18 @@ export function PlatformOverviewPage() {
                 globalCtrAvg={globalCtrAvg}
                 globalLpvoAvg={globalLpvoAvg}
                 globalVo2lAvg={globalVo2lAvg}
-                cprlTarget={150_000}
-                cpaTarget={2_000_000}
+                cprlTarget={activeBrand === 'MCI' ? 100_000 : 150_000}
+                cpaTarget={activeBrand === 'MCI' ? 500_000 : 2_000_000}
+                cprlLabel={activeBrand === 'MCI' ? 'CPR' : undefined}
+                cpaLabel={activeBrand === 'MCI' ? 'CPV' : undefined}
                 changelog={filteredChangelog}
                 skuSpend={d.totalSpend}
                 totalAllPlatformsSpend={totalSpendAllPlatforms}
                 skuDailyBudget={platformBudgets[id] ?? 0}
                 skuTargetDailyBudget={totalDailyBudget}
-                totalRoas={d.totals.ccRoas}
-                roasTarget={6.59}
-                roasLabel="CC RoAS"
+                totalRoas={activeBrand === 'MCI' ? undefined : d.totals.ccRoas}
+                roasTarget={activeBrand === 'MCI' ? undefined : 6.59}
+                roasLabel={activeBrand === 'MCI' ? undefined : 'CC RoAS'}
               />
             )
           })}
@@ -503,9 +531,13 @@ export function PlatformOverviewPage() {
           const pRows = skuPerf.filter(r => (r.traffic_source ?? '').toUpperCase() === p.id)
           const cRows = convs.filter(r => (r.traffic_source ?? '').toUpperCase() === p.id)
           const spend = pRows.reduce((s, r) => s + (r.ad_spend ?? 0), 0)
-          const totalLeads = cRows.reduce((s, r) => s + (r.mongo_real_lead_ccom ?? 0) + (r.mongo_real_lead_d2or ?? 0) + (r.mongo_real_lead_mpsh ?? 0) + (r.mongo_real_lead_ofls ?? 0), 0)
-          const purchases = cRows.reduce((s, r) => s + (r.mongo_purchase_ccom ?? 0), 0)
-          const revenue = cRows.reduce((s, r) => s + (r.mongo_purchase_ccom_revenue ?? 0), 0)
+          const totalLeads = activeBrand === 'MCI'
+            ? cRows.reduce((s, r) => s + (r.mongo_form_submission ?? 0), 0)
+            : cRows.reduce((s, r) => s + (r.mongo_real_lead_ccom ?? 0) + (r.mongo_real_lead_d2or ?? 0) + (r.mongo_real_lead_mpsh ?? 0) + (r.mongo_real_lead_ofls ?? 0), 0)
+          const purchases = activeBrand === 'MCI'
+            ? cRows.reduce((s, r) => s + (r.mongo_form_conversion ?? 0), 0)
+            : cRows.reduce((s, r) => s + (r.mongo_purchase_ccom ?? 0), 0)
+          const revenue = activeBrand === 'MCI' ? 0 : cRows.reduce((s, r) => s + (r.mongo_purchase_ccom_revenue ?? 0), 0)
           return {
             platform: p.id, label: p.label, color: p.color, spend,
             cprl: totalLeads > 0 ? spend / totalLeads : 0,
@@ -537,8 +569,12 @@ export function PlatformOverviewPage() {
         }
         for (const r of conv) {
           const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id)
-          v.rl += (r.mongo_real_lead_ccom ?? 0) + (r.mongo_real_lead_d2or ?? 0) + (r.mongo_real_lead_mpsh ?? 0) + (r.mongo_real_lead_ofls ?? 0)
-          v.pu += r.mongo_purchase_ccom ?? 0
+          v.rl += activeBrand === 'MCI'
+            ? (r.mongo_form_submission ?? 0)
+            : (r.mongo_real_lead_ccom ?? 0) + (r.mongo_real_lead_d2or ?? 0) + (r.mongo_real_lead_mpsh ?? 0) + (r.mongo_real_lead_ofls ?? 0)
+          v.pu += activeBrand === 'MCI'
+            ? (r.mongo_form_conversion ?? 0)
+            : (r.mongo_purchase_ccom ?? 0)
         }
 
         // Build campaign budget lookup: campaign_name → daily_budget

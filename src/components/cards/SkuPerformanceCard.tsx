@@ -51,6 +51,8 @@ export interface SkuPerformanceCardProps {
   globalVo2lAvg:  number
   cprlTarget?:    number
   cpaTarget?:     number
+  cprlLabel?:     string   // 'CPRL' (default) or 'CPR' etc.
+  cpaLabel?:      string   // 'CPA CC' (default) or 'CPV' etc.
 
   changelog?:    ChangelogRow[]
 
@@ -299,8 +301,8 @@ function mapFunnel(code: string): FunnelLevel {
 const FUNNEL_CLR: Record<FunnelLevel, string> = {
   ToFU00: '#818cf8', MoFU25: '#60a5fa', BoFU50: '#fbbf24', BoFU75: '#fb923c', Unknown: 'rgba(255,255,255,0.3)',
 }
-function CampaignEvaluator({ data, cprlTarget, cpaTarget }: {
-  data: CampaignRow[]; cprlTarget: number; cpaTarget: number
+function CampaignEvaluator({ data, cprlTarget, cpaTarget, cprlLabel = 'CPRL', cpaLabel = 'CPA CC' }: {
+  data: CampaignRow[]; cprlTarget: number; cpaTarget: number; cprlLabel?: string; cpaLabel?: string
 }) {
 
   const metaRows = (data ?? []).filter(r => r.ad_spend > 0 && r.traffic_source === 'META')
@@ -321,9 +323,9 @@ function CampaignEvaluator({ data, cprlTarget, cpaTarget }: {
     let metricName = '', targetValue = 0, actual: number | null = null
     // ToFU: target = META-wide avg Cost/ViewOffer; actual = campaign Cost/ViewOffer
     if (fl === 'ToFU00')      { metricName = 'Cost / View Offer'; targetValue = globalCostVO;    actual = r.ga4_view_offer > 0 ? r.ad_spend / r.ga4_view_offer : null }
-    else if (fl === 'MoFU25') { metricName = 'CPRL';    targetValue = effectiveCPRL; actual = rl > 0 ? r.ad_spend / rl : null }
-    else if (fl === 'BoFU50') { metricName = 'CPA CC';  targetValue = effectiveCPA;  actual = r.purchase_ccom > 0 ? r.ad_spend / r.purchase_ccom : null }
-    else if (fl === 'BoFU75') { metricName = 'CPRL';    targetValue = effectiveCPRL; actual = rl > 0 ? r.ad_spend / rl : null }
+    else if (fl === 'MoFU25') { metricName = cprlLabel; targetValue = effectiveCPRL; actual = rl > 0 ? r.ad_spend / rl : null }
+    else if (fl === 'BoFU50') { metricName = cpaLabel;  targetValue = effectiveCPA;  actual = r.purchase_ccom > 0 ? r.ad_spend / r.purchase_ccom : null }
+    else if (fl === 'BoFU75') { metricName = cprlLabel; targetValue = effectiveCPRL; actual = rl > 0 ? r.ad_spend / rl : null }
     else return null
     const gap = actual !== null && actual > 0 ? (targetValue / actual) - 1 : null
     return { name: r.campaign_name, fl, metricName, targetValue, actual, gap }
@@ -386,6 +388,8 @@ export function SkuPerformanceCard({
   globalCtrAvg, globalLpvoAvg, globalVo2lAvg,
   cprlTarget = 150_000,
   cpaTarget  = 5_000_000,
+  cprlLabel  = 'CPRL',
+  cpaLabel   = 'CPA CC',
   changelog  = [],
   campaignBreakdown = [],
   skuSpend             = 0,
@@ -429,7 +433,7 @@ export function SkuPerformanceCard({
   // Top row: CPRL + CPA CC
   const topCharts: ChartDef[] = [
     {
-      key: `${sku}-cprl`, label: 'CPRL', color: '#818cf8',
+      key: `${sku}-cprl`, label: cprlLabel, color: '#818cf8',
       series: cprlSeries, higherIsBetter: false, fixedTarget: cprlTarget,
       metricValue:   totalCprl  > 0 ? fmtRp(Math.round(totalCprl))  : '\u2014',
       metricSub:     `Target ${fmtShortRp(cprlTarget)}`,
@@ -441,7 +445,7 @@ export function SkuPerformanceCard({
       targetFontSize: 12,
     },
     {
-      key: `${sku}-cpa`, label: 'CPA CC', color: '#f472b6',
+      key: `${sku}-cpa`, label: cpaLabel, color: '#f472b6',
       series: cpaSeries, higherIsBetter: false, fixedTarget: cpaTarget,
       metricValue:   totalCpaCC > 0 ? fmtRp(Math.round(totalCpaCC)) : '\u2014',
       metricSub:     `Target ${fmtShortRp(cpaTarget)}`,
@@ -724,7 +728,7 @@ export function SkuPerformanceCard({
             )
           })()}
 
-          {/* 3 Metric columns: CPRL | CPA CC | RoAS */}
+          {/* 3 Metric columns */}
           <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
             {topCharts.map((c, idx) => {
               const vals = c.series.map(p => p.value).filter(v => v > 0)
@@ -817,7 +821,7 @@ export function SkuPerformanceCard({
               )
             }
             // Compute rich scores: onTarget, offPct, convergence strength
-            const labels = ['CPRL', 'CPA CC', 'RoAS'] as const
+            const labels = [cprlLabel, cpaLabel, roasLabel ?? 'RoAS'] as const
             const scores = topCharts.map((c, idx) => {
               const vals = c.series.map(p => p.value).filter(v => v > 0)
               const n = vals.length
@@ -849,7 +853,7 @@ export function SkuPerformanceCard({
             const roas  = scores[2]
 
             // Build detail flags shown on the sublabel
-            const cprlOff  = cprl.onTarget ? '' : `CPRL +${cprl.offPct.toFixed(0)}% off`
+            const cprlOff  = cprl.onTarget ? '' : `${cprlLabel} +${cprl.offPct.toFixed(0)}% off`
             const cprlConv = cprl.hasTrend
               ? `${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/d ${cprl.slopePctPerDay >= 0 ? '↘' : '↗'}`
               : ''
@@ -861,28 +865,28 @@ export function SkuPerformanceCard({
             // ── Branch 1: All green → Scale Up
             if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && roas.onTarget && cpaCC.onTarget) {
               rLabel = '🚀 Scale Up Budget'
-              sublabelStats = `CPRL on target · RoAS on target · CPA CC healthy`
-              sublabelMsg = `Increase daily budget 20–30% and monitor CPRL closely`
+              sublabelStats = `${cprlLabel} on target · RoAS on target · ${cpaLabel} healthy`
+              sublabelMsg = `Increase daily budget 20–30% and monitor ${cprlLabel} closely`
               color = '#34d399'; glow = 'rgba(52,211,153,0.15)'
 
             // ── Branch 2: CPRL ✅ + RoAS ✅ + CPA CC ❌ → Scale Up Potential?
             } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && roas.onTarget && !cpaCC.onTarget) {
               rLabel = '⚡ Scale Up Potential?'
-              sublabelStats = `CPRL on target · RoAS on target · CPA CC +${cpaCC.offPct.toFixed(0)}% off`
-              sublabelMsg = `Produce more Bottom Funnel creatives — CPRL + RoAS are solid`
+              sublabelStats = `${cprlLabel} on target · RoAS on target · ${cpaLabel} +${cpaCC.offPct.toFixed(0)}% off`
+              sublabelMsg = `Produce more Bottom Funnel creatives — ${cprlLabel} + RoAS are solid`
               color = '#34d399'; glow = 'rgba(52,211,153,0.10)'
 
             // ── Branch 3: CPRL ✅ + RoAS ❌ + CPA CC ✅ → Hold — RoAS Lagging
             } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && !roas.onTarget && cpaCC.onTarget) {
               rLabel = '⚡ Hold — RoAS Lagging'
-              sublabelStats = `CPRL on target · CPA CC healthy · RoAS ${roas.offPct.toFixed(0)}% below`
+              sublabelStats = `${cprlLabel} on target · ${cpaLabel} healthy · RoAS ${roas.offPct.toFixed(0)}% below`
               sublabelMsg = `Produce more Bottom Funnel creatives — push purchase intent`
               color = '#fbbf24'; glow = 'rgba(251,191,36,0.12)'
 
             // ── Branch 4: CPRL ✅ + RoAS ❌ + CPA CC ❌ → Hold — Both Lagging
             } else if (cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak') && !roas.onTarget && !cpaCC.onTarget) {
-              rLabel = '⚡ Hold — RoAS & CPA CC Lagging'
-              sublabelStats = `CPRL on target · RoAS ${roas.offPct.toFixed(0)}% off · CPA CC +${cpaCC.offPct.toFixed(0)}% off`
+              rLabel = `⚡ Hold — RoAS & ${cpaLabel} Lagging`
+              sublabelStats = `${cprlLabel} on target · RoAS ${roas.offPct.toFixed(0)}% off · ${cpaLabel} +${cpaCC.offPct.toFixed(0)}% off`
               sublabelMsg = `Produce more Bottom Funnel creatives — top funnel is working`
               color = '#fbbf24'; glow = 'rgba(251,191,36,0.12)'
 
@@ -891,8 +895,8 @@ export function SkuPerformanceCard({
               const drift = cprl.convStrength === 'diverging'
                 ? `diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day`
                 : 'trend is flat'
-              rLabel = '⚠️ Caution — CPRL Drifting'
-              sublabelStats = `CPRL on target · trend ${drift}`
+              rLabel = `⚠️ Caution — ${cprlLabel} Drifting`
+              sublabelStats = `${cprlLabel} on target · trend ${drift}`
               sublabelMsg = `Test new creatives before any budget changes`
               color = '#fb923c'; glow = 'rgba(251,146,60,0.12)'
 
@@ -900,21 +904,21 @@ export function SkuPerformanceCard({
             } else if (!cprl.onTarget && (cprl.convStrength === 'strong' || cprl.convStrength === 'weak')) {
               const speed = cprl.convStrength === 'strong' ? 'strong' : 'slow'
               rLabel = cprl.convStrength === 'strong' ? '⚠️ Recovering — Almost There' : '⚠️ Recovering — Slowly'
-              sublabelStats = `CPRL +${cprl.offPct.toFixed(0)}% off · ${speed} recovery (${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day)`
+              sublabelStats = `${cprlLabel} +${cprl.offPct.toFixed(0)}% off · ${speed} recovery (${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day)`
               sublabelMsg = `Test new creative hooks to accelerate convergence`
               color = '#fb923c'; glow = 'rgba(251,146,60,0.12)'
 
             // ── Branch 7: CPRL off target, flat
             } else if (!cprl.onTarget && cprl.convStrength === 'flat') {
-              rLabel = '🔧 Stalled — CPRL Stuck'
-              sublabelStats = `CPRL +${cprl.offPct.toFixed(0)}% off · no improvement trend`
+              rLabel = `🔧 Stalled — ${cprlLabel} Stuck`
+              sublabelStats = `${cprlLabel} +${cprl.offPct.toFixed(0)}% off · no improvement trend`
               sublabelMsg = `Replace underperforming creatives — test new hooks and angles`
               color = '#f87171'; glow = 'rgba(248,113,113,0.12)'
 
             } else {
               // Branch 8: CPRL off target and diverging
               rLabel = '🔧 Optimize Ads First'
-              sublabelStats = `CPRL +${cprl.offPct.toFixed(0)}% off · diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day`
+              sublabelStats = `${cprlLabel} +${cprl.offPct.toFixed(0)}% off · diverging ${Math.abs(cprl.slopePctPerDay).toFixed(1)}%/day`
               sublabelMsg = `Pause weakest ad sets and test fresh creatives immediately`
               color = '#f87171'; glow = 'rgba(248,113,113,0.12)'
             }
@@ -977,7 +981,7 @@ export function SkuPerformanceCard({
       {/* ── COLLAPSIBLE BODY ── */}
       <div style={{ overflow: 'hidden', maxHeight: open ? '3000px' : '0', transition: 'max-height 0.3s ease' }}>
 
-        {/* CPRL + CPA CC charts */}
+        {/* Cost metric charts */}
         <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch',
           paddingTop: 14, marginTop: 14,
           borderTop: '1px solid rgba(255,255,255,0.09)',
@@ -1001,7 +1005,7 @@ export function SkuPerformanceCard({
             <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.01em', color: 'rgba(255,255,255,0.90)', marginBottom: 2 }}>
               Campaign Evaluator · Meta Ads
             </div>
-            <CampaignEvaluator data={campaignBreakdown} cprlTarget={cprlTarget} cpaTarget={cpaTarget} />
+            <CampaignEvaluator data={campaignBreakdown} cprlTarget={cprlTarget} cpaTarget={cpaTarget} cprlLabel={cprlLabel} cpaLabel={cpaLabel} />
           </div>
         )}
 
