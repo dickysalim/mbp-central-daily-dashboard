@@ -104,6 +104,8 @@ function Sparkline({
     ? (tUp ? 'Converging' : 'Diverging')
     : (tUp ? 'Diverging'  : 'Converging')
   const trendArrow = tUp ? '↑' : '↓'
+  const isConverging = higherIsBetter ? tUp : !tUp
+  const lineColor = isConverging ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171'
 
   // ── Coordinate helpers ───────────────────────────────────────────────────────
   const xs = (i: number) => PAD.left + (i / (n - 1)) * innerW
@@ -184,10 +186,10 @@ function Sparkline({
 
           {/* Regression trendline */}
           <line x1={xs(0)} y1={cl(ys(ic))} x2={xs(n - 1)} y2={cl(ys(slope * (n - 1) + ic))}
-            stroke={tc} strokeOpacity="0.45" strokeWidth="1.8" strokeDasharray="4,3" />
+            stroke={tc} strokeOpacity="0.65" strokeWidth="3.5" strokeDasharray="4,3" />
 
           {/* Main data line */}
-          <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5"
+          <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="2.5"
             strokeLinejoin="round" strokeLinecap="round" />
 
           {/* Changelog markers — same as reference */}

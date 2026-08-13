@@ -150,6 +150,7 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
   const tUp = slope > 0
   const tc = tUp ? '#f87171' : '#34d399'
   const rate = target ? Math.abs((slope / target) * 100) : Math.abs((slope / mY) * 100)
+  const lineColor = !tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171'
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
 
@@ -207,14 +208,14 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
           const ceilY = ys(target * 2)
           return <>
             <line x1={PAD.left} y1={ceilY} x2={W - PAD.right} y2={ceilY}
-              stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+              stroke="#f87171" strokeOpacity="0.5" strokeWidth="1" />
             <text x={W - PAD.right + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
           </>
         })()}
         {/* Trend dashed line */}
-        <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)} stroke={tc} strokeOpacity="0.45" strokeWidth="1.8" strokeDasharray="4,3" />
+        <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)} stroke={tc} strokeOpacity="0.65" strokeWidth="3.5" strokeDasharray="4,3" />
         {/* Line */}
-        <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {/* Changelog markers */}
         {markers.map(m => (
           <g key={m.i}

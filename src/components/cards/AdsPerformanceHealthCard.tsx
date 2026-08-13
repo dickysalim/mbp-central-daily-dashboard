@@ -65,6 +65,7 @@ function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changel
   const tUp = slope > 0
   const tc  = tUp ? '#f87171' : '#34d399'
   const rate = Math.abs((slope / cprlTarget) * 100)
+  const lineColor = !tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171'
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
 
@@ -108,12 +109,12 @@ function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changel
           const ceilY = ys(cprlTarget * 2)
           return <>
             <line x1={PAD.left} y1={ceilY} x2={W - PAD.right} y2={ceilY}
-              stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+              stroke="#f87171" strokeOpacity="0.5" strokeWidth="1" />
             <text x={W - PAD.right + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
           </>
         })()}
-        <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)} stroke={tc} strokeOpacity="0.45" strokeWidth="1.8" strokeDasharray="4,3" />
-        <polyline points={pts} fill="none" stroke="#818cf8" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)} stroke={tc} strokeOpacity="0.65" strokeWidth="3.5" strokeDasharray="4,3" />
+        <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {markers.map(m => (
           <g key={m.i}
             onMouseEnter={(e) => setClTooltip({ x: e.clientX, y: e.clientY, entries: m.entries })}

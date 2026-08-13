@@ -68,7 +68,15 @@ function RoasSparkline({ data, gradId = 'roas-fill-grad', lineColor }: { data: R
   }
 
   const latest = data[data.length - 1].value
-  const latestColor = lineColor ?? (latest >= 1 ? '#34d399' : '#f87171')
+  const n = values.length
+  const mX = (n - 1) / 2
+  const mY = values.reduce((a, b) => a + b, 0) / n
+  const slope = values.reduce((s, v, i) => s + (i - mX) * (v - mY), 0) /
+                values.reduce((s, _, i) => s + (i - mX) ** 2, 0)
+  const tUp = slope > 0
+  const rate = mY > 0 ? Math.abs((slope / mY) * 100) : 0
+  const trendLineColor = tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171'
+  const latestColor = lineColor ?? trendLineColor
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, display: 'block' }}>
@@ -94,7 +102,7 @@ function RoasSparkline({ data, gradId = 'roas-fill-grad', lineColor }: { data: R
         const ceilY = y(2)
         return <>
           <line x1={PX} y1={ceilY} x2={W - PX} y2={ceilY}
-            stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+            stroke="#f87171" strokeOpacity="0.5" strokeWidth="1" />
           <text x={W - PX + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
         </>
       })()}

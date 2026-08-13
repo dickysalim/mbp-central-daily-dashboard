@@ -266,8 +266,10 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
     const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0
     const intercept = (sumY - slope * sumX) / n
     const trendGood = lowerIsBetter ? slope <= 0 : slope >= 0
+    const rate = target > 0 ? Math.abs((slope / target) * 100) : 0
+    const color = trendGood ? '#34d399' : rate < 1 ? '#fbbf24' : '#ef4444'
     return {
-      trendColor: trendGood ? '#34d399' : '#ef4444',
+      trendColor: color,
       trendlineY1: yScale(intercept),
       trendlineY2: yScale(slope * (n - 1) + intercept),
     }
@@ -367,7 +369,7 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
         const ceilY = yScaleRaw(target * 2)
         return <>
           <line x1={pad.l} y1={ceilY} x2={pad.l + w} y2={ceilY}
-            stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+            stroke="#f87171" strokeOpacity="0.5" strokeWidth="1" />
           <text x={pad.l + w + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
         </>
       })()}
@@ -390,9 +392,9 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
           x2={pad.l + (data.length - 1) * xStep}
           y2={trendlineY2}
           stroke={trendColor}
-          strokeWidth={1.2}
+          strokeWidth={3.5}
           strokeDasharray="6 3"
-          opacity={0.5}
+          opacity={0.65}
         />
       )}
 
