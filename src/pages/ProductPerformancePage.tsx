@@ -201,17 +201,14 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
 
   const values = data.map(d => d.value)
 
-  // ── Y-axis scaling: use fixed bounds if provided, otherwise dynamic ──
+  // ── Y-axis scaling: always start from 0, cap at target unless data exceeds ──
   let yMin: number, yMax: number
   if (fixedYMin !== undefined && fixedYMax !== undefined) {
-    yMin = fixedYMin
-    yMax = fixedYMax
+    yMin = 0
+    yMax = Math.max(fixedYMax * 2, ...values)
   } else {
-    const localMaxDev = values.reduce((mx, v) => Math.max(mx, Math.abs(v - target)), 0)
-    const maxDev = sharedMaxDev ?? localMaxDev
-    const padding = sharedMaxDev ? 0 : (maxDev * 0.2 || target * 0.1)
-    yMin = target - maxDev - padding
-    yMax = target + maxDev + padding
+    yMin = 0
+    yMax = Math.max(target * 2, ...values)
   }
   const yRange = yMax - yMin || 1
 
@@ -366,6 +363,14 @@ export function Sparkline({ data, target, title, width = 280, height = 150, colo
       >
         {targetLabel} {fmt === 'multiplier' ? `${target}×` : fmt === 'percent' ? `${target.toFixed(1)}%` : fmt === 'number' ? fmtNum(Math.round(target)) : fmtIDR(target)}
       </text>
+      {Math.max(...values) > target * 2 && (() => {
+        const ceilY = yScaleRaw(target * 2)
+        return <>
+          <line x1={pad.l} y1={ceilY} x2={pad.l + w} y2={ceilY}
+            stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+          <text x={pad.l + w + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
+        </>
+      })()}
 
       {/* Data line — colored by trend direction */}
       <polyline

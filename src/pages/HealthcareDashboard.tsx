@@ -23,7 +23,7 @@ interface ConsumerGoodsData {
   campaign_budgets: { date: string; traffic_source: string; campaign_name: string; daily_budget: number; sku: string }[]
   targets: { date: string; sku: string; daily_ad_spend: number }[]
   conversions: { date: string; traffic_source: string; sku: string; mongo_form_submission: number; mongo_form_conversion: number }[]
-  form_by_branch: { branch: string; form_submission: number; form_conversion: number }[]
+  form_by_branch: { date: string; branch: string; form_submission: number; form_conversion: number }[]
   changelog: unknown[]
   sales: unknown[]
   ga4: { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }[]
@@ -133,8 +133,8 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
   if (data.length < 2) return null
 
   const vals = data.map(d => d.value)
-  const minV = Math.min(...vals, target ?? Infinity) * 0.96
-  const maxV = Math.max(...vals, target ?? -Infinity) * 1.04
+  const minV = 0
+  const maxV = Math.max((target ?? Math.max(...vals)) * 2, ...vals)
   const rng = maxV - minV || 1
   const n = vals.length
 
@@ -203,6 +203,14 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
             <text x={W - PAD.right + 3} y={ys(target) + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">{targetLabel ?? ''}</text>
           </>
         )}
+        {target != null && Math.max(...vals) > target * 2 && (() => {
+          const ceilY = ys(target * 2)
+          return <>
+            <line x1={PAD.left} y1={ceilY} x2={W - PAD.right} y2={ceilY}
+              stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+            <text x={W - PAD.right + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
+          </>
+        })()}
         {/* Trend dashed line */}
         <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)} stroke={tc} strokeOpacity="0.45" strokeWidth="1.8" strokeDasharray="4,3" />
         {/* Line */}
@@ -397,15 +405,22 @@ export function HealthcareDashboard() {
   const healthColor = barPct === 0 ? '#818cf8' : barPct > 115 ? '#f87171' : barPct >= 105 ? '#fbbf24' : barPct >= 95 ? '#34d399' : barPct >= 85 ? '#fbbf24' : '#f87171'
   const healthLabel = barPct === 0 ? 'No Data' : barPct > 115 ? '🔴 Over Budget' : barPct >= 105 ? '🟡 Slightly Over' : barPct >= 95 ? '🟢 On Track' : barPct >= 85 ? '🟡 Slightly Under' : '🔴 Far Behind'
 
-  // Branch data for pie charts
-  const formByBranch = useMemo(() =>
-    (cgData?.form_by_branch ?? []).map((r, i) => ({
-      branch: r.branch,
-      submission: r.form_submission ?? 0,
-      conversion: r.form_conversion ?? 0,
-      color: branchColor(i),
-    }))
-  , [cgData])
+  const formByBranch = useMemo(() => {
+    const rows = (cgData?.form_by_branch ?? []).filter(r => r.date >= activeFrom && r.date <= activeTo)
+    const map = new Map<string, { branch: string; submission: number; conversion: number }>()
+    for (const r of rows) {
+      const prev = map.get(r.branch)
+      if (prev) {
+        prev.submission += r.form_submission ?? 0
+        prev.conversion += r.form_conversion ?? 0
+      } else {
+        map.set(r.branch, { branch: r.branch, submission: r.form_submission ?? 0, conversion: r.form_conversion ?? 0 })
+      }
+    }
+    return Array.from(map.values())
+      .sort((a, b) => b.submission - a.submission)
+      .map((r, i) => ({ ...r, color: branchColor(i) }))
+  }, [cgData, activeFrom, activeTo])
 
   // ── Changelog ──
   const filteredChangelog = useMemo(() => (cgData?.changelog ?? []) as ChangelogRow[], [cgData])

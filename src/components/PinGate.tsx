@@ -1,6 +1,6 @@
 /**
  * PinGate — Simple PIN authentication gate
- * Stores authenticated state in sessionStorage per brand.
+ * Stores authenticated state in localStorage per brand.
  */
 import { useState, useRef, useEffect } from 'react'
 
@@ -12,7 +12,7 @@ interface PinGateProps {
 
 export function PinGate({ pin, brand, children }: PinGateProps) {
   const storageKey = `pin-auth-global`
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem(storageKey) === 'true')
+  const [authed, setAuthed] = useState(() => localStorage.getItem(storageKey) === 'true')
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', ''])
   const [error, setError] = useState(false)
   const [shake, setShake] = useState(false)
@@ -39,7 +39,7 @@ export function PinGate({ pin, brand, children }: PinGateProps) {
     if (val && idx === 5) {
       const entered = next.join('')
       if (entered === pin) {
-        sessionStorage.setItem(storageKey, 'true')
+        localStorage.setItem(storageKey, 'true')
         setAuthed(true)
       } else {
         setError(true)
@@ -62,7 +62,7 @@ export function PinGate({ pin, brand, children }: PinGateProps) {
       const next = pasted.split('')
       setDigits(next)
       if (pasted === pin) {
-        sessionStorage.setItem(storageKey, 'true')
+        localStorage.setItem(storageKey, 'true')
         setAuthed(true)
       } else {
         setError(true)
@@ -102,7 +102,7 @@ export function PinGate({ pin, brand, children }: PinGateProps) {
         {/* Title */}
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em' }}>
-            {brand} Dashboard
+            Central Daily Dashboard V2
           </div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
             Enter 6-digit PIN to continue

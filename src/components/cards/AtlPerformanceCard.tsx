@@ -79,9 +79,10 @@ function Sparkline({
 
   const vals  = data.map(d => d.value)
   const n     = vals.length
-  const minV  = Math.min(...vals), maxV = Math.max(...vals)
-  const pad   = (maxV - minV) * 0.12 || 1
-  const lo    = minV - pad, hi = maxV + pad, rng = hi - lo
+  const minV  = 0
+  const avg0  = vals.reduce((s, v) => s + v, 0) / n
+  const maxV  = Math.max(avg0 * 2, ...vals)
+  const lo    = 0, hi = maxV, rng = hi - lo || 1
 
   // ── Derived stats ────────────────────────────────────────────────────────────
   const avg   = vals.reduce((s, v) => s + v, 0) / n

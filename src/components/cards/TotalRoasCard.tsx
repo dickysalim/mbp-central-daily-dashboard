@@ -61,8 +61,8 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
   const innerH = H - PAD.top - PAD.bottom
 
   const vals = data.map(d => d.value)
-  const minV = Math.min(...vals, ROAS_TARGET) * 0.92
-  const maxV = Math.max(...vals, ROAS_TARGET) * 1.08
+  const minV = 0
+  const maxV = Math.max(ROAS_TARGET * 2, ...vals)
   const rng  = maxV - minV || 1
   const n    = vals.length
 
@@ -129,6 +129,14 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
             <text x={W - PAD.right + 3} y={refY + 5} fontSize="12" fill="#94a3b8" fontWeight="700">{ROAS_TARGET}×</text>
           </>
         )}
+        {Math.max(...vals) > ROAS_TARGET * 2 && (() => {
+          const ceilY = ys(ROAS_TARGET * 2)
+          return <>
+            <line x1={PAD.left} y1={ceilY} x2={W - PAD.right} y2={ceilY}
+              stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+            <text x={W - PAD.right + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
+          </>
+        })()}
 
         {/* Trend line */}
         <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)}

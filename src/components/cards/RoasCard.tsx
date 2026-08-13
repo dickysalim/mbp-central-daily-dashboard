@@ -41,8 +41,8 @@ function RoasSparkline({ data, gradId = 'roas-fill-grad', lineColor }: { data: R
 
   const W = 600, H = 120, PX = 36, PY = 18
   const values = data.map(d => d.value)
-  const minV = Math.min(...values) * 0.92
-  const maxV = Math.max(...values) * 1.08
+  const minV = 0
+  const maxV = Math.max(2, ...values)
   const rangeV = maxV - minV || 1
 
   const x = (i: number) => PX + (i / (data.length - 1)) * (W - PX * 2)
@@ -90,6 +90,14 @@ function RoasSparkline({ data, gradId = 'roas-fill-grad', lineColor }: { data: R
           <text x={W - PX + 4} y={oneY + 3} fill="rgba(255,255,255,0.3)" fontSize="9" fontWeight="600">1×</text>
         </>
       )}
+      {Math.max(...values) > 2 && (() => {
+        const ceilY = y(2)
+        return <>
+          <line x1={PX} y1={ceilY} x2={W - PX} y2={ceilY}
+            stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+          <text x={W - PX + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
+        </>
+      })()}
 
       {/* Line */}
       <path d={linePath} fill="none" stroke={latestColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />

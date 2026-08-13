@@ -42,8 +42,8 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
   if (data.length < 2) return null
 
   const vals = data.map(d => d.value)
-  const minV = Math.min(...vals, CPA_CC_TARGET) * 0.96
-  const maxV = Math.max(...vals, CPA_CC_TARGET) * 1.04
+  const minV = 0
+  const maxV = Math.max(CPA_CC_TARGET * 2, ...vals)
   const rng  = maxV - minV || 1
   const n    = vals.length
 
@@ -98,6 +98,14 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
         {below.map((p, i) => <polygon key={`b${i}`} points={p} fill="#34d399" fillOpacity="0.1" />)}
         <line x1={PAD.left} y1={tY} x2={W - PAD.right} y2={tY} stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
         <text x={W - PAD.right + 3} y={tY + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">2M</text>
+        {Math.max(...vals) > CPA_CC_TARGET * 2 && (() => {
+          const ceilY = ys(CPA_CC_TARGET * 2)
+          return <>
+            <line x1={PAD.left} y1={ceilY} x2={W - PAD.right} y2={ceilY}
+              stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+            <text x={W - PAD.right + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
+          </>
+        })()}
         <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)} stroke={tc} strokeOpacity="0.45" strokeWidth="1.8" strokeDasharray="4,3" />
         <polyline points={pts} fill="none" stroke="#f472b6" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {markers.map(m => (

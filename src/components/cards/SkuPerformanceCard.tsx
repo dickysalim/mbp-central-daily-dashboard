@@ -127,8 +127,8 @@ function Sparkline({
   const target = fixedTarget ?? avg
 
   // Y range: always include target in view
-  const minV = Math.min(...vals, target) * 0.96
-  const maxV = Math.max(...vals, target) * 1.04
+  const minV = 0
+  const maxV = Math.max(target * 2, ...vals)
   const rng  = maxV - minV || 1
 
   // Regression
@@ -227,6 +227,17 @@ function Sparkline({
             stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
           <text x={VW - PAD.right + 3} y={tY + 5}
             fontSize={targetFontSize} fill="#94a3b8" opacity="1" fontWeight="700">{fmtShort(target)}</text>
+
+          {/* 200% ceiling line — shown only when data exceeds target×2 */}
+          {Math.max(...vals) > target * 2 && (() => {
+            const ceilY = cl(ys(target * 2))
+            return <>
+              <line x1={PAD.left} y1={ceilY} x2={VW - PAD.right} y2={ceilY}
+                stroke="#f87171" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="6,4" />
+              <text x={VW - PAD.right + 3} y={ceilY + 5}
+                fontSize={targetFontSize} fill="#f87171" opacity="0.8" fontWeight="700">!</text>
+            </>
+          })()}
 
           {/* Trendline */}
           <line x1={xs(0)} y1={cl(ys(ic))} x2={xs(n - 1)} y2={cl(ys(slope * (n - 1) + ic))}
