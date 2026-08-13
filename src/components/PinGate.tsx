@@ -11,7 +11,7 @@ interface PinGateProps {
 }
 
 export function PinGate({ pin, brand, children }: PinGateProps) {
-  const storageKey = `pin-auth-${brand}`
+  const storageKey = `pin-auth-global`
   const [authed, setAuthed] = useState(() => sessionStorage.getItem(storageKey) === 'true')
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', ''])
   const [error, setError] = useState(false)

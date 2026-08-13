@@ -8,6 +8,8 @@ import { PlatformOverviewPage } from './pages/PlatformOverviewPage'
 import { HealthcareDashboard } from './pages/HealthcareDashboard'
 import { GeneralOverviewPage } from './pages/GeneralOverviewPage'
 
+const GLOBAL_PIN = '232345'
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -21,13 +23,13 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route element={<AppLayout />}>
-            <Route index element={<Navigate to="/mnc" replace />} />
-            <Route path="/overview" element={<PinGate key="overview" pin="567567" brand="Overview"><GeneralOverviewPage /></PinGate>} />
-            <Route path="/mnc" element={<PinGate key="mnc" pin="168168" brand="MNC"><ConsumerGoodsDashboard brand="MNC" /></PinGate>} />
-            <Route path="/gol" element={<PinGate key="gol" pin="321321" brand="GOL"><ConsumerGoodsDashboard brand="GOL" /></PinGate>} />
-            <Route path="/mci" element={<PinGate key="mci" pin="911911" brand="MCI"><HealthcareDashboard /></PinGate>} />
-            <Route path="/platform-overview" element={<PinGate key="platform" pin="567567" brand="Platform"><PlatformOverviewPage /></PinGate>} />
+          <Route element={<PinGate pin={GLOBAL_PIN} brand="Dashboard"><AppLayout /></PinGate>}>
+            <Route index element={<Navigate to="/overview" replace />} />
+            <Route path="/overview" element={<GeneralOverviewPage />} />
+            <Route path="/mnc" element={<ConsumerGoodsDashboard brand="MNC" />} />
+            <Route path="/gol" element={<ConsumerGoodsDashboard brand="GOL" />} />
+            <Route path="/mci" element={<HealthcareDashboard />} />
+            <Route path="/platform-overview" element={<PlatformOverviewPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
