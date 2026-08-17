@@ -143,7 +143,7 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
       {tooltip && (
         <div style={{
           position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap',
-          top: Math.max(0, tooltip.y - 38), left: tooltip.x > W * 0.6 ? tooltip.x - 130 : tooltip.x + 8,
+          bottom: 0, left: tooltip.x > W * 0.6 ? tooltip.x - 130 : tooltip.x + 8,
           background: 'rgba(13,14,18,0.95)', border: '1px solid rgba(244,114,182,0.35)',
           borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
         }}>

@@ -10,7 +10,6 @@
  * Design tokens match AdsPerformanceHealthCard / LeadsQualityCard 1:1.
  */
 import { useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { TARGET_CPR, TARGET_CPA_CC, fmtIDR } from '../../pages/ProductPerformancePage'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -277,18 +276,17 @@ function Sparkline({
           <text x={VW - PAD.right} y={VH - 2} fontSize="10" fill="rgba(255,255,255,0.48)" textAnchor="end">{sd(data[n - 1].date)}</text>
         </svg>
 
-        {tooltip && createPortal(
+        {tooltip && (
           <div style={{
-            position: 'fixed', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 9999,
-            top: tooltip.cy + 1,
-            left: tooltip.cx + 1,
+            position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 99,
+            bottom: 0,
+            left: tooltip.x > VW * 0.6 ? tooltip.x - 130 : tooltip.x + 8,
             background: 'rgba(13,14,18,0.95)', border: `1px solid ${color}50`,
             borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
           }}>
             <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginBottom: 1 }}>{sd(tooltip.p.date)}</div>
             <div style={{ fontSize: 11, fontWeight: 700, color }}>{fmt(tooltip.p.value)}</div>
-          </div>,
-          document.body
+          </div>
         )}
 
         {clTooltip && <ChangelogTooltip x={clTooltip.x} y={clTooltip.y} entries={clTooltip.entries} />}

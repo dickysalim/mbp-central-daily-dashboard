@@ -7,6 +7,7 @@ import { ConsumerGoodsDashboard } from './pages/ConsumerGoodsDashboard'
 import { PlatformOverviewPage } from './pages/PlatformOverviewPage'
 import { HealthcareDashboard } from './pages/HealthcareDashboard'
 import { GeneralOverviewPage } from './pages/GeneralOverviewPage'
+import { SalesVelocityDashboard } from './pages/SalesVelocityDashboard'
 
 const GLOBAL_PIN = '232345'
 
@@ -30,6 +31,7 @@ function App() {
             <Route path="/gol" element={<ConsumerGoodsDashboard brand="GOL" />} />
             <Route path="/mci" element={<HealthcareDashboard />} />
             <Route path="/platform-overview" element={<PlatformOverviewPage />} />
+            <Route path="/sales-velocity" element={<SalesVelocityDashboard />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -253,7 +253,7 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
       {tooltip && (
         <div style={{
           position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap',
-          top: Math.max(0, tooltip.y - 38), left: tooltip.x > W * 0.6 ? tooltip.x - 130 : tooltip.x + 8,
+          bottom: 0, left: tooltip.x > W * 0.6 ? tooltip.x - 130 : tooltip.x + 8,
           background: 'rgba(13,14,18,0.95)', border: `1px solid ${color}55`,
           borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
         }}>
@@ -303,7 +303,7 @@ export function HealthcareDashboard() {
   const activeTo = to || capToH2(activeBounds?.latest || '')
 
   // Pre-fetch buffer: fetch 21 extra days before display range so MAs are warmed up
-  const MA_BUFFER_DAYS = 21
+  const MA_BUFFER_DAYS = 30
   const fetchFrom = useMemo(() => {
     if (!activeFrom) return activeFrom
     const d = new Date(activeFrom + 'T00:00:00')

@@ -68,7 +68,7 @@ export function GeneralOverviewPage() {
   const activeTo = to
 
   // Pre-fetch buffer: fetch 21 extra days before display range so MAs are warmed up
-  const MA_BUFFER_DAYS = 21
+  const MA_BUFFER_DAYS = 30
   const bufferFrom = (displayFrom: string, earliest: string) => {
     const d = new Date(displayFrom + 'T00:00:00')
     d.setDate(d.getDate() - MA_BUFFER_DAYS)
@@ -179,7 +179,7 @@ export function GeneralOverviewPage() {
     }
     const roasDaily = allDates.map(d => ({ date: d, spend: spendByDate.get(d) ?? 0, rev: revByDate.get(d) ?? 0 }))
     const roasSeries = roasDaily.map((dd, i) => {
-      const start = Math.max(0, i - 13)
+      const start = Math.max(0, i - 29) // 30-day MA
       const slice = roasDaily.slice(start, i + 1)
       const ts = slice.reduce((s, d) => s + d.spend, 0)
       const tr = slice.reduce((s, d) => s + d.rev, 0)

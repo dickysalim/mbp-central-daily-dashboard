@@ -58,7 +58,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
     staleTime: 0,
   })
 
-  const MA_BUFFER_DAYS = 21
+  const MA_BUFFER_DAYS = 30
   const activeBrand = fixedBrand
   const activeBounds = useMemo(() => brandBounds?.find(b => b.brand === activeBrand), [brandBounds, activeBrand])
   const skuList = useMemo(() => activeBounds?.skus ?? [], [activeBounds])
@@ -212,7 +212,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
   const totalSalesRevenue = useMemo(() => (cgData?.sales ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + (r.rev_ccom_ca ?? 0) + (r.rev_ccom_crm ?? 0) + (r.rev_mpsh ?? 0) + (r.rev_d2or ?? 0) + (r.rev_ofls ?? 0), 0), [cgData, activeFrom])
 
   // Daily RoAS series (total revenue / ad spend per day) + 7-day moving average
-  const roasDailySeries = useMemo(() => {
+  const roasDailyData = useMemo(() => {
     // Daily revenue from sales
     const revByDate = new Map<string, number>()
     for (const r of cgData?.sales ?? []) {
@@ -233,8 +233,8 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       spend: spendByDate.get(date) ?? 0,
       value: (spendByDate.get(date) ?? 0) > 0 ? (revByDate.get(date) ?? 0) / (spendByDate.get(date) ?? 0) : 0,
     }))
-    // 14-day moving average (matches bi-weekly reseller payout cycle: DoM 11-16 & 27-31)
-    const window = 14
+    // 30-day moving average (monthly target cycle)
+    const window = 30
     const ma: { date: string; value: number }[] = []
     for (let i = 0; i < daily.length; i++) {
       const start = Math.max(0, i - window + 1)
@@ -243,7 +243,8 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
       ma.push({ date: daily[i].date, value: totalSpend > 0 ? totalRev / totalSpend : 0 })
     }
-    return ma.filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+    const raw = daily.map(d => ({ date: d.date, value: d.value })).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+    return { ma: ma.filter(p => p.value > 0).filter(p => p.date >= activeFrom), raw }
   }, [cgData, rawData, activeFrom])
 
   // CC RoAS daily series (CC ads revenue / ad spend per day) + 7-day moving average
@@ -264,7 +265,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       revenue: revByDate.get(date) ?? 0,
       spend: spendByDate.get(date) ?? 0,
     }))
-    const window = 14 // 14-day MA (bi-weekly reseller payout cycle)
+    const window = 30 // 30-day MA (monthly target cycle)
     const ma: { date: string; value: number }[] = []
     for (let i = 0; i < daily.length; i++) {
       const start = Math.max(0, i - window + 1)
@@ -280,13 +281,43 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
   // Per-SKU RoAS breakdown (sales revenue vs ad spend)
   const skuRoas = useMemo(() => {
     return skuList.map(sku => {
+      // Period totals — kept for sub-label display
       const revenue = (cgData?.sales ?? [])
         .filter(r => r.sku === sku && r.date >= activeFrom)
         .reduce((s, r) => s + (r.rev_ccom_ca ?? 0) + (r.rev_ccom_crm ?? 0) + (r.rev_mpsh ?? 0) + (r.rev_d2or ?? 0) + (r.rev_ofls ?? 0), 0)
       const spend = (rawData ?? []).filter(r => r.sku === sku && r.date >= activeFrom).reduce((s, r) => s + r.ad_spend, 0)
-      return { sku, revenue, spend, roas: spend > 0 ? revenue / spend : 0 }
+
+      // 30d MA RoAS — same method as headline (ratio of rolling sums, not avg of ratios)
+      const revByDate = new Map<string, number>()
+      for (const r of (cgData?.sales ?? []).filter(r => r.sku === sku)) {
+        const rev = (r.rev_ccom_ca ?? 0) + (r.rev_ccom_crm ?? 0) + (r.rev_mpsh ?? 0) + (r.rev_d2or ?? 0) + (r.rev_ofls ?? 0)
+        revByDate.set(r.date, (revByDate.get(r.date) ?? 0) + rev)
+      }
+      const spendByDate = new Map<string, number>()
+      for (const r of (rawData ?? []).filter(r => r.sku === sku)) {
+        spendByDate.set(r.date, (spendByDate.get(r.date) ?? 0) + r.ad_spend)
+      }
+      const allDates = Array.from(new Set([...revByDate.keys(), ...spendByDate.keys()])).sort()
+      const daily = allDates.map(date => ({
+        date,
+        revenue: revByDate.get(date) ?? 0,
+        spend: spendByDate.get(date) ?? 0,
+      }))
+      // Find the last date ≤ activeTo and compute its 30d rolling ratio
+      let roas = spend > 0 ? revenue / spend : 0  // fallback to period aggregate
+      for (let i = daily.length - 1; i >= 0; i--) {
+        if (daily[i].date > activeTo) continue
+        const slice = daily.slice(Math.max(0, i - 29), i + 1)
+        const totalSpend = slice.reduce((s, d) => s + d.spend, 0)
+        if (totalSpend > 0) {
+          roas = slice.reduce((s, d) => s + d.revenue, 0) / totalSpend
+          break
+        }
+      }
+
+      return { sku, revenue, spend, roas }
     }).filter(s => s.spend > 0 || s.revenue > 0)
-  }, [cgData, rawData, activeFrom, skuList])
+  }, [cgData, rawData, activeFrom, activeTo, skuList])
 
   const totalLeadCcom = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.real_lead_ccom, 0), [rawData, activeFrom])
 
@@ -780,7 +811,8 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             totalSalesRevenue={totalSalesRevenue}
             totalAdSpend={totalSpend}
             skuRoas={skuRoas}
-            roasSeries={roasDailySeries}
+            roasSeries={roasDailyData.ma}
+            roasRawSeries={roasDailyData.raw}
             changelog={filteredChangelog}
           />
 

@@ -100,7 +100,7 @@ export function PlatformOverviewPage() {
     }
   }
 
-  const MA_BUFFER_DAYS = 21
+  const MA_BUFFER_DAYS = 30
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [lastBrand, setLastBrand] = useState('')

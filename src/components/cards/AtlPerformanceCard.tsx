@@ -224,9 +224,9 @@ function Sparkline({
         {/* Hover tooltip */}
         {tooltip && (
           <div style={{
-            position: 'fixed', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 9999,
-            top: tooltip.cy + 1,
-            left: tooltip.cx + 1,
+            position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 99,
+            bottom: 0,
+            left: tooltip.x > VW * 0.6 ? tooltip.x - 130 : tooltip.x + 8,
             background: 'rgba(13,14,18,0.95)', border: `1px solid ${color}50`,
             borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
           }}>

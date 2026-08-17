@@ -42,6 +42,7 @@ export interface TotalRoasCardProps {
   totalAdSpend:      number
   skuRoas:           SkuRoasRow[]
   roasSeries?:       RoasPoint[]
+  roasRawSeries?:    RoasPoint[]
   changelog?:        ChangelogRow[]
 }
 
@@ -185,7 +186,7 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
       {tooltip && (
         <div style={{
           position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap',
-          top: Math.max(0, tooltip.y - 38), left: tooltip.x > W * 0.6 ? tooltip.x - 130 : tooltip.x + 8,
+          bottom: 0, left: tooltip.x > W * 0.6 ? tooltip.x - 130 : tooltip.x + 8,
           background: 'rgba(13,14,18,0.95)', border: '1px solid rgba(129,140,248,0.35)',
           borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
         }}>
@@ -209,10 +210,14 @@ export function TotalRoasCard({
   totalAdSpend,
   skuRoas,
   roasSeries = [],
+  roasRawSeries = [],
   changelog  = [],
 }: TotalRoasCardProps) {
 
-  const totalRoas = totalAdSpend > 0 ? totalSalesRevenue / totalAdSpend : 0
+  const [showMA, setShowMA] = useState(true)
+  const activeSeries = showMA ? roasSeries : roasRawSeries
+
+  const totalRoas = roasSeries.length > 0 ? roasSeries[roasSeries.length - 1].value : (totalAdSpend > 0 ? totalSalesRevenue / totalAdSpend : 0)
   const div = totalRoas > 0 ? ((totalRoas - ROAS_TARGET) / ROAS_TARGET) * 100 : null
   const roasColor = totalRoas >= ROAS_TARGET ? '#34d399' : totalRoas >= ROAS_TARGET * 0.9 ? '#fbbf24' : '#f87171'
   const roasLabel = totalRoas >= ROAS_TARGET ? '🟢 On Target' : totalRoas >= ROAS_TARGET * 0.9 ? '🟡 Slightly Below' : '🔴 Below Target'
@@ -249,7 +254,7 @@ export function TotalRoasCard({
 
           {/* Sub headline: Total RoAS / Target RoAS */}
           <div>
-            <div style={{ ...T.section, marginBottom: 5 }}>Total RoAS</div>
+            <div style={{ ...T.section, marginBottom: 5 }}>RoAS (30d MA)</div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
               {/* Current */}
               <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', color: roasColor }}>
@@ -278,10 +283,25 @@ export function TotalRoasCard({
           <div style={{
             flex: '0 0 360px', minWidth: 0,
             ...T.divider,
-            display: 'flex', alignItems: 'center',
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
           }}>
+            {/* MA / Raw toggle */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 6, alignSelf: 'flex-end' }}>
+              <button onClick={() => setShowMA(true)} style={{
+                padding: '2px 8px', fontSize: 9, fontWeight: 700, borderRadius: 4,
+                border: 'none', cursor: 'pointer', letterSpacing: '0.03em',
+                background: showMA ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+                color: showMA ? '#fff' : 'rgba(255,255,255,0.35)',
+              }}>30d MA</button>
+              <button onClick={() => setShowMA(false)} style={{
+                padding: '2px 8px', fontSize: 9, fontWeight: 700, borderRadius: 4,
+                border: 'none', cursor: 'pointer', letterSpacing: '0.03em',
+                background: !showMA ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+                color: !showMA ? '#fff' : 'rgba(255,255,255,0.35)',
+              }}>Daily</button>
+            </div>
             <div style={{ width: '100%', maxWidth: 320 }}>
-              <RoasChart data={roasSeries} changelog={changelog} />
+              <RoasChart data={activeSeries} changelog={changelog} />
             </div>
           </div>
         )}
