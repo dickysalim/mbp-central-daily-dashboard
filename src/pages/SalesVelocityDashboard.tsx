@@ -13,6 +13,22 @@ import type { ChangelogRow } from '../types/changelog'
 import { ChangelogTooltip } from '../components/ChangelogTooltip'
 import { ChangelogModal } from '../components/ChangelogModal'
 
+import imgSuperfood from '../assets/sku_images/Superfood.webp'
+import imgMetafiber from '../assets/sku_images/Metafiber.webp'
+import img3Peptide from '../assets/sku_images/3Peptide.webp'
+import imgNightsure from '../assets/sku_images/Nightsure.webp'
+import imgGinseng from '../assets/sku_images/Ginseng.webp'
+import mncLogo from '../assets/brand_logos/MNC.webp'
+
+const SKU_IMAGES: Record<string, string> = {
+  global: mncLogo,
+  MSF: imgSuperfood,
+  MTA: imgMetafiber,
+  M3P: img3Peptide,
+  MNS: imgNightsure,
+  GIN: imgGinseng,
+}
+
 const D1_WORKER_URL = 'https://central-daily-dashboard-worker.mganik-group.workers.dev'
 const BRAND = 'MNC'
 const ROAS_TARGET = 6.59
@@ -771,6 +787,8 @@ export function SalesVelocityDashboard() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [initialized, setInitialized] = useState(false)
+  const [selectedSku, setSelectedSku] = useState('global')
+  const skuOptions = useMemo(() => mncBounds?.skus?.slice().sort() ?? [], [mncBounds])
 
   useEffect(() => {
     if (mncBounds && !initialized) {
@@ -852,7 +870,9 @@ export function SalesVelocityDashboard() {
     const so: Record<ChannelKey, Map<string, number>> = {
       ccom_ca: new Map(), ccom_crm: new Map(), mpsh: new Map(), d2or: new Map(), ofls: new Map(),
     }
-    for (const r of cgData?.sales ?? []) {
+    const sales = (cgData?.sales ?? []) as SalesRow[]
+    const filtered = selectedSku === 'global' ? sales : sales.filter(r => r.sku === selectedSku)
+    for (const r of filtered) {
       for (const ch of Object.keys(rev) as ChannelKey[]) {
         const revVal = (r as Record<string, number>)[`rev_${ch}`] ?? 0
         const soVal = (r as Record<string, number>)[`so_${ch}`] ?? 0
@@ -861,18 +881,20 @@ export function SalesVelocityDashboard() {
       }
     }
     return { channelRevByDate: rev, channelSOByDate: so }
-  }, [cgData])
+  }, [cgData, selectedSku])
 
   // CVR data: real leads + purchases from conversions
   const { cvrLeadByDate, cvrPurchaseByDate } = useMemo(() => {
     const leads = new Map<string, number>()
     const purchases = new Map<string, number>()
-    for (const r of (cgData?.conversions ?? []) as { date: string; mongo_real_lead_ccom: number; mongo_purchase_ccom: number }[]) {
+    const allRows = (cgData?.conversions ?? []) as { date: string; sku?: string; mongo_real_lead_ccom: number; mongo_purchase_ccom: number }[]
+    const rows = selectedSku === 'global' ? allRows : allRows.filter(r => r.sku === selectedSku)
+    for (const r of rows) {
       leads.set(r.date, (leads.get(r.date) ?? 0) + (r.mongo_real_lead_ccom ?? 0))
       purchases.set(r.date, (purchases.get(r.date) ?? 0) + (r.mongo_purchase_ccom ?? 0))
     }
     return { cvrLeadByDate: leads, cvrPurchaseByDate: purchases }
-  }, [cgData])
+  }, [cgData, selectedSku])
 
   // Changelog
   const filteredChangelog = useMemo(() => (cgData?.changelog ?? []) as ChangelogRow[], [cgData])
@@ -880,13 +902,15 @@ export function SalesVelocityDashboard() {
   // Daily ad spend target
   const dailyAdSpendTarget = useMemo(() => {
     // Sum daily_budget from campaign_budgets (latest date's active campaign budgets)
-    const budgets = (cgData?.campaign_budgets ?? []) as { daily_budget: number }[]
-    return budgets.reduce((s, r) => s + (r.daily_budget ?? 0), 0)
-  }, [cgData])
+    const budgets = (cgData?.campaign_budgets ?? []) as CampaignBudgetRow[]
+    const filtered = selectedSku === 'global' ? budgets : budgets.filter(r => r.sku === selectedSku)
+    return filtered.reduce((s, r) => s + (r.daily_budget ?? 0), 0)
+  }, [cgData, selectedSku])
 
   // Latest 30d MA total revenue across all channels (matches chart)
   const { latestDayRevenue, latestDayDate } = useMemo(() => {
-    const sales = (cgData?.sales ?? []) as SalesRow[]
+    const allSales = (cgData?.sales ?? []) as SalesRow[]
+    const sales = selectedSku === 'global' ? allSales : allSales.filter(r => r.sku === selectedSku)
     if (!sales.length) return { latestDayRevenue: 0, latestDayDate: '' }
 
     // Build daily totals (all channels summed per date)
@@ -905,12 +929,14 @@ export function SalesVelocityDashboard() {
     // Latest date within active range
     const latest = maSeries.filter(p => p.date <= activeTo).at(-1)
     return { latestDayRevenue: latest?.value ?? 0, latestDayDate: latest?.date ?? '' }
-  }, [cgData, activeTo])
+  }, [cgData, activeTo, selectedSku])
 
   // Per-SKU velocity: daily budget → target, 30d MA of all-channel rev per SKU
   const skuVelocity = useMemo(() => {
-    const sales = (cgData?.sales ?? []) as SalesRow[]
-    const budgets = (cgData?.campaign_budgets ?? []) as CampaignBudgetRow[]
+    const allSales = (cgData?.sales ?? []) as SalesRow[]
+    const allBudgets = (cgData?.campaign_budgets ?? []) as CampaignBudgetRow[]
+    const sales = selectedSku === 'global' ? allSales : allSales.filter(r => r.sku === selectedSku)
+    const budgets = selectedSku === 'global' ? allBudgets : allBudgets.filter(r => r.sku === selectedSku)
     if (!sales.length) return []
 
     // SKUs from brand bounds or infer from sales
@@ -954,7 +980,7 @@ export function SalesVelocityDashboard() {
 
       return { sku, skuTarget, skuBudget, latest, pct, sc, tUp, trendRate, tc }
     }).filter(s => s.skuTarget > 0)  // only SKUs with active budgets
-  }, [cgData, activeFrom, activeTo])
+  }, [cgData, activeFrom, activeTo, selectedSku])
 
   const presetBtn = (label: string, days: number) => (
     <button
@@ -973,12 +999,17 @@ export function SalesVelocityDashboard() {
   )
 
   return (
-    <div style={{ padding: '17px 27px', fontFamily: 'Inter, system-ui, sans-serif', color: '#fff', minHeight: '100vh', fontSize: '85%' }}>
+    <div style={{ padding: '17px 27px', paddingTop: 105, paddingBottom: '34vh', fontFamily: 'Inter, system-ui, sans-serif', color: '#fff', minHeight: '100vh', fontSize: '85%' }}>
 
       {/* ── Top toolbar ── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12,
-        marginBottom: 28, flexWrap: 'wrap',
+        flexWrap: 'wrap',
+        position: 'fixed', top: 0, left: 144, right: 0, zIndex: 50,
+        background: 'rgba(13,14,18,0.88)', backdropFilter: 'blur(14px)',
+        padding: '10px 27px',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
       }}>
         <div style={{
           padding: '4px 12px', borderRadius: 20,
@@ -987,6 +1018,38 @@ export function SalesVelocityDashboard() {
           color: '#fff', textTransform: 'uppercase',
         }}>
           ⚡ MNC Sales Velocity
+        </div>
+
+        {/* SKU Picker with thumbnail */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <img
+            src={SKU_IMAGES[selectedSku] ?? mncLogo}
+            alt={selectedSku}
+            style={{
+              width: 40, height: 40, borderRadius: 8,
+              objectFit: 'cover',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.06)',
+            }}
+          />
+          <select
+            value={selectedSku}
+            onChange={e => setSelectedSku(e.target.value)}
+            style={{
+              padding: '5px 10px', fontSize: 11, fontWeight: 600,
+              borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)',
+              background: 'rgba(255,255,255,0.06)', color: '#fff',
+              cursor: 'pointer', appearance: 'none' as const,
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+              paddingRight: 26, minWidth: 100,
+            }}
+          >
+            <option value="global" style={{ background: '#1a1b1e' }}>🌐 Global</option>
+            {skuOptions.map(sku => (
+              <option key={sku} value={sku} style={{ background: '#1a1b1e' }}>{sku}</option>
+            ))}
+          </select>
         </div>
 
         <input type="date" value={from} onChange={e => setFrom(e.target.value)}
