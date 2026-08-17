@@ -30,13 +30,11 @@ const SKU_IMAGES: Record<string, string> = {
 }
 
 const D1_WORKER_URL = 'https://central-daily-dashboard-worker.mganik-group.workers.dev'
-const BRAND = 'MNC'
-const ROAS_TARGET = 6.59
 const MA_WINDOW = 30
 const MA_BUFFER_DAYS = 30
 
 // Channel contribution percentages of total RoAS target
-const CHANNELS = {
+const MNC_CHANNELS = {
   ccom_ca:  { label: 'CA (CCOM)',   pct: 0.067 },
   ccom_crm: { label: 'CRM (CCOM)',  pct: 0.08  },
   mpsh:     { label: 'MPSH',        pct: 0.19  },
@@ -44,7 +42,7 @@ const CHANNELS = {
   ofls:     { label: 'OFLS',        pct: 0.013 },
 } as const
 
-type ChannelKey = keyof typeof CHANNELS
+type ChannelKey = keyof typeof MNC_CHANNELS
 
 interface BrandBounds { brand: string; earliest: string; latest: string; skus: string[] }
 interface SalesRow { date: string; brand: string; sku: string; so_ccom_ca: number; so_ccom_crm: number; so_mpsh: number; so_d2or: number; so_ofls: number; rev_ccom_ca: number; rev_ccom_crm: number; rev_mpsh: number; rev_d2or: number; rev_ofls: number }
@@ -246,7 +244,7 @@ function RevChart({ data, target, changelog = [], showMA, setShowMA }: { data: {
 
 /* ── Channel Card (same layout as AdsPerformanceHealthCard) ─────────────────── */
 function ChannelCard({
-  channelKey, revByDate, soByDate, dailyTarget, activeFrom, activeTo,
+  channelKey, revByDate, soByDate, dailyTarget, activeFrom, activeTo, channelPct, roasTarget, channelLabel,
 }: {
   channelKey: ChannelKey
   revByDate: Map<string, number>
@@ -254,9 +252,11 @@ function ChannelCard({
   dailyTarget: number
   activeFrom: string
   activeTo: string
+  channelPct: number
+  roasTarget: number
+  channelLabel: string
 }) {
-  const ch = CHANNELS[channelKey]
-  const channelTarget = dailyTarget * ROAS_TARGET * ch.pct
+  const channelTarget = dailyTarget * roasTarget * channelPct
 
   // Build 30-day MA series (include buffer data for warm-up)
   const allDatesWithBuffer = Array.from(revByDate.keys()).sort()
@@ -297,8 +297,8 @@ function ChannelCard({
 
       {/* TITLE */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={T.cardTitle}>{ch.label} Revenue</div>
-        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontWeight: 600 }}>{(ch.pct * 100).toFixed(1)}% of total</div>
+        <div style={T.cardTitle}>{channelLabel} Revenue</div>
+        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontWeight: 600 }}>{(channelPct * 100).toFixed(1)}% of total</div>
       </div>
 
       {/* Single row: Left metrics | Right chart */}
@@ -341,7 +341,7 @@ function ChannelCard({
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>/</span>
                 {/* Expected */}
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.35)' }}>
-                  {(ROAS_TARGET * ch.pct).toFixed(2)}×
+                  {(roasTarget * channelPct).toFixed(2)}×
                 </span>
               </div>
               <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>actual / expected</div>
@@ -536,7 +536,7 @@ function CvrChart({ data, showMA, setShowMA, changelog = [] }: { data: { date: s
 
 /* ── Reusable Channel Revenue Card ────────────────────────────────────────── */
 function ChannelRevCard({
-  channelKey, title, revByDate, soByDate, dailyTarget, activeFrom, activeTo, changelog = [],
+  channelKey, title, revByDate, soByDate, dailyTarget, activeFrom, activeTo, changelog = [], channelPct, channelLabel, roasTarget,
 }: {
   channelKey: ChannelKey
   title: string
@@ -546,10 +546,12 @@ function ChannelRevCard({
   activeFrom: string
   activeTo: string
   changelog?: ChangelogRow[]
+  channelPct: number
+  channelLabel: string
+  roasTarget: number
 }) {
   const [showMA, setShowMA] = useState(true)
-  const ch = CHANNELS[channelKey]
-  const channelTarget = dailyTarget * ROAS_TARGET * ch.pct
+  const channelTarget = dailyTarget * roasTarget * channelPct
 
   // 30d MA — Revenue
   const allDates = Array.from(revByDate.keys()).sort()
@@ -586,7 +588,7 @@ function ChannelRevCard({
     }}>
 
       {/* TITLE */}
-      <div style={T.cardTitle}>{title} <span style={{ fontWeight: 500, color: 'rgba(255,255,255,0.3)', marginLeft: 6 }}>({(ch.pct * 100).toFixed(1)}% Share)</span></div>
+      <div style={T.cardTitle}>{title} <span style={{ fontWeight: 500, color: 'rgba(255,255,255,0.3)', marginLeft: 6 }}>({(channelPct * 100).toFixed(1)}% Share)</span></div>
 
       {/* Numbers */}
       <div style={{ display: 'flex', gap: 16 }}>
@@ -623,7 +625,7 @@ function ChannelRevCard({
               {dailyTarget > 0 && latestMA > 0 ? (latestMA / dailyTarget).toFixed(2) + '×' : '—'}
             </span>
             <span style={{ fontSize: 10, fontWeight: 300, color: 'rgba(255,255,255,0.2)' }}>/</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>{(ROAS_TARGET * ch.pct).toFixed(2)}×</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>{(roasTarget * channelPct).toFixed(2)}×</span>
           </div>
         </div>
       </div>
@@ -770,7 +772,26 @@ function CCCvrCard({
 
 
 /* ── Main Dashboard ── */
-export function SalesVelocityDashboard() {
+interface SalesVelocityProps {
+  brand?: string
+  brandLabel?: string
+  roasTarget?: number
+  channels?: Record<ChannelKey, { label: string; pct: number }>
+  brandLogo?: string
+  skuImages?: Record<string, string>
+}
+
+export function SalesVelocityDashboard({
+  brand = 'MNC',
+  brandLabel = 'MNC Sales Velocity',
+  roasTarget = 6.59,
+  channels = MNC_CHANNELS,
+  brandLogo = mncLogo,
+  skuImages: skuImagesOverride,
+}: SalesVelocityProps = {}) {
+  const ROAS_TARGET = roasTarget
+  const CHANNELS = channels
+  const effectiveSkuImages: Record<string, string> = { ...SKU_IMAGES, global: brandLogo, ...(skuImagesOverride ?? {}) }
   // ── Date bounds ──
   const { data: brandBounds } = useQuery({
     queryKey: ['date-bounds'],
@@ -782,7 +803,7 @@ export function SalesVelocityDashboard() {
     staleTime: 0,
   })
 
-  const mncBounds = useMemo(() => brandBounds?.find(b => b.brand === BRAND) ?? null, [brandBounds])
+  const mncBounds = useMemo(() => brandBounds?.find(b => b.brand === brand) ?? null, [brandBounds, brand])
 
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -845,12 +866,12 @@ export function SalesVelocityDashboard() {
   }
 
   const { data: cgData, isFetching } = useQuery({
-    queryKey: ['consumer-goods', activeFrom, activeTo, BRAND, refreshNonce],
+    queryKey: ['consumer-goods', activeFrom, activeTo, brand, refreshNonce],
     queryFn: async () => {
       if (!activeFrom || !activeTo) return null
       const bust = refreshNonce > 0 ? `&_r=${refreshNonce}` : ''
       const res = await fetch(
-        `${D1_WORKER_URL}/v2/consumer-goods?brand=${BRAND}&from=${fetchFrom}&to=${activeTo}${bust}`
+        `${D1_WORKER_URL}/v2/consumer-goods?brand=${brand}&from=${fetchFrom}&to=${activeTo}${bust}`
       )
       if (!res.ok) throw new Error('fetch failed')
       const data = res.json() as Promise<{ sales: SalesRow[]; targets: TargetRow[]; [k: string]: unknown }>
@@ -1017,13 +1038,13 @@ export function SalesVelocityDashboard() {
           fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
           color: '#fff', textTransform: 'uppercase',
         }}>
-          ⚡ MNC Sales Velocity
+          ⚡ {brandLabel}
         </div>
 
         {/* SKU Picker with thumbnail */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <img
-            src={SKU_IMAGES[selectedSku] ?? mncLogo}
+            src={effectiveSkuImages[selectedSku] ?? brandLogo}
             alt={selectedSku}
             style={{
               width: 40, height: 40, borderRadius: 8,
@@ -1297,6 +1318,7 @@ export function SalesVelocityDashboard() {
           activeFrom={activeFrom}
           activeTo={activeTo}
           changelog={filteredChangelog}
+          channelPct={CHANNELS.ccom_ca.pct} channelLabel={CHANNELS.ccom_ca.label} roasTarget={ROAS_TARGET}
         />
         <CCCvrCard
           cvrLeadByDate={cvrLeadByDate}
@@ -1313,6 +1335,7 @@ export function SalesVelocityDashboard() {
           activeFrom={activeFrom}
           activeTo={activeTo}
           changelog={filteredChangelog}
+          channelPct={CHANNELS.ccom_crm.pct} channelLabel={CHANNELS.ccom_crm.label} roasTarget={ROAS_TARGET}
         />
       </div>
 
@@ -1326,6 +1349,7 @@ export function SalesVelocityDashboard() {
           activeFrom={activeFrom}
           activeTo={activeTo}
           changelog={filteredChangelog}
+          channelPct={CHANNELS.mpsh.pct} channelLabel={CHANNELS.mpsh.label} roasTarget={ROAS_TARGET}
         />
         <ChannelRevCard
           channelKey="d2or" title="D2OR Revenue"
@@ -1335,6 +1359,7 @@ export function SalesVelocityDashboard() {
           activeFrom={activeFrom}
           activeTo={activeTo}
           changelog={filteredChangelog}
+          channelPct={CHANNELS.d2or.pct} channelLabel={CHANNELS.d2or.label} roasTarget={ROAS_TARGET}
         />
         <ChannelRevCard
           channelKey="ofls" title="OFLS Revenue"
@@ -1344,9 +1369,25 @@ export function SalesVelocityDashboard() {
           activeFrom={activeFrom}
           activeTo={activeTo}
           changelog={filteredChangelog}
+          channelPct={CHANNELS.ofls.pct} channelLabel={CHANNELS.ofls.label} roasTarget={ROAS_TARGET}
         />
       </div>
 
     </div>
+  )
+}
+
+/* ── GOL Sales Velocity Dashboard ── */
+import golLogo from '../assets/brand_logos/GOL.webp'
+
+export function GOLSalesVelocityDashboard() {
+  return (
+    <SalesVelocityDashboard
+      brand="GOL"
+      brandLabel="GOL Sales Velocity"
+      roasTarget={6.59}
+      channels={MNC_CHANNELS}
+      brandLogo={golLogo}
+    />
   )
 }
