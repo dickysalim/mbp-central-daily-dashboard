@@ -49,7 +49,7 @@ const PLATFORMS = [
   { id: 'SRCH', label: 'Google Search Ads', color: '#fbbf24', imageSrc: searchAdsImg },
 ] as const
 
-export function PlatformOverviewPage() {
+export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } = {}) {
   // ── Brand + date state ──
   const { data: brandBounds } = useQuery({
     queryKey: ['date-bounds'],
@@ -60,9 +60,12 @@ export function PlatformOverviewPage() {
     },
     staleTime: 0,
   })
-  const brands = useMemo(() => brandBounds?.map(b => b.brand) ?? [], [brandBounds])
+  const brands = useMemo(() => {
+    const all = brandBounds?.map(b => b.brand) ?? []
+    return fixedBrand ? all.filter(b => b === fixedBrand) : all
+  }, [brandBounds, fixedBrand])
 
-  const [brand, setBrand] = useState('')
+  const [brand, setBrand] = useState(fixedBrand ?? '')
   useEffect(() => { if (brands.length > 0 && !brand) setBrand(brands[0]) }, [brands, brand])
   const activeBrand = brand || brands[0] || ''
   const activeBounds = useMemo(() => brandBounds?.find(b => b.brand === activeBrand), [brandBounds, activeBrand])

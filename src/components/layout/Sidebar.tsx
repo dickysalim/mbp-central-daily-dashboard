@@ -1,7 +1,5 @@
-/**
- * Sidebar — Main navigation component
- */
 import { NavLink } from 'react-router-dom'
+import { ALLOWED_ROUTES } from '../../config/domainConfig'
 
 interface NavItem {
   to: string
@@ -83,6 +81,8 @@ const PAGES: NavItem[] = [
   },
 ]
 
+const VISIBLE_PAGES = PAGES.filter(p => ALLOWED_ROUTES.includes(p.to))
+
 export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 h-screen w-36 bg-surface-900 border-r border-white/5 flex flex-col z-50">
@@ -104,7 +104,7 @@ export function Sidebar() {
         <p className="px-1.5 mb-1.5 text-[6px] font-semibold text-surface-200/25 uppercase tracking-widest">
           Pages
         </p>
-        {PAGES.map((item) => (
+        {VISIBLE_PAGES.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
