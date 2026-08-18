@@ -62,10 +62,14 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
   const innerH = H - PAD.top - PAD.bottom
 
   const vals = data.map(d => d.value)
-  const minV = 0
-  const maxV = Math.max(ROAS_TARGET * 2, ...vals)
-  const rng  = maxV - minV || 1
   const n    = vals.length
+
+  // Zone band system: ±25% of target, auto-expand if data exceeds
+  const warnLow  = ROAS_TARGET * 0.75
+  const warnHigh = ROAS_TARGET * 1.25
+  const minV = Math.min(warnLow, ...vals)
+  const maxV = Math.max(warnHigh, ...vals)
+  const rng  = maxV - minV || 1
 
   const xs = (i: number) => PAD.left + (i / (n - 1)) * innerW
   const ys = (v: number) => PAD.top + innerH - ((v - minV) / rng) * innerH
@@ -83,21 +87,6 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
   const lineColor = tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171'
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
-
-  // Shading above/below target line
-  const above: string[] = [], below: string[] = []
-  for (let i = 0; i < n - 1; i++) {
-    const ya = ys(data[i].value), yb = ys(data[i + 1].value)
-    const xa = xs(i), xb = xs(i + 1)
-    const aA = ya < refY, bA = yb < refY
-    if (aA && bA)        { above.push(`${xa},${refY} ${xa},${ya} ${xb},${yb} ${xb},${refY}`) }
-    else if (!aA && !bA) { below.push(`${xa},${refY} ${xa},${ya} ${xb},${yb} ${xb},${refY}`) }
-    else {
-      const t = (refY - ya) / (yb - ya), xi = xa + t * (xb - xa)
-      if (aA) { above.push(`${xa},${refY} ${xa},${ya} ${xi},${refY}`); below.push(`${xi},${refY} ${xb},${yb} ${xb},${refY}`) }
-      else    { below.push(`${xa},${refY} ${xa},${ya} ${xi},${refY}`); above.push(`${xi},${refY} ${xb},${yb} ${xb},${refY}`) }
-    }
-  }
 
   const sd = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   const refVisible = refY > PAD.top && refY < PAD.top + innerH
@@ -120,8 +109,38 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
       <svg ref={ref} width={W} height={H}
         onMouseMove={onMove} onMouseLeave={() => setTooltip(null)}
         style={{ display: 'block', overflow: 'visible', cursor: 'crosshair' }}>
-        {above.map((p, i) => <polygon key={`a${i}`} points={p} fill="#34d399" fillOpacity="0.1" />)}
-        {below.map((p, i) => <polygon key={`b${i}`} points={p} fill="#f87171" fillOpacity="0.1" />)}
+
+        {/* Zone bands — red below target */}
+        {[1, 2, 3, 4].map(k => {
+          const bandHi = ROAS_TARGET * (1 - (k - 1) * 0.25), bandLo = ROAS_TARGET * (1 - k * 0.25)
+          const cHi = Math.min(bandHi, maxV), cLo = Math.max(bandLo, minV)
+          if (cLo >= cHi) return null
+          return <rect key={`bz${k}`} x={PAD.left} y={ys(cHi)} width={innerW} height={Math.max(0, ys(cLo) - ys(cHi))} fill="#dc2626" fillOpacity={k * 0.09} />
+        })}
+        {/* Zone bands — green above target */}
+        {[1, 2, 3, 4].map(k => {
+          const bandLo = ROAS_TARGET * (1 + (k - 1) * 0.25), bandHi = ROAS_TARGET * (1 + k * 0.25)
+          const cHi = Math.min(bandHi, maxV), cLo = Math.max(bandLo, minV)
+          if (cLo >= cHi) return null
+          return <rect key={`az${k}`} x={PAD.left} y={ys(cHi)} width={innerW} height={Math.max(0, ys(cLo) - ys(cHi))} fill="#15803d" fillOpacity={k * 0.09} />
+        })}
+
+        {/* Zone grid lines with labels */}
+        {[1, 2, 3].map(k => {
+          const vLo = ROAS_TARGET * (1 - k * 0.25), vHi = ROAS_TARGET * (1 + k * 0.25)
+          return (
+            <g key={`zl${k}`}>
+              {vLo >= minV && vLo <= maxV && <>
+                <line x1={PAD.left} y1={ys(vLo)} x2={W - PAD.right} y2={ys(vLo)} stroke="#dc2626" strokeOpacity={0.2 + k * 0.1} strokeWidth="1" />
+                <text x={W - PAD.right + 4} y={ys(vLo) + 4} fontSize="10" fill="#dc2626" fillOpacity={0.6 + k * 0.1} fontWeight="700">−{k * 25}%</text>
+              </>}
+              {vHi >= minV && vHi <= maxV && <>
+                <line x1={PAD.left} y1={ys(vHi)} x2={W - PAD.right} y2={ys(vHi)} stroke="#15803d" strokeOpacity={0.2 + k * 0.1} strokeWidth="1" />
+                <text x={W - PAD.right + 4} y={ys(vHi) + 4} fontSize="10" fill="#16a34a" fillOpacity={0.6 + k * 0.1} fontWeight="700">+{k * 25}%</text>
+              </>}
+            </g>
+          )
+        })}
 
         {/* Target reference */}
         {refVisible && (
@@ -131,14 +150,6 @@ function RoasChart({ data, changelog = [] }: { data: RoasPoint[]; changelog: Cha
             <text x={W - PAD.right + 3} y={refY + 5} fontSize="12" fill="#94a3b8" fontWeight="700">{ROAS_TARGET}×</text>
           </>
         )}
-        {Math.max(...vals) > ROAS_TARGET * 2 && (() => {
-          const ceilY = ys(ROAS_TARGET * 2)
-          return <>
-            <line x1={PAD.left} y1={ceilY} x2={W - PAD.right} y2={ceilY}
-              stroke="#f87171" strokeOpacity="0.5" strokeWidth="1" />
-            <text x={W - PAD.right + 3} y={ceilY + 4} fontSize="12" fill="#f87171" opacity="0.8" fontWeight="700">!</text>
-          </>
-        })()}
 
         {/* Trend line */}
         <line x1={xs(0)} y1={ys(ic)} x2={xs(n - 1)} y2={ys(slope * (n - 1) + ic)}
