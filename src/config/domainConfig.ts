@@ -13,7 +13,7 @@ export const DOMAIN_BRAND = IS_GOLO ? 'GOLO' : 'ALL'
 /** Sidebar routes visible on the current domain */
 export const ALLOWED_ROUTES: string[] = IS_GOLO
   ? ['/gol', '/gol-sales-velocity', '/platform-overview']
-  : ['/overview', '/mnc', '/gol', '/mci', '/platform-overview', '/sales-velocity', '/gol-sales-velocity']
+  : ['/overview', '/mnc', '/gol', '/mci', '/platform-overview', '/sales-velocity', '/gol-sales-velocity', '/pipeline-status']
 
 /** Default landing page */
 export const DEFAULT_ROUTE = IS_GOLO ? '/gol' : '/overview'

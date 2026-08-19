@@ -8,6 +8,7 @@ import { PlatformOverviewPage } from './pages/PlatformOverviewPage'
 import { HealthcareDashboard } from './pages/HealthcareDashboard'
 import { GeneralOverviewPage } from './pages/GeneralOverviewPage'
 import { SalesVelocityDashboard, GOLSalesVelocityDashboard } from './pages/SalesVelocityDashboard'
+import { PipelineStatusPage } from './pages/PipelineStatusPage'
 import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO } from './config/domainConfig'
 
 const queryClient = new QueryClient({
@@ -37,6 +38,7 @@ function App() {
               <Route path="/mnc" element={<ConsumerGoodsDashboard brand="MNC" />} />
               <Route path="/mci" element={<HealthcareDashboard />} />
               <Route path="/sales-velocity" element={<SalesVelocityDashboard />} />
+              <Route path="/pipeline-status" element={<PipelineStatusPage />} />
             </>}
           </Route>
         </Routes>
