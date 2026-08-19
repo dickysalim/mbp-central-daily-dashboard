@@ -62,12 +62,6 @@ function isStale(utcStr: string): boolean {
   return diff > 26 * 60 * 60 * 1000 // >26 hours = missed a daily run
 }
 
-function fmtDateTime(utcStr: string): string {
-  return new Date(utcStr + 'Z').toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
-  })
-}
-
 export function PipelineStatusPage() {
   const { data, isFetching, refetch } = useQuery({
     queryKey: ['pipeline-status'],
@@ -76,22 +70,46 @@ export function PipelineStatusPage() {
       if (!res.ok) throw new Error()
       return res.json() as Promise<{ latest: PipelineRun[]; history: PipelineRun[] }>
     },
-    refetchInterval: 60_000,
+    staleTime: 24 * 60 * 60 * 1000,
   })
 
   const [selectedPipeline, setSelectedPipeline] = useState<string | null>(null)
+  const [selectedDate, setSelectedDate] = useState('')
 
   const latest = data?.latest ?? []
   const history = data?.history ?? []
+
+  // Available run dates for the date picker
+  const runDates = useMemo(() => {
+    const dates = new Set(history.map(h => h.created_at.slice(0, 10)))
+    return Array.from(dates).sort().reverse()
+  }, [history])
+
+  // Auto-select latest date
+  const activeDate = selectedDate || runDates[0] || ''
 
   const allOk = latest.length > 0 && latest.every(p => p.status === 'success' && !isStale(p.created_at))
   const failCount = latest.filter(p => p.status !== 'success').length
   const staleCount = latest.filter(p => p.status === 'success' && isStale(p.created_at)).length
 
-  const filteredHistory = useMemo(() =>
-    selectedPipeline ? history.filter(h => h.pipeline_id === selectedPipeline) : history,
-    [history, selectedPipeline],
-  )
+  const filteredHistory = useMemo(() => {
+    let h = history
+    if (activeDate) h = h.filter(r => r.created_at.startsWith(activeDate))
+    if (selectedPipeline) h = h.filter(r => r.pipeline_id === selectedPipeline)
+    return h
+  }, [history, activeDate, selectedPipeline])
+
+  // Group by date for display
+  const groupedHistory = useMemo(() => {
+    const groups = new Map<string, PipelineRun[]>()
+    for (const r of filteredHistory) {
+      const d = r.created_at.slice(0, 10)
+      const arr = groups.get(d) ?? []
+      arr.push(r)
+      groups.set(d, arr)
+    }
+    return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]))
+  }, [filteredHistory])
 
   return (
     <div style={{
@@ -100,7 +118,7 @@ export function PipelineStatusPage() {
     }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28, flexWrap: 'wrap' }}>
         <div style={{
           padding: '5px 14px', borderRadius: 20,
           background: allOk ? 'linear-gradient(135deg, #059669, #34d399)' : 'linear-gradient(135deg, #dc2626, #f87171)',
@@ -110,19 +128,39 @@ export function PipelineStatusPage() {
           {allOk ? '✓ All Systems Operational' : `⚠ ${failCount + staleCount} Issue${failCount + staleCount > 1 ? 's' : ''}`}
         </div>
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 500 }}>
-          {latest.length} pipelines · Auto-refreshes every 60s
+          {latest.length} pipelines
         </div>
-        <button
-          onClick={() => refetch()}
-          style={{
-            marginLeft: 'auto', padding: '5px 12px', fontSize: 10, fontWeight: 600,
-            borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)',
-            background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)',
-            cursor: 'pointer',
-          }}
-        >
-          {isFetching ? '⟳ Loading…' : '↻ Refresh'}
-        </button>
+
+        {/* Date picker + Refresh */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.4)' }}>Run Date</label>
+          <select
+            value={activeDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            style={{
+              padding: '4px 8px', fontSize: 10, fontWeight: 600, borderRadius: 6,
+              border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.06)',
+              color: '#fff', cursor: 'pointer',
+            }}
+          >
+            {runDates.map(d => (
+              <option key={d} value={d}>
+                {new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => refetch()}
+            style={{
+              padding: '4px 10px', fontSize: 10, fontWeight: 600,
+              borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)',
+              background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)',
+              cursor: 'pointer',
+            }}
+          >
+            {isFetching ? '⟳ Loading…' : '↻ Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Summary pills */}
@@ -219,7 +257,7 @@ export function PipelineStatusPage() {
         })}
       </div>
 
-      {/* Run history table */}
+      {/* Run history — grouped by date */}
       <div style={{
         background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
         borderRadius: 12, overflow: 'hidden',
@@ -248,55 +286,63 @@ export function PipelineStatusPage() {
           </div>
         </div>
 
-        <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                {['Status', 'Pipeline', 'Type', 'Rows', 'Duration', 'Target Date', 'Ran At'].map(h => (
-                  <th key={h} style={{
-                    padding: '8px 12px', textAlign: 'left', fontWeight: 700,
-                    color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.06em',
-                    fontSize: 9, position: 'sticky', top: 0,
-                    background: 'rgba(13,14,18,0.95)', backdropFilter: 'blur(8px)',
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredHistory.map((r, i) => {
-                const ok = r.status === 'success'
-                return (
-                  <tr
-                    key={`${r.pipeline_id}-${r.created_at}-${i}`}
-                    style={{
-                      borderBottom: '1px solid rgba(255,255,255,0.03)',
-                      background: !ok ? 'rgba(248,113,113,0.04)' : 'transparent',
-                    }}
-                    onClick={() => setSelectedPipeline(
-                      selectedPipeline === r.pipeline_id ? null : r.pipeline_id
-                    )}
-                  >
-                    <td style={{ padding: '7px 12px' }}>
-                      <span style={{
-                        display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-                        background: ok ? '#34d399' : '#f87171',
-                      }} />
-                    </td>
-                    <td style={{ padding: '7px 12px', fontWeight: 600, color: '#fff' }}>
-                      {PIPELINE_LABELS[r.pipeline_id] ?? r.pipeline_id}
-                    </td>
-                    <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.4)' }}>{r.run_type}</td>
-                    <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
-                      {r.rows_processed.toLocaleString()}
-                    </td>
-                    <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.4)' }}>{fmtDuration(r.duration_ms)}</td>
-                    <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.35)' }}>{r.target_date ?? '—'}</td>
-                    <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.4)' }}>{fmtDateTime(r.created_at)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+          {groupedHistory.map(([date, runs]) => (
+            <div key={date}>
+              {/* Date group header */}
+              <div style={{
+                padding: '8px 16px', background: 'rgba(255,255,255,0.02)',
+                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)',
+                letterSpacing: '0.04em', position: 'sticky', top: 0, zIndex: 1,
+                backdropFilter: 'blur(8px)',
+              }}>
+                {new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                <span style={{ marginLeft: 8, fontWeight: 500, color: 'rgba(255,255,255,0.25)' }}>
+                  ({runs.length} runs{runs.filter(r => r.status !== 'success').length > 0 ? ` · ${runs.filter(r => r.status !== 'success').length} failed` : ''})
+                </span>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+                <tbody>
+                  {runs.map((r, i) => {
+                    const ok = r.status === 'success'
+                    return (
+                      <tr
+                        key={`${r.pipeline_id}-${r.created_at}-${i}`}
+                        style={{
+                          borderBottom: '1px solid rgba(255,255,255,0.03)',
+                          background: !ok ? 'rgba(248,113,113,0.04)' : 'transparent',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => setSelectedPipeline(
+                          selectedPipeline === r.pipeline_id ? null : r.pipeline_id
+                        )}
+                      >
+                        <td style={{ padding: '7px 12px', width: 30 }}>
+                          <span style={{
+                            display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                            background: ok ? '#34d399' : '#f87171',
+                          }} />
+                        </td>
+                        <td style={{ padding: '7px 12px', fontWeight: 600, color: '#fff' }}>
+                          {PIPELINE_LABELS[r.pipeline_id] ?? r.pipeline_id}
+                        </td>
+                        <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.4)' }}>{r.run_type}</td>
+                        <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
+                          {r.rows_processed.toLocaleString()} rows
+                        </td>
+                        <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.4)' }}>{fmtDuration(r.duration_ms)}</td>
+                        <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.35)' }}>{r.target_date ?? '—'}</td>
+                        <td style={{ padding: '7px 12px', color: 'rgba(255,255,255,0.4)' }}>
+                          {new Date(r.created_at + 'Z').toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
       </div>
 

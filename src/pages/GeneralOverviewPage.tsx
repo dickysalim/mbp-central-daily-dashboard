@@ -9,6 +9,9 @@ import type { ChangelogRow } from '../types/changelog'
 import mncLogo from '../assets/brand_logos/MNC.webp'
 import golLogo from '../assets/brand_logos/GOL.webp'
 import mciLogo from '../assets/brand_logos/MCI.webp'
+import metaAdsImg from '../assets/ads_platform_images/Meta Ads.webp'
+import searchAdsImg from '../assets/ads_platform_images/Google Search Ads.webp'
+import googleAdsImg from '../assets/ads_platform_images/Google Ads.webp'
 import { SkuPerformanceCard } from '../components/cards/SkuPerformanceCard'
 
 interface BrandBounds { brand: string; earliest: string; latest: string; skus: string[] }
@@ -188,7 +191,62 @@ export function GeneralOverviewPage() {
 
     const changelog = (bd.changelog ?? []) as ChangelogRow[]
 
-    return { totalSpend, totalLeads, totalPurchases, totalRevenue, cprl, cpaCC, roas, cprlSeries, cpaSeries, roasSeries, changelog }
+    // Per-traffic-source CPRL/CPA CC breakdown
+    const TS_IMG: Record<string, { label: string; color: string; image: string }> = {
+      META: { label: 'Meta Ads', color: '#818cf8', image: metaAdsImg },
+      GOOGLE: { label: 'Google Ads', color: '#60a5fa', image: googleAdsImg },
+      SRCH: { label: 'Google Search', color: '#fbbf24', image: searchAdsImg },
+    }
+    const tsSet = new Set<string>()
+    for (const r of perf) { const ts = (r as any).traffic_source; if (ts) tsSet.add(ts) }
+
+    const platformCards = Array.from(tsSet).map(ts => {
+      const tsPerf = perf.filter(r => (r as any).traffic_source === ts)
+      const tsConv = conv.filter(r => (r as any).traffic_source === ts)
+
+      const spendByD = new Map<string, number>()
+      const leadsByD = new Map<string, number>()
+      const purchByD = new Map<string, number>()
+      for (const r of tsPerf) spendByD.set(r.date, (spendByD.get(r.date) ?? 0) + (r.ad_spend ?? 0))
+      for (const r of tsConv) {
+        const ld = (r.mongo_real_lead_ccom ?? 0) + (r.mongo_real_lead_d2or ?? 0) + (r.mongo_real_lead_mpsh ?? 0) + (r.mongo_real_lead_ofls ?? 0)
+        leadsByD.set(r.date, (leadsByD.get(r.date) ?? 0) + ld)
+        purchByD.set(r.date, (purchByD.get(r.date) ?? 0) + (r.mongo_purchase_ccom ?? 0))
+      }
+
+      const tsDates = Array.from(new Set([...spendByD.keys(), ...leadsByD.keys()])).sort()
+      const totalSpendTS = tsDates.filter(d => d >= displayFrom && d <= displayTo).reduce((s, d) => s + (spendByD.get(d) ?? 0), 0)
+      const totalLeadsTS = tsDates.filter(d => d >= displayFrom && d <= displayTo).reduce((s, d) => s + (leadsByD.get(d) ?? 0), 0)
+      const totalPurchTS = tsDates.filter(d => d >= displayFrom && d <= displayTo).reduce((s, d) => s + (purchByD.get(d) ?? 0), 0)
+
+      // CPRL series (daily)
+      const cprSeries = tsDates.map(d => {
+        const sp = spendByD.get(d) ?? 0
+        const ld = leadsByD.get(d) ?? 0
+        return { date: d, value: ld > 0 ? sp / ld : 0 }
+      }).filter(p => p.value > 0 && p.date >= displayFrom)
+
+      // CPA CC series (7d MA)
+      const cpaDaily = tsDates.map(d => ({ date: d, spend: spendByD.get(d) ?? 0, purch: purchByD.get(d) ?? 0 }))
+      const cpvSeries = cpaDaily.map((dd, i) => {
+        const slice = cpaDaily.slice(Math.max(0, i - 6), i + 1)
+        const tsp = slice.reduce((s, d) => s + d.spend, 0)
+        const tp = slice.reduce((s, d) => s + d.purch, 0)
+        return { date: dd.date, value: tp > 0 ? tsp / tp : 0 }
+      }).filter(p => p.value > 0 && p.date >= displayFrom)
+
+      const meta = TS_IMG[ts.toUpperCase()] ?? { label: ts, color: '#94a3b8', image: undefined }
+      return {
+        source: ts, label: meta.label, color: meta.color, image: meta.image,
+        spend: totalSpendTS,
+        cpr: totalLeadsTS > 0 ? totalSpendTS / totalLeadsTS : 0,
+        cpv: totalPurchTS > 0 ? totalSpendTS / totalPurchTS : 0,
+        cprSeries, cpvSeries,
+        registrations: totalLeadsTS, conversions: totalPurchTS,
+      }
+    }).filter(t => t.spend > 0).sort((a, b) => b.spend - a.spend)
+
+    return { totalSpend, totalLeads, totalPurchases, totalRevenue, cprl, cpaCC, roas, cprlSeries, cpaSeries, roasSeries, changelog, platformCards }
   }
 
   // ── MNC computed metrics ──
@@ -293,7 +351,71 @@ export function GeneralOverviewPage() {
 
     const changelog = (mciData.changelog ?? []) as ChangelogRow[]
 
-    return { totalSpend, totalFormSubs, totalFormConv, totalVisits, cpr, cpv, visitRate, cprSeries, cpvSeries, visitRateSeries, changelog }
+    // Per-traffic-source CPR/CPV series (same pattern as PlatformOverviewPage)
+    const TS_META = { META: { label: 'Meta Ads', color: '#818cf8', image: metaAdsImg }, SRCH: { label: 'Google Search', color: '#fbbf24', image: searchAdsImg }, TIKTOK: { label: 'TikTok', color: '#34d399', image: undefined } } as Record<string, { label: string; color: string; image?: string }>
+    const tsSet = new Set<string>()
+    for (const r of perf) { const ts = (r as any).traffic_source; if (ts) tsSet.add(ts) }
+
+    const platformCards = Array.from(tsSet).map(ts => {
+      const tsPerf = perf.filter(r => (r as any).traffic_source === ts)
+      const tsConv = conv.filter(r => (r as any).traffic_source === ts)
+
+      // Build daily maps
+      const spendByD = new Map<string, number>()
+      const subsByD = new Map<string, number>()
+      const convByD = new Map<string, number>()
+      for (const r of tsPerf) {
+        if (!r.sku || r.sku === '-' || !MCI_SKUS.has(r.sku)) continue
+        spendByD.set(r.date, (spendByD.get(r.date) ?? 0) + (r.ad_spend ?? 0))
+      }
+      for (const r of tsConv) {
+        if (!(r as any).sku || (r as any).sku === '-' || !MCI_SKUS.has((r as any).sku)) continue
+        subsByD.set(r.date, (subsByD.get(r.date) ?? 0) + ((r as any).mongo_form_submission ?? 0))
+        convByD.set(r.date, (convByD.get(r.date) ?? 0) + ((r as any).mongo_form_conversion ?? 0))
+      }
+
+      const tsDates = Array.from(new Set([...spendByD.keys(), ...subsByD.keys()])).sort()
+
+      // Totals
+      const totalSpendTS = tsDates.filter(d => d >= mciRange.from && d <= mciRange.to).reduce((s, d) => s + (spendByD.get(d) ?? 0), 0)
+      const totalSubsTS = tsDates.filter(d => d >= mciRange.from && d <= mciRange.to).reduce((s, d) => s + (subsByD.get(d) ?? 0), 0)
+      const totalConvTS = tsDates.filter(d => d >= mciRange.from && d <= mciRange.to).reduce((s, d) => s + (convByD.get(d) ?? 0), 0)
+
+      // CPR series (7d MA)
+      const cprDailyTS = tsDates.map(d => ({ date: d, spend: spendByD.get(d) ?? 0, subs: subsByD.get(d) ?? 0 }))
+      const cprSeriesTS = cprDailyTS.map((dd, i) => {
+        const slice = cprDailyTS.slice(Math.max(0, i - 6), i + 1)
+        const ts2 = slice.reduce((s, d) => s + d.spend, 0)
+        const tf = slice.reduce((s, d) => s + d.subs, 0)
+        return { date: dd.date, value: tf > 0 ? ts2 / tf : 0 }
+      }).filter(p => p.value > 0 && p.date >= mciRange.from)
+
+      // CPV series (21d MA)
+      const cpvDailyTS = tsDates.map(d => ({ date: d, spend: spendByD.get(d) ?? 0, conv: convByD.get(d) ?? 0 }))
+      const cpvSeriesTS = cpvDailyTS.map((dd, i) => {
+        const slice = cpvDailyTS.slice(Math.max(0, i - 20), i + 1)
+        const ts2 = slice.reduce((s, d) => s + d.spend, 0)
+        const tc = slice.reduce((s, d) => s + d.conv, 0)
+        return { date: dd.date, value: tc > 0 ? ts2 / tc : 0 }
+      }).filter(p => p.value > 0 && p.date >= mciRange.from)
+
+      const meta = TS_META[ts.toUpperCase()] ?? { label: ts, color: '#94a3b8', image: undefined }
+      return {
+        source: ts,
+        label: meta.label,
+        color: meta.color,
+        image: meta.image,
+        spend: totalSpendTS,
+        cpr: totalSubsTS > 0 ? totalSpendTS / totalSubsTS : 0,
+        cpv: totalConvTS > 0 ? totalSpendTS / totalConvTS : 0,
+        cprSeries: cprSeriesTS,
+        cpvSeries: cpvSeriesTS,
+        registrations: totalSubsTS,
+        conversions: totalConvTS,
+      }
+    }).filter(t => t.spend > 0).sort((a, b) => b.spend - a.spend)
+
+    return { totalSpend, totalFormSubs, totalFormConv, totalVisits, cpr, cpv, visitRate, cprSeries, cpvSeries, visitRateSeries, changelog, platformCards }
   }, [mciData, mciRange])
 
   return (
@@ -379,6 +501,7 @@ export function GeneralOverviewPage() {
             roasLabel="RoAS"
             roasSeries={mnc.roasSeries}
             compactLayout
+            platformCards={mnc.platformCards}
           />
         )}
 
@@ -415,6 +538,7 @@ export function GeneralOverviewPage() {
             roasLabel="RoAS"
             roasSeries={gol.roasSeries}
             compactLayout
+            platformCards={gol.platformCards}
           />
         )}
 
@@ -454,6 +578,7 @@ export function GeneralOverviewPage() {
             roasIsPercentage={true}
             roasSeries={mci.visitRateSeries}
             compactLayout
+            platformCards={mci.platformCards}
           />
         )}
 

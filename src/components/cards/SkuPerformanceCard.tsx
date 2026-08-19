@@ -75,6 +75,9 @@ export interface SkuPerformanceCardProps {
 
   // Layout variant
   compactLayout?: boolean  // true = thumbnail on top centered, charts always visible, no collapse
+
+  // Per-platform CPR/CPV cards (MCI: breakdown by META, SRCH, etc.)
+  platformCards?: { source: string; label: string; color: string; image?: string; spend: number; cpr: number; cpv: number; cprSeries: { date: string; value: number }[]; cpvSeries: { date: string; value: number }[]; registrations: number; conversions: number }[]
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -427,6 +430,7 @@ export function SkuPerformanceCard({
   roasIsPercentage = false,
   roasSeries  = [],
   compactLayout = false,
+  platformCards,
 }: SkuPerformanceCardProps) {
   const label = skuLabel ?? sku
   const [open, setOpen] = useState(false)
@@ -631,36 +635,100 @@ export function SkuPerformanceCard({
         </div>
 
         {/* ── COLLAPSE TOGGLE ── */}
-        <button
-          onClick={() => setOpen(o => !o)}
-          style={{
-            all: 'unset', display: 'flex', alignItems: 'center', gap: 8,
-            cursor: 'pointer', marginTop: 16, paddingTop: 12,
-            borderTop: '1px solid rgba(255,255,255,0.09)', width: '100%',
-          }}
-        >
-          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.48)', textTransform: 'uppercase' }}>
-            {open ? 'Hide details' : `${roasLabel}`}
-          </span>
-          <svg
-            width="12" height="12" viewBox="0 0 24 24"
-            fill="none" stroke="rgba(255,255,255,0.40)" strokeWidth="2.5"
-            strokeLinecap="round" strokeLinejoin="round"
+        {((platformCards && platformCards.length > 0) || roasSeries.length > 0) && (
+          <button
+            onClick={() => setOpen(o => !o)}
             style={{
-              marginLeft: 'auto', flexShrink: 0,
-              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s ease',
+              all: 'unset', display: 'flex', alignItems: 'center', gap: 8,
+              cursor: 'pointer', marginTop: 16, paddingTop: 12,
+              borderTop: '1px solid rgba(255,255,255,0.09)', width: '100%',
             }}
           >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.48)', textTransform: 'uppercase' }}>
+              {open ? 'Hide details' : platformCards?.length ? 'Platform Breakdown' : roasLabel}
+            </span>
+            <svg
+              width="12" height="12" viewBox="0 0 24 24"
+              fill="none" stroke="rgba(255,255,255,0.40)" strokeWidth="2.5"
+              strokeLinecap="round" strokeLinejoin="round"
+              style={{
+                marginLeft: 'auto', flexShrink: 0,
+                transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
+              }}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+        )}
 
-        {/* ── COLLAPSED: RoAS / Visit Rate chart ── */}
-        <div style={{ overflow: 'hidden', maxHeight: open ? '600px' : '0', transition: 'max-height 0.3s ease' }}>
-          <div style={{ paddingTop: 14, marginTop: 14, borderTop: '1px solid rgba(255,255,255,0.09)' }}>
-            <ChartCol c={roasChart} />
-          </div>
+        {/* ── COLLAPSED CONTENT ── */}
+        <div style={{ overflow: 'hidden', maxHeight: open ? '3000px' : '0', transition: 'max-height 0.4s ease' }}>
+          {/* Per-platform CPR/CPV charts */}
+          {platformCards?.map(pc => {
+            const cprChart: ChartDef = {
+              key: `${sku}-${pc.source}-cpr`, label: cprlLabel, color: pc.color,
+              series: pc.cprSeries, higherIsBetter: false, fixedTarget: cprlTarget,
+              metricValue: pc.cpr > 0 ? fmtRp(Math.round(pc.cpr)) : '\u2014',
+              metricSub: `Target ${fmtShortRp(cprlTarget)}`,
+              statusLabel: pc.cpr > 0 ? (pc.cpr <= cprlTarget ? 'On Target' : 'Off Target') : null,
+              statusGood: pc.cpr <= cprlTarget,
+              divergencePct: pc.cpr > 0 ? divPct(pc.cpr, cprlTarget) : 0,
+              fmt: (v) => fmtRp(Math.round(v)),
+              fmtShort: (v) => mkRpFmt(v),
+              targetFontSize: 12,
+            }
+            const cpvChart: ChartDef = {
+              key: `${sku}-${pc.source}-cpv`, label: cpaLabel, color: pc.color,
+              series: pc.cpvSeries, higherIsBetter: false, fixedTarget: cpaTarget,
+              metricValue: pc.cpv > 0 ? fmtRp(Math.round(pc.cpv)) : '\u2014',
+              metricSub: `Target ${fmtShortRp(cpaTarget)}`,
+              statusLabel: pc.cpv > 0 ? (pc.cpv <= cpaTarget ? 'On Target' : 'Off Target') : null,
+              statusGood: pc.cpv <= cpaTarget,
+              divergencePct: pc.cpv > 0 ? divPct(pc.cpv, cpaTarget) : 0,
+              fmt: (v) => fmtRp(Math.round(v)),
+              fmtShort: (v) => mkRpFmt(v),
+              targetFontSize: 12,
+            }
+            return (
+              <div key={pc.source} style={{ paddingTop: 20, marginTop: 20, borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                {/* Platform header with thumbnail */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  {pc.image ? (
+                    <img src={pc.image} alt={pc.label} style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
+                  ) : (
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: `${pc.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: pc.color }} />
+                    </div>
+                  )}
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{pc.label}</div>
+                    <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.35)' }}>
+                      Spend: {fmtShortRp(pc.spend)}
+                    </div>
+                  </div>
+                </div>
+                {/* CPR + CPV charts side by side */}
+                <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <ChartCol c={cprChart} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0, paddingLeft: 16, borderLeft: '1px solid rgba(255,255,255,0.06)', marginLeft: 16 }}>
+                    <ChartCol c={cpvChart} />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+
+          {/* RoAS / Visit Rate chart — smaller, centered, below platform breakdown */}
+          {roasSeries.length > 0 && (
+            <div style={{ paddingTop: 20, marginTop: 20, borderTop: '1px solid rgba(255,255,255,0.09)', display: 'flex', justifyContent: 'center' }}>
+              <div style={{ width: '50%', minWidth: 200 }}>
+                <ChartCol c={roasChart} />
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
