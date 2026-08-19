@@ -45,6 +45,7 @@ interface ApiResponse {
   daily_conv: DailyConvRow[]
   daily_ga4: DailyGa4Row[]
   ads_added: { campaign_id: string; ads_added: number }[]
+  bridge_page: { ad_id: string; created_by: string | null; lp_url: string | null; notion_url: string | null }[]
 }
 
 const fmtK = (n: number) => n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' : n >= 1_000 ? (n / 1_000).toFixed(0) + 'K' : n.toString()
@@ -352,10 +353,13 @@ export function CampaignExplorerPage() {
     for (const c of adData.ad_conversions) convMap.set(c.ad_id!, c)
     const dimMap = new Map<string, AdDimRow>()
     for (const d of adData.ad_dimension) dimMap.set(d.ad_id, d)
+    const bridgeMap = new Map<string, { created_by: string | null; lp_url: string | null; notion_url: string | null }>()
+    for (const b of (adData.bridge_page ?? [])) bridgeMap.set(b.ad_id, b)
 
     return adData.ads.map(a => {
       const cv = convMap.get(a.ad_id)
       const dim = dimMap.get(a.ad_id)
+      const bridge = dim?.internal_ad_id ? bridgeMap.get(dim.internal_ad_id) : null
       const leads = cv ? (cv.real_lead_ccom + cv.real_lead_d2or + cv.real_lead_mpsh + cv.real_lead_ofls) : 0
       const purchases = cv?.purchase_ccom ?? 0
       const revenue = cv?.purchase_revenue ?? 0
@@ -365,6 +369,9 @@ export function CampaignExplorerPage() {
         internal_ad_id: dim?.internal_ad_id ?? null,
         sku: dim?.sku ?? null,
         publish_date: dim?.publish_date ?? null,
+        created_by: bridge?.created_by ?? null,
+        lp_url: bridge?.lp_url ?? null,
+        notion_url: bridge?.notion_url ?? null,
         cprl: leads > 0 ? a.ad_spend / leads : 0,
         cpa: purchases > 0 ? a.ad_spend / purchases : 0,
         roas: a.ad_spend > 0 ? revenue / a.ad_spend : 0,
@@ -494,7 +501,7 @@ export function CampaignExplorerPage() {
   }, [sortedCampaigns])
 
   return (
-    <div style={{ padding: '24px 28px', fontFamily: 'Inter, system-ui, sans-serif', color: '#fff', minHeight: '100vh', maxWidth: 1200, fontSize: '85%' }}>
+    <div style={{ padding: '24px 28px', fontFamily: 'Inter, system-ui, sans-serif', color: '#fff', minHeight: '100vh', fontSize: '85%' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -567,14 +574,14 @@ export function CampaignExplorerPage() {
                 <tr style={{ background: 'rgba(99,102,241,0.06)', borderBottom: '2px solid rgba(99,102,241,0.2)' }}>
                   <td style={{ padding: '7px 10px', fontWeight: 800, color: '#818cf8' }}>ALL CAMPAIGNS</td>
                   <td style={{ padding: '7px 10px' }}></td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtRpShort(totals.spend)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{totals.leads}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{totals.purchases}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtRpShort(totals.revenue)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtRp(Math.round(totals.cprl))}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtRp(Math.round(totals.cpa))}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{totals.roas > 0 ? totals.roas.toFixed(2) + '×' : '-'}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{totals.adsAdded || '-'}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.spend)}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.leads}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.purchases}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.revenue)}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRp(Math.round(totals.cprl))}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRp(Math.round(totals.cpa))}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.roas > 0 ? totals.roas.toFixed(2) + '×' : '-'}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.adsAdded || '-'}</td>
                 </tr>
               )}
               {sortedCampaigns.map(c => {
@@ -593,14 +600,14 @@ export function CampaignExplorerPage() {
                       {c.campaign_name ?? c.campaign_id}
                     </td>
                     <td style={{ padding: '7px 10px' }}><span style={{ fontSize: 9, fontWeight: 700, color: funnelColor, padding: '1px 5px', borderRadius: 3, background: `${funnelColor}18`, border: `1px solid ${funnelColor}30` }}>{funnelLabel}</span></td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{fmtRpShort(c.ad_spend)}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)' }}>{c.leads || '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)' }}>{c.purchases || '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)' }}>{c.revenue > 0 ? fmtRpShort(c.revenue) : '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{c.cprl > 0 ? fmtRp(Math.round(c.cprl)) : '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{c.cpa > 0 ? fmtRp(Math.round(c.cpa)) : '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>{c.roas > 0 ? c.roas.toFixed(2) + '×' : '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', color: c.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)' }}>{c.adsAdded || '-'}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(c.ad_spend)}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.leads || '-'}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.purchases || '-'}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.revenue > 0 ? fmtRpShort(c.revenue) : '-'}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cprl > 0 ? fmtRp(Math.round(c.cprl)) : '-'}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cpa > 0 ? fmtRp(Math.round(c.cpa)) : '-'}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.roas > 0 ? c.roas.toFixed(2) + '×' : '-'}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', color: c.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{c.adsAdded || '-'}</td>
                   </tr>
                 )
               })}
@@ -681,6 +688,8 @@ export function CampaignExplorerPage() {
                 <tr style={{ position: 'sticky', top: 0, background: 'rgba(13,14,18,0.95)', zIndex: 1 }}>
                   <SortTh label="Title" k="title" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} />
                   <SortTh label="Publish Date" k="publish_date" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} />
+                  <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Created By</th>
+                  <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Landing Page</th>
                   <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Status</th>
                   <SortTh label="Spend" k="spend" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
                   <SortTh label="Real Leads" k="leads" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
@@ -694,22 +703,33 @@ export function CampaignExplorerPage() {
               <tbody>
                 {sortedAds.map(a => {
                   const isBleeder = a.leads === 0 && a.purchases === 0 && a.revenue === 0
+                  const titleText = a.ad_title ? stripAdPrefix(a.ad_title) : '-'
                   return (
                   <tr key={a.ad_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: isBleeder ? 'rgba(248,113,113,0.04)' : undefined }}>
-                    <td style={{ padding: '6px 10px', color: 'rgba(255,255,255,0.7)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={a.ad_title ? stripAdPrefix(a.ad_title) : ''}>{a.ad_title ? stripAdPrefix(a.ad_title) : '-'}</td>
+                    <td style={{ padding: '6px 10px', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={a.ad_title ? stripAdPrefix(a.ad_title) : ''}>
+                      {a.notion_url
+                        ? <a href={a.notion_url} target="_blank" rel="noopener noreferrer" style={{ color: '#818cf8', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')} onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}>{titleText}</a>
+                        : <span style={{ color: 'rgba(255,255,255,0.7)' }}>{titleText}</span>}
+                    </td>
                     <td style={{ padding: '6px 10px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap', fontSize: 9 }}>{a.publish_date ?? '-'}</td>
+                    <td style={{ padding: '6px 10px', color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap', fontSize: 9 }}>{a.created_by ?? '-'}</td>
+                    <td style={{ padding: '6px 10px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 9 }}>
+                      {a.lp_url
+                        ? <a href={a.lp_url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')} onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}>{a.lp_url.replace(/^https?:\/\//, '')}</a>
+                        : '-'}
+                    </td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                       {isBleeder
                         ? <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)', color: '#f87171', fontSize: 9, fontWeight: 700, letterSpacing: '0.04em' }}>Bleeder</span>
                         : <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)' }}>—</span>}
                     </td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{fmtRpShort(a.ad_spend)}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{a.leads || '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{a.purchases || '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{a.revenue > 0 ? fmtRpShort(a.revenue) : '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{a.cprl > 0 ? fmtRp(Math.round(a.cprl)) : '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{a.cpa > 0 ? fmtRp(Math.round(a.cpa)) : '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{a.roas > 0 ? a.roas.toFixed(2) + '×' : '-'}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(a.ad_spend)}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.leads || '-'}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.purchases || '-'}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.revenue > 0 ? fmtRpShort(a.revenue) : '-'}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.cprl > 0 ? fmtRp(Math.round(a.cprl)) : '-'}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.cpa > 0 ? fmtRp(Math.round(a.cpa)) : '-'}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.roas > 0 ? a.roas.toFixed(2) + '×' : '-'}</td>
                   </tr>
                   )
                 })}
