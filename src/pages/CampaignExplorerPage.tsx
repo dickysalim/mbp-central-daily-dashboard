@@ -247,6 +247,7 @@ interface BrandConfig {
   badgeColor: string
   skuOrder: string[]
   skuMeta: Record<string, { name: string; color: string }>
+  showGrade?: boolean
 }
 
 const MNC_CONFIG: BrandConfig = {
@@ -258,6 +259,7 @@ const MNC_CONFIG: BrandConfig = {
     MNS: { name: 'Nightsure', color: '#34d399' },
     M3P: { name: '3Peptide', color: '#f472b6' },
   },
+  showGrade: false,
 }
 
 const GOL_CONFIG: BrandConfig = {
@@ -267,13 +269,14 @@ const GOL_CONFIG: BrandConfig = {
     GIN: { name: 'Ginseng', color: '#ef4444' },
     SIX: { name: 'Six Herbs', color: '#34d399' },
   },
+  showGrade: true,
 }
 
 export function CampaignExplorerPage() { return <CampaignPage config={MNC_CONFIG} /> }
 export function GolCampaignExplorerPage() { return <CampaignPage config={GOL_CONFIG} /> }
 
 function CampaignPage({ config }: { config: BrandConfig }) {
-  const { brand, title: pageTitle, badgeColor, skuOrder, skuMeta: SKU_META } = config
+  const { brand, title: pageTitle, badgeColor, skuOrder, skuMeta: SKU_META, showGrade } = config
   // ── Date bounds ──
   const { data: brandBounds } = useQuery({
     queryKey: ['date-bounds'],
@@ -822,7 +825,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                   <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Created By</th>
                   <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Landing Page</th>
                   <SortTh label="Status" k="status" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} />
-                  <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Grade</th>
+                  {showGrade && <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Grade</th>}
                   <SortTh label="Spend" k="spend" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
                   <SortTh label="Real Leads" k="leads" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
                   <SortTh label="Purchase" k="purchases" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
@@ -855,7 +858,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                       <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, background: statusBg, border: `1px solid ${statusBdr}`, color: statusColor, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em' }}>{a.status}</span>
                     </td>
-                    <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                    {showGrade && <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                       {(() => {
                         if (!a.grade) return <span style={{ color: 'rgba(255,255,255,0.15)' }}>—</span>
                         const gc: Record<string, { color: string; bg: string; bdr: string }> = {
@@ -870,7 +873,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                         const g = gc[a.grade] ?? gc['F']
                         return <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 4, background: g.bg, border: `1px solid ${g.bdr}`, color: g.color, fontSize: 9, fontWeight: 800, letterSpacing: '0.06em' }}>{a.grade}</span>
                       })()}
-                    </td>
+                    </td>}
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(a.ad_spend)}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.leads || '-'}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.purchases || '-'}</td>
