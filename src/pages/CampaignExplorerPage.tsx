@@ -5,17 +5,10 @@ import { useState, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import { fmtRp } from '../utils/format'
+import { capToH2, dateStr, PRESETS } from './ProductPerformancePage'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 function daysBefore(base: string, n: number) { const d = new Date(base + 'T00:00:00'); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10) }
-function buildPresets(latest: string) {
-  return [
-    { label: '7D',  from: daysBefore(latest, 7),  to: latest },
-    { label: '14D', from: daysBefore(latest, 14), to: latest },
-    { label: '30D', from: daysBefore(latest, 30), to: latest },
-    { label: '60D', from: daysBefore(latest, 60), to: latest },
-  ]
-}
 interface BrandBounds { brand: string; earliest: string; latest: string; skus: string[] }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -245,7 +238,7 @@ function MetricCard({ label, value, sub, color, series, fixedTarget, higherIsBet
   )
 }
 
-type SortKey = 'name' | 'funnel' | 'spend' | 'leads' | 'purchases' | 'revenue' | 'cprl' | 'cpa' | 'roas' | 'ads_added' | 'title' | 'publish_date'
+type SortKey = 'name' | 'funnel' | 'spend' | 'leads' | 'purchases' | 'revenue' | 'cprl' | 'cpa' | 'roas' | 'ads_added' | 'title' | 'publish_date' | 'status'
 type SortDir = 'asc' | 'desc'
 
 export function CampaignExplorerPage() {
@@ -259,17 +252,23 @@ export function CampaignExplorerPage() {
     staleTime: 5 * 60_000,
   })
 
-  const latestDate = useMemo(() => {
-    if (!brandBounds?.length) return new Date().toISOString().slice(0, 10)
-    const mnc = brandBounds.find(b => b.brand === 'MNC')
-    return mnc?.latest ?? brandBounds.reduce((l, b) => b.latest > l ? b.latest : l, brandBounds[0].latest)
-  }, [brandBounds])
+  const activeBounds = useMemo(() => brandBounds?.find(b => b.brand === 'MNC'), [brandBounds])
 
-  const PRESETS = useMemo(() => buildPresets(latestDate), [latestDate])
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [lastInit, setLastInit] = useState(false)
+  useMemo(() => {
+    if (activeBounds && !lastInit) {
+      const latest = capToH2(activeBounds.latest)
+      const d = new Date(latest + 'T00:00:00')
+      d.setDate(d.getDate() - 29)
+      const fromStr = dateStr(d)
+      setDateTo(latest)
+      setDateFrom(fromStr < activeBounds.earliest ? activeBounds.earliest : fromStr)
+      setLastInit(true)
+    }
+  }, [activeBounds, lastInit])
 
-  const [activePreset, setActivePreset] = useState(2) // 30D default
-  const [dateFrom, setDateFrom] = useState(() => daysBefore(new Date().toISOString().slice(0, 10), 30))
-  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10))
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('funnel')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -278,15 +277,23 @@ export function CampaignExplorerPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterSku, setFilterSku] = useState<string>('ALL')
 
-  // Update dates when bounds arrive
-  const [boundsApplied, setBoundsApplied] = useState(false)
-  useMemo(() => {
-    if (brandBounds?.length && !boundsApplied) {
-      setDateFrom(PRESETS[2].from)
-      setDateTo(PRESETS[2].to)
-      setBoundsApplied(true)
+  const applyPreset = (days: number) => {
+    if (!activeBounds) return
+    const latest = capToH2(activeBounds.latest)
+    const t = new Date(latest + 'T00:00:00')
+    if (days === 0) {
+      const f = new Date(t.getFullYear(), t.getMonth(), 1)
+      const fStr = dateStr(f)
+      setDateFrom(fStr < activeBounds.earliest ? activeBounds.earliest : fStr)
+    } else {
+      const f = new Date(t)
+      f.setDate(f.getDate() - days + 1)
+      const fStr = dateStr(f)
+      setDateFrom(fStr < activeBounds.earliest ? activeBounds.earliest : fStr)
     }
-  }, [brandBounds, PRESETS, boundsApplied])
+    setDateTo(latest)
+    setSelectedCampaign(null)
+  }
 
   // Fetch campaign data (no campaign_id — overview mode)
   const { data: campData, isFetching: campLoading } = useQuery({
@@ -356,6 +363,8 @@ export function CampaignExplorerPage() {
     const bridgeMap = new Map<string, { created_by: string | null; lp_url: string | null; notion_url: string | null }>()
     for (const b of (adData.bridge_page ?? [])) bridgeMap.set(b.ad_id, b)
 
+    const h2 = new Date(); h2.setDate(h2.getDate() - 2); const h2Str = h2.toISOString().slice(0, 10)
+
     return adData.ads.map(a => {
       const cv = convMap.get(a.ad_id)
       const dim = dimMap.get(a.ad_id)
@@ -363,26 +372,38 @@ export function CampaignExplorerPage() {
       const leads = cv ? (cv.real_lead_ccom + cv.real_lead_d2or + cv.real_lead_mpsh + cv.real_lead_ofls) : 0
       const purchases = cv?.purchase_ccom ?? 0
       const revenue = cv?.purchase_revenue ?? 0
+      const publishDate = dim?.publish_date ?? null
+      const daysSincePublish = publishDate ? Math.floor((new Date(h2Str).getTime() - new Date(publishDate).getTime()) / 86400000) : 999
+      const isLearning = daysSincePublish < 7
+      const isBleeder = !isLearning && leads === 0 && purchases === 0 && revenue === 0
+      const status: 'Learning' | 'Running' | 'Bleeder' = isLearning ? 'Learning' : isBleeder ? 'Bleeder' : 'Running'
+      // Sort order: Learning=0, Running=1, Bleeder=2
+      const statusOrder = isLearning ? 0 : isBleeder ? 2 : 1
       return {
         ...a, leads, purchases, revenue,
         ad_title: dim?.ad_title ?? null,
         internal_ad_id: dim?.internal_ad_id ?? null,
         sku: dim?.sku ?? null,
-        publish_date: dim?.publish_date ?? null,
+        publish_date: publishDate,
         created_by: bridge?.created_by ?? null,
         lp_url: bridge?.lp_url ?? null,
         notion_url: bridge?.notion_url ?? null,
+        status, statusOrder,
         cprl: leads > 0 ? a.ad_spend / leads : 0,
         cpa: purchases > 0 ? a.ad_spend / purchases : 0,
         roas: a.ad_spend > 0 ? revenue / a.ad_spend : 0,
       }
-    })
+    }).filter(a => a.ad_title !== null && !a.ad_title.toLowerCase().includes('(deleted ad)'))
   }, [adData])
 
   // ── Sorted ads ──
   const sortedAds = useMemo(() => {
     const mult = adSortDir === 'desc' ? -1 : 1
     return [...ads].sort((a, b) => {
+      if (adSortKey === 'status') {
+        const diff = mult * (a.statusOrder - b.statusOrder)
+        return diff !== 0 ? diff : b.ad_spend - a.ad_spend // secondary: spend desc
+      }
       const av = adSortKey === 'title' ? (a.ad_title ?? '') : adSortKey === 'publish_date' ? (a.publish_date ?? '') : adSortKey === 'name' ? (a.internal_ad_id ?? '') : adSortKey === 'leads' ? a.leads : adSortKey === 'purchases' ? a.purchases : adSortKey === 'revenue' ? a.revenue : adSortKey === 'cprl' ? a.cprl : adSortKey === 'cpa' ? a.cpa : adSortKey === 'roas' ? a.roas : a.ad_spend
       const bv = adSortKey === 'title' ? (b.ad_title ?? '') : adSortKey === 'publish_date' ? (b.publish_date ?? '') : adSortKey === 'name' ? (b.internal_ad_id ?? '') : adSortKey === 'leads' ? b.leads : adSortKey === 'purchases' ? b.purchases : adSortKey === 'revenue' ? b.revenue : adSortKey === 'cprl' ? b.cprl : adSortKey === 'cpa' ? b.cpa : adSortKey === 'roas' ? b.roas : b.ad_spend
       return typeof av === 'string' ? mult * av.localeCompare(bv as string) : mult * ((av as number) - (bv as number))
@@ -511,17 +532,17 @@ export function CampaignExplorerPage() {
 
       {/* Date picker */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {PRESETS.map((p, i) => (
-          <button key={p.label} onClick={() => { setActivePreset(i); setDateFrom(p.from); setDateTo(p.to); setSelectedCampaign(null) }}
-            style={{ padding: '5px 12px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: '1px solid', cursor: 'pointer', background: activePreset === i ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.04)', borderColor: activePreset === i ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.08)', color: activePreset === i ? '#818cf8' : 'rgba(255,255,255,0.5)' }}>
+        {PRESETS.map(p => (
+          <button key={p.label} onClick={() => applyPreset(p.days)}
+            style={{ padding: '5px 12px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: '1px solid', cursor: 'pointer', background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
             {p.label}
           </button>
         ))}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
-          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setActivePreset(-1); setSelectedCampaign(null) }}
+          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setSelectedCampaign(null) }}
             style={{ padding: '4px 8px', fontSize: 10, borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff' }} />
           <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>→</span>
-          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setActivePreset(-1); setSelectedCampaign(null) }}
+          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setSelectedCampaign(null) }}
             style={{ padding: '4px 8px', fontSize: 10, borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff' }} />
         </div>
         {campLoading && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>Loading…</div>}
@@ -660,7 +681,11 @@ export function CampaignExplorerPage() {
 
           {/* Bleeder vs Productive spend summary */}
           {(() => {
-            const bleederSpend = sortedAds.filter(a => a.leads === 0 && a.purchases === 0 && a.revenue === 0).reduce((s, a) => s + a.ad_spend, 0)
+            const h2 = new Date(); h2.setDate(h2.getDate() - 2); const h2Str = h2.toISOString().slice(0, 10)
+            const bleederSpend = sortedAds.filter(a => {
+              const days = a.publish_date ? Math.floor((new Date(h2Str).getTime() - new Date(a.publish_date).getTime()) / 86400000) : 999
+              return days >= 7 && a.leads === 0 && a.purchases === 0 && a.revenue === 0
+            }).reduce((s, a) => s + a.ad_spend, 0)
             const totalAdSpend = sortedAds.reduce((s, a) => s + a.ad_spend, 0)
             const productiveSpend = totalAdSpend - bleederSpend
             const bleederPct = totalAdSpend > 0 ? (bleederSpend / totalAdSpend) * 100 : 0
@@ -690,7 +715,7 @@ export function CampaignExplorerPage() {
                   <SortTh label="Publish Date" k="publish_date" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} />
                   <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Created By</th>
                   <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Landing Page</th>
-                  <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Status</th>
+                  <SortTh label="Status" k="status" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} />
                   <SortTh label="Spend" k="spend" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
                   <SortTh label="Real Leads" k="leads" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
                   <SortTh label="Purchase" k="purchases" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
@@ -702,10 +727,12 @@ export function CampaignExplorerPage() {
               </thead>
               <tbody>
                 {sortedAds.map(a => {
-                  const isBleeder = a.leads === 0 && a.purchases === 0 && a.revenue === 0
+                  const statusColor = a.status === 'Learning' ? '#fbbf24' : a.status === 'Bleeder' ? '#f87171' : '#34d399'
+                  const statusBg = a.status === 'Learning' ? 'rgba(251,191,36,0.15)' : a.status === 'Bleeder' ? 'rgba(248,113,113,0.15)' : 'rgba(52,211,153,0.15)'
+                  const statusBdr = a.status === 'Learning' ? 'rgba(251,191,36,0.3)' : a.status === 'Bleeder' ? 'rgba(248,113,113,0.3)' : 'rgba(52,211,153,0.3)'
                   const titleText = a.ad_title ? stripAdPrefix(a.ad_title) : '-'
                   return (
-                  <tr key={a.ad_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: isBleeder ? 'rgba(248,113,113,0.04)' : undefined }}>
+                  <tr key={a.ad_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                     <td style={{ padding: '6px 10px', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={a.ad_title ? stripAdPrefix(a.ad_title) : ''}>
                       {a.notion_url
                         ? <a href={a.notion_url} target="_blank" rel="noopener noreferrer" style={{ color: '#818cf8', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')} onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}>{titleText}</a>
@@ -719,9 +746,7 @@ export function CampaignExplorerPage() {
                         : '-'}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                      {isBleeder
-                        ? <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)', color: '#f87171', fontSize: 9, fontWeight: 700, letterSpacing: '0.04em' }}>Bleeder</span>
-                        : <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)' }}>—</span>}
+                      <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, background: statusBg, border: `1px solid ${statusBdr}`, color: statusColor, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em' }}>{a.status}</span>
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(a.ad_spend)}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.leads || '-'}</td>

@@ -320,6 +320,7 @@ export interface CampaignRow {
   real_lead_ccom: number; real_lead_d2or: number
   real_lead_mpsh: number; real_lead_ofls: number
   purchase_ccom: number
+  ads_added?: number
 }
 function mapFunnel(code: string): FunnelLevel {
   return code === '00' ? 'ToFU00' : code === '25' ? 'MoFU25' : code === '50' ? 'BoFU50' : code === '75' ? 'BoFU75' : 'Unknown'
@@ -354,8 +355,8 @@ function CampaignEvaluator({ data, cprlTarget, cpaTarget, cprlLabel = 'CPRL', cp
     else if (fl === 'BoFU75') { metricName = cprlLabel; targetValue = effectiveCPRL; actual = rl > 0 ? r.ad_spend / rl : null }
     else return null
     const gap = actual !== null && actual > 0 ? (targetValue / actual) - 1 : null
-    return { name: r.campaign_name, fl, metricName, targetValue, actual, gap }
-  }).filter(Boolean) as { name: string; fl: FunnelLevel; metricName: string; targetValue: number; actual: number | null; gap: number | null }[]
+    return { name: r.campaign_name, fl, metricName, targetValue, actual, gap, adsAdded: r.ads_added ?? 0 }
+  }).filter(Boolean) as { name: string; fl: FunnelLevel; metricName: string; targetValue: number; actual: number | null; gap: number | null; adsAdded: number }[]
 
 
   rows.sort((a, b) => {
@@ -369,10 +370,10 @@ function CampaignEvaluator({ data, cprlTarget, cpaTarget, cprlLabel = 'CPRL', cp
 
   return (
     <div style={{ overflowX: 'auto', marginTop: 16 }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, ...F }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'auto', ...F }}>
         <thead>
           <tr>
-            {['Campaign', 'Metric', 'Target', 'Actual', 'Gap'].map(h => (
+            {['Campaign', 'Metric', 'Target', 'Actual', 'Gap', 'Ads Added'].map(h => (
               <th key={h} style={{
                 textAlign: h === 'Campaign' ? 'left' : 'right',
                 padding: '4px 10px 8px', fontWeight: 700, fontSize: 11,
@@ -391,11 +392,12 @@ function CampaignEvaluator({ data, cprlTarget, cpaTarget, cprlLabel = 'CPRL', cp
             const fc = FUNNEL_CLR[row.fl]
             return (
               <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                <td style={{ padding: '6px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.85)' }}>{row.name}</td>
+                <td style={{ padding: '6px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.85)', maxWidth: 260 }}>{row.name}</td>
                 <td style={{ padding: '6px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>{row.metricName}</td>
                 <td style={{ padding: '6px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{fmtIDR(row.targetValue)}</td>
                 <td style={{ padding: '6px 10px', textAlign: 'right', color: row.actual !== null ? '#fff' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{row.actual !== null ? fmtIDR(row.actual) : '—'}</td>
                 <td style={{ padding: '6px 10px', textAlign: 'right', color: gc, fontWeight: 700, whiteSpace: 'nowrap' }}>{gt}</td>
+                <td style={{ padding: '6px 10px', textAlign: 'right', color: row.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{row.adsAdded || '—'}</td>
               </tr>
             )
           })}

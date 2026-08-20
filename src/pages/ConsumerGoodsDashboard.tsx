@@ -126,7 +126,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       if (!activeFrom || !activeTo || !activeBrand) return null
       const bust = refreshNonce > 0 ? `&_r=${refreshNonce}` : ''
       const res = await fetch(
-        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${fetchFrom}&to=${activeTo}${bust}`
+        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${fetchFrom}&to=${activeTo}&ads_from=${activeFrom}${bust}`
       )
       if (!res.ok) throw new Error('consumer-goods fetch failed')
       const data = res.json() as Promise<ConsumerGoodsData>
@@ -534,6 +534,12 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
     for (const r of ga4) { if (r.date < activeFrom) continue; const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.ga4_pv += r.ga4_page_view; v.ga4_vo += r.ga4_view_offer }
     for (const r of conv) { if (r.date < activeFrom) continue; const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.rl_ccom += r.mongo_real_lead_ccom; v.rl_d2or += r.mongo_real_lead_d2or; v.rl_mpsh += r.mongo_real_lead_mpsh; v.rl_ofls += r.mongo_real_lead_ofls; v.pu_ccom += r.mongo_purchase_ccom }
 
+    // Build ads_added lookup: campaign_id → count
+    const adsAddedMap = new Map<string, number>()
+    for (const a of (cgData.ads_added ?? []) as { campaign_id: string; ads_added: number }[]) {
+      adsAddedMap.set(a.campaign_id, a.ads_added)
+    }
+
     // Build CampaignRow[] per SKU
     const out: Record<string, CampaignRow[]> = {}
     for (const v of acc.values()) {
@@ -551,6 +557,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
         real_lead_mpsh: v.rl_mpsh,
         real_lead_ofls: v.rl_ofls,
         purchase_ccom: v.pu_ccom,
+        ads_added: adsAddedMap.get(v.cid) ?? 0,
       }
       if (!out[v.sku]) out[v.sku] = []
       out[v.sku].push(row)
