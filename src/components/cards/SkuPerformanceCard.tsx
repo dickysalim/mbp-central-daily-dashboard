@@ -976,6 +976,25 @@ export function SkuPerformanceCard({
               )
             })}
 
+            {/* Ads Added summary */}
+            {(() => {
+              const totalAdsAdded = campaignBreakdown.filter(r => r.traffic_source === 'META').reduce((s, r) => s + (r.ads_added ?? 0), 0)
+              return (
+                <div style={{
+                  flex: 1, display: 'flex', flexDirection: 'column', gap: 4,
+                  paddingLeft: 14, borderLeft: '1px solid rgba(255,255,255,0.07)', marginLeft: 14,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#60a5fa' }} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#60a5fa', letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Ads Added</span>
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: totalAdsAdded > 0 ? '#fff' : 'rgba(255,255,255,0.25)', lineHeight: 1 }}>
+                    {totalAdsAdded > 0 ? `+${totalAdsAdded}` : '—'}
+                  </div>
+                </div>
+              )
+            })()}
+
           </div>
 
 

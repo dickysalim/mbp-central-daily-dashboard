@@ -1,7 +1,7 @@
 /**
  * CampaignExplorerPage — MNC Campaign & Ad-level performance explorer
  */
-import { useState, useMemo, useRef } from 'react'
+import React, { useState, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import { fmtRp } from '../utils/format'
@@ -23,7 +23,7 @@ interface ConvRow {
   purchase_ccom: number; purchase_revenue: number
 }
 interface AdPerfRow { ad_id: string; ad_spend: number; impressions: number; link_click: number }
-interface AdDimRow { ad_id: string; ad_title: string | null; internal_ad_id: string | null; sku: string | null; funnel: string | null; publish_date: string | null }
+interface AdDimRow { ad_id: string; ad_title: string | null; internal_ad_id: string | null; sku: string | null; funnel: string | null; publish_date: string | null; grade_ads_quality: string | null }
 interface DailyPerfRow { date: string; ad_spend: number; impressions: number; link_click: number }
 interface DailyConvRow { date: string; real_lead_ccom: number; real_lead_d2or: number; real_lead_mpsh: number; real_lead_ofls: number; purchase_ccom: number; purchase_revenue: number }
 interface DailyGa4Row { date: string; ga4_page_view: number; ga4_view_offer: number }
@@ -241,7 +241,39 @@ function MetricCard({ label, value, sub, color, series, fixedTarget, higherIsBet
 type SortKey = 'name' | 'funnel' | 'spend' | 'leads' | 'purchases' | 'revenue' | 'cprl' | 'cpa' | 'roas' | 'ads_added' | 'title' | 'publish_date' | 'status'
 type SortDir = 'asc' | 'desc'
 
-export function CampaignExplorerPage() {
+interface BrandConfig {
+  brand: string
+  title: string
+  badgeColor: string
+  skuOrder: string[]
+  skuMeta: Record<string, { name: string; color: string }>
+}
+
+const MNC_CONFIG: BrandConfig = {
+  brand: 'MNC', title: 'MNC Campaigns', badgeColor: '#f97316',
+  skuOrder: ['MSF', 'MTA', 'MNS', 'M3P'],
+  skuMeta: {
+    MSF: { name: 'Superfood', color: '#f97316' },
+    MTA: { name: 'Metafiber', color: '#818cf8' },
+    MNS: { name: 'Nightsure', color: '#34d399' },
+    M3P: { name: '3Peptide', color: '#f472b6' },
+  },
+}
+
+const GOL_CONFIG: BrandConfig = {
+  brand: 'GOL', title: 'GOL Campaigns', badgeColor: '#ef4444',
+  skuOrder: ['GIN', 'SIX'],
+  skuMeta: {
+    GIN: { name: 'Ginseng', color: '#ef4444' },
+    SIX: { name: 'Six Herbs', color: '#34d399' },
+  },
+}
+
+export function CampaignExplorerPage() { return <CampaignPage config={MNC_CONFIG} /> }
+export function GolCampaignExplorerPage() { return <CampaignPage config={GOL_CONFIG} /> }
+
+function CampaignPage({ config }: { config: BrandConfig }) {
+  const { brand, title: pageTitle, badgeColor, skuOrder, skuMeta: SKU_META } = config
   // ── Date bounds ──
   const { data: brandBounds } = useQuery({
     queryKey: ['date-bounds'],
@@ -252,7 +284,7 @@ export function CampaignExplorerPage() {
     staleTime: 5 * 60_000,
   })
 
-  const activeBounds = useMemo(() => brandBounds?.find(b => b.brand === 'MNC'), [brandBounds])
+  const activeBounds = useMemo(() => brandBounds?.find(b => b.brand === brand), [brandBounds, brand])
 
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -275,7 +307,7 @@ export function CampaignExplorerPage() {
   const [adSortKey, setAdSortKey] = useState<SortKey>('leads')
   const [adSortDir, setAdSortDir] = useState<SortDir>('desc')
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterSku, setFilterSku] = useState<string>('ALL')
+  const [expandedSkus, setExpandedSkus] = useState<Set<string>>(new Set())
 
   const applyPreset = (days: number) => {
     if (!activeBounds) return
@@ -297,9 +329,9 @@ export function CampaignExplorerPage() {
 
   // Fetch campaign data (no campaign_id — overview mode)
   const { data: campData, isFetching: campLoading } = useQuery({
-    queryKey: ['campaign-ads', dateFrom, dateTo],
+    queryKey: ['campaign-ads', brand, dateFrom, dateTo],
     queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/campaign-ads?brand=MNC&from=${dateFrom}&to=${dateTo}`)
+      const res = await fetch(`${D1_WORKER_URL}/v2/campaign-ads?brand=${brand}&from=${dateFrom}&to=${dateTo}`)
       if (!res.ok) throw new Error()
       return res.json() as Promise<ApiResponse>
     },
@@ -307,9 +339,9 @@ export function CampaignExplorerPage() {
 
   // Fetch ad-level data when a campaign is selected
   const { data: adData, isFetching: adLoading } = useQuery({
-    queryKey: ['campaign-ads-detail', dateFrom, dateTo, selectedCampaign],
+    queryKey: ['campaign-ads-detail', brand, dateFrom, dateTo, selectedCampaign],
     queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/campaign-ads?brand=MNC&from=${dateFrom}&to=${dateTo}&campaign_id=${selectedCampaign}`)
+      const res = await fetch(`${D1_WORKER_URL}/v2/campaign-ads?brand=${brand}&from=${dateFrom}&to=${dateTo}&campaign_id=${selectedCampaign}`)
       if (!res.ok) throw new Error()
       return res.json() as Promise<ApiResponse>
     },
@@ -334,24 +366,70 @@ export function CampaignExplorerPage() {
     })
   }, [campData])
 
-  // ── Unique filter values ──
-  const uniqueSkus = useMemo(() => Array.from(new Set(campaigns.map(c => c.sku).filter(Boolean))).sort() as string[], [campaigns])
-
-  // ── Filtered + sorted campaigns ──
-  const sortedCampaigns = useMemo(() => {
-    let list = campaigns
-    if (filterSku !== 'ALL') list = list.filter(c => c.sku === filterSku)
-    if (searchTerm) {
-      const s = searchTerm.toLowerCase()
-      list = list.filter(c => (c.campaign_name ?? '').toLowerCase().includes(s) || (c.sku ?? '').toLowerCase().includes(s) || c.campaign_id.includes(s))
+  // ── Group campaigns by SKU ──
+  const campaignsBySku = useMemo(() => {
+    const grouped: Record<string, typeof campaigns> = {}
+    for (const c of campaigns) {
+      const s = c.sku ?? 'OTHER'
+      if (!grouped[s]) grouped[s] = []
+      grouped[s].push(c)
     }
+    // Sort campaigns within each SKU
     const mult = sortDir === 'desc' ? -1 : 1
-    return [...list].sort((a, b) => {
-      const av = sortKey === 'name' ? (a.campaign_name ?? '') : sortKey === 'funnel' ? (a.funnel ?? '99') : sortKey === 'leads' ? a.leads : sortKey === 'purchases' ? a.purchases : sortKey === 'revenue' ? a.revenue : sortKey === 'cprl' ? a.cprl : sortKey === 'cpa' ? a.cpa : sortKey === 'roas' ? a.roas : a.ad_spend
-      const bv = sortKey === 'name' ? (b.campaign_name ?? '') : sortKey === 'funnel' ? (b.funnel ?? '99') : sortKey === 'leads' ? b.leads : sortKey === 'purchases' ? b.purchases : sortKey === 'revenue' ? b.revenue : sortKey === 'cprl' ? b.cprl : sortKey === 'cpa' ? b.cpa : sortKey === 'roas' ? b.roas : b.ad_spend
-      return typeof av === 'string' ? mult * av.localeCompare(bv as string) : mult * ((av as number) - (bv as number))
+    for (const s of Object.keys(grouped)) {
+      grouped[s].sort((a, b) => {
+        const av = sortKey === 'name' ? (a.campaign_name ?? '') : sortKey === 'funnel' ? (a.funnel ?? '99') : sortKey === 'leads' ? a.leads : sortKey === 'purchases' ? a.purchases : sortKey === 'revenue' ? a.revenue : sortKey === 'cprl' ? a.cprl : sortKey === 'cpa' ? a.cpa : sortKey === 'roas' ? a.roas : a.ad_spend
+        const bv = sortKey === 'name' ? (b.campaign_name ?? '') : sortKey === 'funnel' ? (b.funnel ?? '99') : sortKey === 'leads' ? b.leads : sortKey === 'purchases' ? b.purchases : sortKey === 'revenue' ? b.revenue : sortKey === 'cprl' ? b.cprl : sortKey === 'cpa' ? b.cpa : sortKey === 'roas' ? b.roas : b.ad_spend
+        return typeof av === 'string' ? mult * av.localeCompare(bv as string) : mult * ((av as number) - (bv as number))
+      })
+    }
+    return grouped
+  }, [campaigns, sortKey, sortDir])
+
+  // ── Ordered SKU list (only SKUs with campaigns) ──
+  const activeSkus = useMemo(() => {
+    const ordered = skuOrder.filter(s => campaignsBySku[s]?.length)
+    const extras = Object.keys(campaignsBySku).filter(s => !skuOrder.includes(s) && campaignsBySku[s]?.length)
+    return [...ordered, ...extras]
+  }, [campaignsBySku])
+
+  // ── Per-SKU totals ──
+  const skuTotals = useMemo(() => {
+    const out: Record<string, { spend: number; leads: number; purchases: number; revenue: number; adsAdded: number; cprl: number; cpa: number; roas: number }> = {}
+    for (const [sku, rows] of Object.entries(campaignsBySku)) {
+      const s = rows.reduce((a, c) => ({ spend: a.spend + c.ad_spend, leads: a.leads + c.leads, purchases: a.purchases + c.purchases, revenue: a.revenue + c.revenue, adsAdded: a.adsAdded + c.adsAdded }), { spend: 0, leads: 0, purchases: 0, revenue: 0, adsAdded: 0 })
+      out[sku] = { ...s, cprl: s.leads > 0 ? s.spend / s.leads : 0, cpa: s.purchases > 0 ? s.spend / s.purchases : 0, roas: s.spend > 0 ? s.revenue / s.spend : 0 }
+    }
+    return out
+  }, [campaignsBySku])
+
+  // ── Search: auto-expand matching SKUs ──
+  const filteredSkus = useMemo(() => {
+    if (!searchTerm) return activeSkus
+    const s = searchTerm.toLowerCase()
+    return activeSkus.filter(sku => {
+      const meta = SKU_META[sku]
+      if (meta?.name.toLowerCase().includes(s) || sku.toLowerCase().includes(s)) return true
+      return (campaignsBySku[sku] ?? []).some(c => (c.campaign_name ?? '').toLowerCase().includes(s) || c.campaign_id.includes(s))
     })
-  }, [campaigns, searchTerm, sortKey, sortDir, filterSku])
+  }, [activeSkus, searchTerm, campaignsBySku])
+
+  const toggleSku = (sku: string) => {
+    setExpandedSkus(prev => {
+      const next = new Set(prev)
+      if (next.has(sku)) next.delete(sku); else next.add(sku)
+      return next
+    })
+    setSelectedCampaign(null)
+  }
+
+  // Filter campaigns within expanded SKU by search term
+  const getFilteredCampaigns = (sku: string) => {
+    const list = campaignsBySku[sku] ?? []
+    if (!searchTerm) return list
+    const s = searchTerm.toLowerCase()
+    return list.filter(c => (c.campaign_name ?? '').toLowerCase().includes(s) || c.campaign_id.includes(s) || (c.sku ?? '').toLowerCase().includes(s))
+  }
 
   // ── Merged ad data ──
   const ads = useMemo(() => {
@@ -379,6 +457,7 @@ export function CampaignExplorerPage() {
       const status: 'Learning' | 'Running' | 'Bleeder' = isLearning ? 'Learning' : isBleeder ? 'Bleeder' : 'Running'
       // Sort order: Learning=0, Running=1, Bleeder=2
       const statusOrder = isLearning ? 0 : isBleeder ? 2 : 1
+      const grade = isLearning ? null : (dim?.grade_ads_quality ?? null)
       return {
         ...a, leads, purchases, revenue,
         ad_title: dim?.ad_title ?? null,
@@ -388,7 +467,7 @@ export function CampaignExplorerPage() {
         created_by: bridge?.created_by ?? null,
         lp_url: bridge?.lp_url ?? null,
         notion_url: bridge?.notion_url ?? null,
-        status, statusOrder,
+        status, statusOrder, grade,
         cprl: leads > 0 ? a.ad_spend / leads : 0,
         cpa: purchases > 0 ? a.ad_spend / purchases : 0,
         roas: a.ad_spend > 0 ? revenue / a.ad_spend : 0,
@@ -517,17 +596,17 @@ export function CampaignExplorerPage() {
 
   // ── Totals row ──
   const totals = useMemo(() => {
-    const s = sortedCampaigns.reduce((a, c) => ({ spend: a.spend + c.ad_spend, leads: a.leads + c.leads, purchases: a.purchases + c.purchases, revenue: a.revenue + c.revenue, adsAdded: a.adsAdded + c.adsAdded }), { spend: 0, leads: 0, purchases: 0, revenue: 0, adsAdded: 0 })
+    const s = campaigns.reduce((a, c) => ({ spend: a.spend + c.ad_spend, leads: a.leads + c.leads, purchases: a.purchases + c.purchases, revenue: a.revenue + c.revenue, adsAdded: a.adsAdded + c.adsAdded }), { spend: 0, leads: 0, purchases: 0, revenue: 0, adsAdded: 0 })
     return { ...s, cprl: s.leads > 0 ? s.spend / s.leads : 0, cpa: s.purchases > 0 ? s.spend / s.purchases : 0, roas: s.spend > 0 ? s.revenue / s.spend : 0 }
-  }, [sortedCampaigns])
+  }, [campaigns])
 
   return (
     <div style={{ padding: '24px 28px', fontFamily: 'Inter, system-ui, sans-serif', color: '#fff', minHeight: '100vh', fontSize: '85%' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.02em' }}>Campaign Explorer</div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.3)', padding: '3px 10px', borderRadius: 6, background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.25)', color: '#f97316' }}>MNC</div>
+        <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.02em' }}>{pageTitle}</div>
+        <div style={{ fontSize: 10, fontWeight: 600, padding: '3px 10px', borderRadius: 6, background: `${badgeColor}1f`, border: `1px solid ${badgeColor}40`, color: badgeColor }}>{brand}</div>
       </div>
 
       {/* Date picker */}
@@ -545,39 +624,28 @@ export function CampaignExplorerPage() {
           <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setSelectedCampaign(null) }}
             style={{ padding: '4px 8px', fontSize: 10, borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff' }} />
         </div>
+      </div>
+
+      {/* Search */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <input
+          type="text" placeholder="Search campaigns…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+          style={{ padding: '5px 12px', fontSize: 10, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)', color: '#fff', width: 280, outline: 'none' }}
+        />
         {campLoading && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>Loading…</div>}
       </div>
 
-      {/* SKU picker + Search */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <select value={filterSku} onChange={e => { setFilterSku(e.target.value); setSelectedCampaign(null) }}
-          style={{ padding: '5px 10px', fontSize: 10, fontWeight: 600, borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: filterSku === 'ALL' ? 'rgba(255,255,255,0.5)' : '#fff', outline: 'none', cursor: 'pointer' }}>
-          <option value="ALL">Select SKU</option>
-          {uniqueSkus.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <input
-          type="text" placeholder="Search campaigns…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-          style={{ padding: '5px 12px', fontSize: 10, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)', color: '#fff', width: 240, outline: 'none' }}
-        />
-      </div>
-
-      {/* Campaign table */}
-      {filterSku === 'ALL' ? (
-        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '48px 20px', textAlign: 'center' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.3)', marginBottom: 6 }}>Select a SKU to view campaigns</div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)' }}>Pick a product from the dropdown above</div>
-        </div>
-      ) : (<>
+      {/* Hierarchical campaign table */}
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, overflow: 'hidden', marginBottom: 24 }}>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ fontSize: 12, fontWeight: 700 }}>Campaigns</div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 'auto' }}>{sortedCampaigns.length} campaigns</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 'auto' }}>{campaigns.length} campaigns · {filteredSkus.length} products</div>
         </div>
-        <div style={{ maxHeight: selectedCampaign ? 300 : 600, overflowY: 'auto' }}>
+        <div style={{ maxHeight: selectedCampaign ? 350 : 600, overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
             <thead>
               <tr style={{ position: 'sticky', top: 0, background: 'rgba(13,14,18,0.95)', zIndex: 1 }}>
-                <SortTh label="Campaign" k="name" current={sortKey} dir={sortDir} onClick={toggleSort} />
+                <SortTh label="Product / Campaign" k="name" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <SortTh label="Funnel" k="funnel" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <SortTh label="Spend" k="spend" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
                 <SortTh label="Real Leads" k="leads" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
@@ -590,10 +658,10 @@ export function CampaignExplorerPage() {
               </tr>
             </thead>
             <tbody>
-              {/* Totals row */}
-              {sortedCampaigns.length > 0 && (
+              {/* Grand totals row */}
+              {campaigns.length > 0 && (
                 <tr style={{ background: 'rgba(99,102,241,0.06)', borderBottom: '2px solid rgba(99,102,241,0.2)' }}>
-                  <td style={{ padding: '7px 10px', fontWeight: 800, color: '#818cf8' }}>ALL CAMPAIGNS</td>
+                  <td style={{ padding: '7px 10px', fontWeight: 800, color: '#818cf8' }}>ALL PRODUCTS</td>
                   <td style={{ padding: '7px 10px' }}></td>
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.spend)}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.leads}</td>
@@ -605,31 +673,69 @@ export function CampaignExplorerPage() {
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.adsAdded || '-'}</td>
                 </tr>
               )}
-              {sortedCampaigns.map(c => {
-                const isSelected = selectedCampaign === c.campaign_id
-                const funnelLabel = c.funnel === '00' ? 'ToFU00' : c.funnel === '25' ? 'MoFU25' : c.funnel === '50' ? 'BoFU50' : c.funnel === '75' ? 'BoFU75' : c.funnel ?? '-'
-                const funnelColor = c.funnel === '00' ? '#818cf8' : c.funnel === '25' ? '#60a5fa' : c.funnel === '50' ? '#fbbf24' : c.funnel === '75' ? '#fb923c' : 'rgba(255,255,255,0.3)'
+
+              {/* Product rows (expandable) + Campaign rows (nested) */}
+              {filteredSkus.map(sku => {
+                const t = skuTotals[sku]
+                if (!t) return null
+                const meta = SKU_META[sku]
+                const isExpanded = expandedSkus.has(sku) || !!searchTerm
+                const skuCampaigns = getFilteredCampaigns(sku)
                 return (
-                  <tr key={c.campaign_id}
-                    onClick={() => setSelectedCampaign(isSelected ? null : c.campaign_id)}
-                    style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer', background: isSelected ? 'rgba(99,102,241,0.08)' : 'transparent', transition: 'background 0.1s' }}
-                    onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
-                    onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-                  >
-                    <td style={{ padding: '7px 10px', fontWeight: 600, color: isSelected ? '#818cf8' : '#fff', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {isSelected && <span style={{ marginRight: 4 }}>▸</span>}
-                      {c.campaign_name ?? c.campaign_id}
-                    </td>
-                    <td style={{ padding: '7px 10px' }}><span style={{ fontSize: 9, fontWeight: 700, color: funnelColor, padding: '1px 5px', borderRadius: 3, background: `${funnelColor}18`, border: `1px solid ${funnelColor}30` }}>{funnelLabel}</span></td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(c.ad_spend)}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.leads || '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.purchases || '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.revenue > 0 ? fmtRpShort(c.revenue) : '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cprl > 0 ? fmtRp(Math.round(c.cprl)) : '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cpa > 0 ? fmtRp(Math.round(c.cpa)) : '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.roas > 0 ? c.roas.toFixed(2) + '×' : '-'}</td>
-                    <td style={{ padding: '7px 10px', textAlign: 'right', color: c.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{c.adsAdded || '-'}</td>
-                  </tr>
+                  <React.Fragment key={sku}>
+                    {/* Product summary row */}
+                    <tr
+                      onClick={() => toggleSku(sku)}
+                      style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                    >
+                      <td style={{ padding: '8px 10px', fontWeight: 700 }}>
+                        <span style={{ color: 'rgba(255,255,255,0.4)', marginRight: 6, fontSize: 9 }}>{isExpanded ? '▾' : '▸'}</span>
+                        <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, background: `${meta?.color ?? '#666'}18`, border: `1px solid ${meta?.color ?? '#666'}30`, color: meta?.color ?? '#fff', fontSize: 9, fontWeight: 700, marginRight: 6 }}>{sku}</span>
+                        <span style={{ color: '#fff' }}>{meta?.name ?? sku}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9, marginLeft: 6 }}>{skuCampaigns.length} campaigns</span>
+                      </td>
+                      <td style={{ padding: '8px 10px' }}></td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(t.spend)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.leads}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.purchases}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(t.revenue)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.cprl > 0 ? fmtRp(Math.round(t.cprl)) : '-'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.cpa > 0 ? fmtRp(Math.round(t.cpa)) : '-'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.roas > 0 ? t.roas.toFixed(2) + '×' : '-'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: t.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{t.adsAdded > 0 ? `+${t.adsAdded}` : '-'}</td>
+                    </tr>
+
+                    {/* Campaign rows (shown when expanded) */}
+                    {isExpanded && skuCampaigns.map(c => {
+                      const isSelected = selectedCampaign === c.campaign_id
+                      const funnelLabel = c.funnel === '00' ? 'ToFU00' : c.funnel === '25' ? 'MoFU25' : c.funnel === '50' ? 'BoFU50' : c.funnel === '75' ? 'BoFU75' : c.funnel ?? '-'
+                      const funnelColor = c.funnel === '00' ? '#818cf8' : c.funnel === '25' ? '#60a5fa' : c.funnel === '50' ? '#fbbf24' : c.funnel === '75' ? '#fb923c' : 'rgba(255,255,255,0.3)'
+                      return (
+                        <tr key={c.campaign_id}
+                          onClick={() => setSelectedCampaign(isSelected ? null : c.campaign_id)}
+                          style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer', background: isSelected ? 'rgba(99,102,241,0.08)' : 'transparent', transition: 'background 0.1s' }}
+                          onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
+                          onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                        >
+                          <td style={{ padding: '7px 10px 7px 32px', fontWeight: 600, color: isSelected ? '#818cf8' : '#fff', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {isSelected && <span style={{ marginRight: 4 }}>▸</span>}
+                            {c.campaign_name ?? c.campaign_id}
+                          </td>
+                          <td style={{ padding: '7px 10px' }}><span style={{ fontSize: 9, fontWeight: 700, color: funnelColor, padding: '1px 5px', borderRadius: 3, background: `${funnelColor}18`, border: `1px solid ${funnelColor}30` }}>{funnelLabel}</span></td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(c.ad_spend)}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.leads || '-'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.purchases || '-'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.revenue > 0 ? fmtRpShort(c.revenue) : '-'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cprl > 0 ? fmtRp(Math.round(c.cprl)) : '-'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cpa > 0 ? fmtRp(Math.round(c.cpa)) : '-'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.roas > 0 ? c.roas.toFixed(2) + '×' : '-'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: c.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{c.adsAdded || '-'}</td>
+                        </tr>
+                      )
+                    })}
+                  </React.Fragment>
                 )
               })}
             </tbody>
@@ -716,6 +822,7 @@ export function CampaignExplorerPage() {
                   <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Created By</th>
                   <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Landing Page</th>
                   <SortTh label="Status" k="status" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} />
+                  <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Grade</th>
                   <SortTh label="Spend" k="spend" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
                   <SortTh label="Real Leads" k="leads" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
                   <SortTh label="Purchase" k="purchases" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
@@ -748,6 +855,22 @@ export function CampaignExplorerPage() {
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                       <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, background: statusBg, border: `1px solid ${statusBdr}`, color: statusColor, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em' }}>{a.status}</span>
                     </td>
+                    <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                      {(() => {
+                        if (!a.grade) return <span style={{ color: 'rgba(255,255,255,0.15)' }}>—</span>
+                        const gc: Record<string, { color: string; bg: string; bdr: string }> = {
+                          S: { color: '#34d399', bg: 'rgba(52,211,153,0.18)', bdr: 'rgba(52,211,153,0.35)' },
+                          A: { color: '#60a5fa', bg: 'rgba(96,165,250,0.18)', bdr: 'rgba(96,165,250,0.35)' },
+                          B: { color: '#818cf8', bg: 'rgba(129,140,248,0.18)', bdr: 'rgba(129,140,248,0.35)' },
+                          C: { color: '#fbbf24', bg: 'rgba(251,191,36,0.18)', bdr: 'rgba(251,191,36,0.35)' },
+                          D: { color: '#f97316', bg: 'rgba(249,115,22,0.18)', bdr: 'rgba(249,115,22,0.35)' },
+                          E: { color: '#f87171', bg: 'rgba(248,113,113,0.18)', bdr: 'rgba(248,113,113,0.35)' },
+                          F: { color: '#71717a', bg: 'rgba(113,113,122,0.18)', bdr: 'rgba(113,113,122,0.35)' },
+                        }
+                        const g = gc[a.grade] ?? gc['F']
+                        return <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 4, background: g.bg, border: `1px solid ${g.bdr}`, color: g.color, fontSize: 9, fontWeight: 800, letterSpacing: '0.06em' }}>{a.grade}</span>
+                      })()}
+                    </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(a.ad_spend)}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.leads || '-'}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.purchases || '-'}</td>
@@ -763,7 +886,6 @@ export function CampaignExplorerPage() {
           </div>
         </div>
       )}
-      </>)}
     </div>
   )
 }

@@ -9,7 +9,7 @@ import { HealthcareDashboard } from './pages/HealthcareDashboard'
 import { GeneralOverviewPage } from './pages/GeneralOverviewPage'
 import { SalesVelocityDashboard, GOLSalesVelocityDashboard } from './pages/SalesVelocityDashboard'
 import { PipelineStatusPage } from './pages/PipelineStatusPage'
-import { CampaignExplorerPage } from './pages/CampaignExplorerPage'
+import { CampaignExplorerPage, GolCampaignExplorerPage } from './pages/CampaignExplorerPage'
 import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO, IS_MNC } from './config/domainConfig'
 
 const queryClient = new QueryClient({
@@ -35,6 +35,7 @@ function App() {
             {!IS_MNC && <>
               <Route path="/gol" element={<ConsumerGoodsDashboard brand="GOL" />} />
               <Route path="/gol-sales-velocity" element={<GOLSalesVelocityDashboard />} />
+              <Route path="/gol-campaigns" element={<GolCampaignExplorerPage />} />
             </>}
 
             {/* Shared routes */}
