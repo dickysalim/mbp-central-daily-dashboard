@@ -9,8 +9,8 @@ import { HealthcareDashboard } from './pages/HealthcareDashboard'
 import { GeneralOverviewPage } from './pages/GeneralOverviewPage'
 import { SalesVelocityDashboard, GOLSalesVelocityDashboard } from './pages/SalesVelocityDashboard'
 import { PipelineStatusPage } from './pages/PipelineStatusPage'
-import { CampaignExplorerPage, GolCampaignExplorerPage } from './pages/CampaignExplorerPage'
-import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO, IS_MNC } from './config/domainConfig'
+import { CampaignExplorerPage, GolCampaignExplorerPage, MciCampaignExplorerPage } from './pages/CampaignExplorerPage'
+import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO, IS_MNC, IS_MCI } from './config/domainConfig'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,8 +20,8 @@ const queryClient = new QueryClient({
   },
 })
 
-const brandLabel = IS_GOLO ? 'GOLO' : IS_MNC ? 'MNC' : 'Dashboard'
-const platformBrand = IS_GOLO ? 'GOL' : IS_MNC ? 'MNC' : undefined
+const brandLabel = IS_GOLO ? 'GOLO' : IS_MNC ? 'MNC' : IS_MCI ? 'MCI' : 'Dashboard'
+const platformBrand = IS_GOLO ? 'GOL' : IS_MNC ? 'MNC' : IS_MCI ? 'MCI' : undefined
 
 function App() {
   return (
@@ -32,7 +32,7 @@ function App() {
             <Route index element={<Navigate to={DEFAULT_ROUTE} replace />} />
 
             {/* GOL routes — available on GOLO + main domain */}
-            {!IS_MNC && <>
+            {!IS_MNC && !IS_MCI && <>
               <Route path="/gol" element={<ConsumerGoodsDashboard brand="GOL" />} />
               <Route path="/gol-sales-velocity" element={<GOLSalesVelocityDashboard />} />
               <Route path="/gol-campaigns" element={<GolCampaignExplorerPage />} />
@@ -42,16 +42,21 @@ function App() {
             <Route path="/platform-overview" element={<PlatformOverviewPage brand={platformBrand} />} />
 
             {/* MNC routes — available on MNC + main domain */}
-            {!IS_GOLO && <>
+            {!IS_GOLO && !IS_MCI && <>
               <Route path="/mnc" element={<ConsumerGoodsDashboard brand="MNC" />} />
               <Route path="/sales-velocity" element={<SalesVelocityDashboard />} />
               <Route path="/campaign-explorer" element={<CampaignExplorerPage />} />
             </>}
 
-            {/* Main domain only routes */}
+            {/* MCI routes — available on MCI + main domain */}
             {!IS_GOLO && !IS_MNC && <>
-              <Route path="/overview" element={<GeneralOverviewPage />} />
               <Route path="/mci" element={<HealthcareDashboard />} />
+              <Route path="/mci-campaigns" element={<MciCampaignExplorerPage />} />
+            </>}
+
+            {/* Main domain only routes */}
+            {!IS_GOLO && !IS_MNC && !IS_MCI && <>
+              <Route path="/overview" element={<GeneralOverviewPage />} />
               <Route path="/pipeline-status" element={<PipelineStatusPage />} />
             </>}
           </Route>

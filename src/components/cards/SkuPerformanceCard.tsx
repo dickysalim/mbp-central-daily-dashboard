@@ -75,6 +75,7 @@ export interface SkuPerformanceCardProps {
 
   // Layout variant
   compactLayout?: boolean  // true = thumbnail on top centered, charts always visible, no collapse
+  hideRoas?: boolean       // true = exclude RoAS from top charts (for MCI)
 
   // Per-platform CPR/CPV cards (MCI: breakdown by META, SRCH, etc.)
   platformCards?: { source: string; label: string; color: string; image?: string; spend: number; cpr: number; cpv: number; cprSeries: { date: string; value: number }[]; cpvSeries: { date: string; value: number }[]; registrations: number; conversions: number }[]
@@ -432,6 +433,7 @@ export function SkuPerformanceCard({
   roasIsPercentage = false,
   roasSeries  = [],
   compactLayout = false,
+  hideRoas = false,
   platformCards,
 }: SkuPerformanceCardProps) {
   const label = skuLabel ?? sku
@@ -488,7 +490,7 @@ export function SkuPerformanceCard({
       fmtShort: (v) => mkRpFmt(v),
       targetFontSize: 12,
     },
-    {
+    ...(!hideRoas ? [{
       key: `${sku}-roas`, label: roasLabel, color: '#fbbf24',
       series: roasSeries, higherIsBetter: true, fixedTarget: roasTarget,
       metricValue:   totalRoas > 0 ? (roasIsPercentage ? totalRoas.toFixed(1) + '%' : totalRoas.toFixed(2) + '\u00d7') : '\u2014',
@@ -496,9 +498,9 @@ export function SkuPerformanceCard({
       statusLabel:   totalRoas > 0 ? (totalRoas >= roasTarget ? 'On Target' : totalRoas >= roasTarget * 0.9 ? 'Slightly Below' : 'Off Target') : null,
       statusGood:    totalRoas >= roasTarget,
       divergencePct: totalRoas > 0 ? divPct(totalRoas, roasTarget) : 0,
-      fmt:      roasIsPercentage ? (v) => v.toFixed(1) + '%' : (v) => v.toFixed(2) + '\u00d7',
-      fmtShort: roasIsPercentage ? (v) => v.toFixed(0) + '%' : (v) => v.toFixed(1) + '\u00d7',
-    },
+      fmt:      roasIsPercentage ? (v: number) => v.toFixed(1) + '%' : (v: number) => v.toFixed(2) + '\u00d7',
+      fmtShort: roasIsPercentage ? (v: number) => v.toFixed(0) + '%' : (v: number) => v.toFixed(1) + '\u00d7',
+    }] : []),
   ]
 
   // Collapsible row: CTR + LPVO + VO2L

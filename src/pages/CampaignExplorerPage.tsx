@@ -18,14 +18,15 @@ interface CampaignRow {
   ad_spend: number; impressions: number; link_click: number
 }
 interface ConvRow {
-  campaign_id?: string; ad_id?: string
+  campaign_id?: string; ad_id?: string; sku?: string
   real_lead_ccom: number; real_lead_d2or: number; real_lead_mpsh: number; real_lead_ofls: number
   purchase_ccom: number; purchase_revenue: number
+  form_submission?: number; form_conversion?: number
 }
 interface AdPerfRow { ad_id: string; ad_spend: number; impressions: number; link_click: number }
 interface AdDimRow { ad_id: string; ad_title: string | null; internal_ad_id: string | null; sku: string | null; funnel: string | null; publish_date: string | null; grade_ads_quality: string | null }
 interface DailyPerfRow { date: string; ad_spend: number; impressions: number; link_click: number }
-interface DailyConvRow { date: string; real_lead_ccom: number; real_lead_d2or: number; real_lead_mpsh: number; real_lead_ofls: number; purchase_ccom: number; purchase_revenue: number }
+interface DailyConvRow { date: string; real_lead_ccom: number; real_lead_d2or: number; real_lead_mpsh: number; real_lead_ofls: number; purchase_ccom: number; purchase_revenue: number; form_submission?: number; form_conversion?: number }
 interface DailyGa4Row { date: string; ga4_page_view: number; ga4_view_offer: number }
 
 interface ApiResponse {
@@ -248,6 +249,10 @@ interface BrandConfig {
   skuOrder: string[]
   skuMeta: Record<string, { name: string; color: string }>
   showGrade?: boolean
+  useFormConversions?: boolean  // MCI: map form_submission→leads, form_conversion→purchase
+  cprlLabel?: string           // 'CPRL' (default) or 'CPR'
+  cpaLabel?: string            // 'CPA CC' (default) or 'CPV'
+  hideRoas?: boolean           // hide RoAS column in campaign table
 }
 
 const MNC_CONFIG: BrandConfig = {
@@ -269,14 +274,30 @@ const GOL_CONFIG: BrandConfig = {
     GIN: { name: 'Ginseng', color: '#ef4444' },
     SIX: { name: 'Six Herbs', color: '#34d399' },
   },
-  showGrade: true,
+  showGrade: false,
+}
+
+const MCI_CONFIG: BrandConfig = {
+  brand: 'MCI', title: 'MCI Campaigns', badgeColor: '#34d399',
+  skuOrder: ['CEK', 'A1C', 'WCA'],
+  skuMeta: {
+    CEK: { name: 'CEK', color: '#34d399' },
+    A1C: { name: 'A1C', color: '#38bdf8' },
+    WCA: { name: 'WCA', color: '#a78bfa' },
+  },
+  showGrade: false,
+  useFormConversions: true,
+  cprlLabel: 'CPR',
+  cpaLabel: 'CPV',
+  hideRoas: true,
 }
 
 export function CampaignExplorerPage() { return <CampaignPage config={MNC_CONFIG} /> }
 export function GolCampaignExplorerPage() { return <CampaignPage config={GOL_CONFIG} /> }
+export function MciCampaignExplorerPage() { return <CampaignPage config={MCI_CONFIG} /> }
 
 function CampaignPage({ config }: { config: BrandConfig }) {
-  const { brand, title: pageTitle, badgeColor, skuOrder, skuMeta: SKU_META, showGrade } = config
+  const { brand, title: pageTitle, badgeColor, skuOrder, skuMeta: SKU_META, showGrade, useFormConversions, cprlLabel: cfgCprlLabel, cpaLabel: cfgCpaLabel, hideRoas } = config
   // ── Date bounds ──
   const { data: brandBounds } = useQuery({
     queryKey: ['date-bounds'],
@@ -354,16 +375,17 @@ function CampaignPage({ config }: { config: BrandConfig }) {
   // ── Merged campaign data (perf + conversions) ──
   const campaigns = useMemo(() => {
     if (!campData) return []
+    // Conv rows now keyed by campaign_id|sku (since worker groups by both)
     const convMap = new Map<string, ConvRow>()
-    for (const c of campData.campaign_conversions) convMap.set(c.campaign_id!, c)
+    for (const c of campData.campaign_conversions) convMap.set(`${c.campaign_id}|${c.sku ?? ''}`, c)
     const adsAddedMap = new Map<string, number>()
     for (const a of (campData.ads_added ?? [])) adsAddedMap.set(a.campaign_id, a.ads_added)
 
     return campData.campaigns.filter(c => c.campaign_name?.includes('[META]')).map(c => {
-      const cv = convMap.get(c.campaign_id)
-      const leads = cv ? (cv.real_lead_ccom + cv.real_lead_d2or + cv.real_lead_mpsh + cv.real_lead_ofls) : 0
-      const purchases = cv?.purchase_ccom ?? 0
-      const revenue = cv?.purchase_revenue ?? 0
+      const cv = convMap.get(`${c.campaign_id}|${c.sku ?? ''}`)
+      const leads = cv ? (useFormConversions ? (cv.form_submission ?? 0) : (cv.real_lead_ccom + cv.real_lead_d2or + cv.real_lead_mpsh + cv.real_lead_ofls)) : 0
+      const purchases = cv ? (useFormConversions ? (cv.form_conversion ?? 0) : (cv.purchase_ccom ?? 0)) : 0
+      const revenue = useFormConversions ? 0 : (cv?.purchase_revenue ?? 0)
       const adsAdded = adsAddedMap.get(c.campaign_id) ?? 0
       return { ...c, leads, purchases, revenue, cprl: leads > 0 ? c.ad_spend / leads : 0, cpa: purchases > 0 ? c.ad_spend / purchases : 0, roas: c.ad_spend > 0 ? revenue / c.ad_spend : 0, adsAdded }
     })
@@ -450,9 +472,9 @@ function CampaignPage({ config }: { config: BrandConfig }) {
       const cv = convMap.get(a.ad_id)
       const dim = dimMap.get(a.ad_id)
       const bridge = dim?.internal_ad_id ? bridgeMap.get(dim.internal_ad_id) : null
-      const leads = cv ? (cv.real_lead_ccom + cv.real_lead_d2or + cv.real_lead_mpsh + cv.real_lead_ofls) : 0
-      const purchases = cv?.purchase_ccom ?? 0
-      const revenue = cv?.purchase_revenue ?? 0
+      const leads = cv ? (useFormConversions ? (cv.form_submission ?? 0) : (cv.real_lead_ccom + cv.real_lead_d2or + cv.real_lead_mpsh + cv.real_lead_ofls)) : 0
+      const purchases = cv ? (useFormConversions ? (cv.form_conversion ?? 0) : (cv.purchase_ccom ?? 0)) : 0
+      const revenue = useFormConversions ? 0 : (cv?.purchase_revenue ?? 0)
       const publishDate = dim?.publish_date ?? null
       const daysSincePublish = publishDate ? Math.floor((new Date(h2Str).getTime() - new Date(publishDate).getTime()) / 86400000) : 999
       const isLearning = daysSincePublish < 7
@@ -512,9 +534,12 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     const dailyImpressions = dates.map(d => perfMap.get(d)?.impressions ?? 0)
     const dailyLeads = dates.map(d => {
       const c = convMap.get(d)
-      return c ? (c.real_lead_ccom + c.real_lead_d2or + c.real_lead_mpsh + c.real_lead_ofls) : 0
+      return c ? (useFormConversions ? (c.form_submission ?? 0) : (c.real_lead_ccom + c.real_lead_d2or + c.real_lead_mpsh + c.real_lead_ofls)) : 0
     })
-    const dailyPurchases = dates.map(d => convMap.get(d)?.purchase_ccom ?? 0)
+    const dailyPurchases = dates.map(d => {
+      const c = convMap.get(d)
+      return c ? (useFormConversions ? (c.form_conversion ?? 0) : (c.purchase_ccom ?? 0)) : 0
+    })
     const dailyPageView = dates.map(d => ga4Map.get(d)?.ga4_page_view ?? 0)
     const dailyViewOffer = dates.map(d => ga4Map.get(d)?.ga4_view_offer ?? 0)
 
@@ -651,13 +676,13 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                 <SortTh label="Product / Campaign" k="name" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <SortTh label="Funnel" k="funnel" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <SortTh label="Spend" k="spend" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label="Real Leads" k="leads" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label="Purchase" k="purchases" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label="Revenue" k="revenue" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label="CPRL" k="cprl" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label="CPA CC" k="cpa" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label="RoAS CC" k="roas" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'right', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Ads Added</th>
+                <SortTh label={useFormConversions ? 'Form Submissions' : 'Real Leads'} k="leads" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
+                <SortTh label={useFormConversions ? 'Visit' : 'Purchase'} k="purchases" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
+                {!hideRoas && <SortTh label="Revenue" k="revenue" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />}
+                <SortTh label={cfgCprlLabel ?? 'CPRL'} k="cprl" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
+                <SortTh label={cfgCpaLabel ?? 'CPA CC'} k="cpa" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
+                {!hideRoas && <SortTh label="RoAS CC" k="roas" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />}
+                <SortTh label="Ads Added" k="adsAdded" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
               </tr>
             </thead>
             <tbody>
@@ -669,10 +694,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.spend)}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.leads}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.purchases}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.revenue)}</td>
+                  {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.revenue)}</td>}
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRp(Math.round(totals.cprl))}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRp(Math.round(totals.cpa))}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.roas > 0 ? totals.roas.toFixed(2) + '×' : '-'}</td>
+                  {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.roas > 0 ? totals.roas.toFixed(2) + '×' : '-'}</td>}
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.adsAdded || '-'}</td>
                 </tr>
               )}
@@ -703,10 +728,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(t.spend)}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.leads}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.purchases}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(t.revenue)}</td>
+                      {!hideRoas && <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(t.revenue)}</td>}
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.cprl > 0 ? fmtRp(Math.round(t.cprl)) : '-'}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.cpa > 0 ? fmtRp(Math.round(t.cpa)) : '-'}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.roas > 0 ? t.roas.toFixed(2) + '×' : '-'}</td>
+                      {!hideRoas && <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.roas > 0 ? t.roas.toFixed(2) + '×' : '-'}</td>}
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: t.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{t.adsAdded > 0 ? `+${t.adsAdded}` : '-'}</td>
                     </tr>
 
@@ -730,10 +755,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                           <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(c.ad_spend)}</td>
                           <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.leads || '-'}</td>
                           <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.purchases || '-'}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.revenue > 0 ? fmtRpShort(c.revenue) : '-'}</td>
+                          {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.revenue > 0 ? fmtRpShort(c.revenue) : '-'}</td>}
                           <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cprl > 0 ? fmtRp(Math.round(c.cprl)) : '-'}</td>
                           <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cpa > 0 ? fmtRp(Math.round(c.cpa)) : '-'}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.roas > 0 ? c.roas.toFixed(2) + '×' : '-'}</td>
+                          {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.roas > 0 ? c.roas.toFixed(2) + '×' : '-'}</td>}
                           <td style={{ padding: '7px 10px', textAlign: 'right', color: c.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{c.adsAdded || '-'}</td>
                         </tr>
                       )
@@ -753,11 +778,11 @@ function CampaignPage({ config }: { config: BrandConfig }) {
             CAMPAIGN PERFORMANCE
           </div>
           <div style={{ display: 'flex', gap: 20 }}>
-            <MetricCard label="CPRL" value={campaignCharts.cprl > 0 ? fmtRp(Math.round(campaignCharts.cprl)) : '—'}
+            <MetricCard label={cfgCprlLabel ?? 'CPRL'} value={campaignCharts.cprl > 0 ? fmtRp(Math.round(campaignCharts.cprl)) : '—'}
               sub="Target Rp 150K" color="#818cf8" series={campaignCharts.cprlSeries}
               fixedTarget={150_000} higherIsBetter={false}
               fmt={(v) => fmtRp(Math.round(v))} fmtShort={(v) => fmtRpShort(v)} adsMarkers={adsMarkers} />
-            <MetricCard label="CPA CC" value={campaignCharts.cpa > 0 ? fmtRp(Math.round(campaignCharts.cpa)) : '—'}
+            <MetricCard label={cfgCpaLabel ?? 'CPA CC'} value={campaignCharts.cpa > 0 ? fmtRp(Math.round(campaignCharts.cpa)) : '—'}
               sub="Target Rp 2M" color="#f472b6" series={campaignCharts.cpaSeries}
               fixedTarget={2_000_000} higherIsBetter={false}
               fmt={(v) => fmtRp(Math.round(v))} fmtShort={(v) => fmtRpShort(v)} adsMarkers={adsMarkers} />
@@ -827,12 +852,12 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                   <SortTh label="Status" k="status" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} />
                   {showGrade && <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Grade</th>}
                   <SortTh label="Spend" k="spend" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  <SortTh label="Real Leads" k="leads" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  <SortTh label="Purchase" k="purchases" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  <SortTh label="Revenue" k="revenue" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  <SortTh label="CPRL" k="cprl" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  <SortTh label="CPA CC" k="cpa" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  <SortTh label="RoAS CC" k="roas" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
+                  <SortTh label={useFormConversions ? 'Form Submissions' : 'Real Leads'} k="leads" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
+                  <SortTh label={useFormConversions ? 'Visit' : 'Purchase'} k="purchases" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
+                  {!hideRoas && <SortTh label="Revenue" k="revenue" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />}
+                  <SortTh label={cfgCprlLabel ?? 'CPRL'} k="cprl" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
+                  <SortTh label={cfgCpaLabel ?? 'CPA CC'} k="cpa" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
+                  {!hideRoas && <SortTh label="RoAS CC" k="roas" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />}
                 </tr>
               </thead>
               <tbody>
@@ -877,10 +902,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(a.ad_spend)}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.leads || '-'}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.purchases || '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.revenue > 0 ? fmtRpShort(a.revenue) : '-'}</td>
+                    {!hideRoas && <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.revenue > 0 ? fmtRpShort(a.revenue) : '-'}</td>}
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.cprl > 0 ? fmtRp(Math.round(a.cprl)) : '-'}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.cpa > 0 ? fmtRp(Math.round(a.cpa)) : '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.roas > 0 ? a.roas.toFixed(2) + '×' : '-'}</td>
+                    {!hideRoas && <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.roas > 0 ? a.roas.toFixed(2) + '×' : '-'}</td>}
                   </tr>
                   )
                 })}

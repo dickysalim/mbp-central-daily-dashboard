@@ -13,21 +13,23 @@ import { skuColor } from '../utils/skuColors'
 import { ChangelogModal } from '../components/ChangelogModal'
 import { ChangelogTooltip } from '../components/ChangelogTooltip'
 import { AtlPerformanceCard } from '../components/cards/AtlPerformanceCard'
+import { SkuPerformanceCard, type CampaignRow } from '../components/cards/SkuPerformanceCard'
 import type { ChangelogRow } from '../types/changelog'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface BrandBounds { brand: string; earliest: string; latest: string; skus: string[] }
 
 interface ConsumerGoodsData {
-  performance: { date: string; traffic_source: string; sku: string; ad_spend: number; impressions: number; link_click: number }[]
+  performance: { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; ad_spend: number; impressions: number; link_click: number }[]
   campaign_budgets: { date: string; traffic_source: string; campaign_name: string; daily_budget: number; sku: string }[]
   targets: { date: string; sku: string; daily_ad_spend: number }[]
-  conversions: { date: string; traffic_source: string; sku: string; mongo_form_submission: number; mongo_form_conversion: number }[]
+  conversions: { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; mongo_form_submission: number; mongo_form_conversion: number }[]
   form_by_branch: { date: string; branch: string; form_submission: number; form_conversion: number }[]
   changelog: unknown[]
   sales: unknown[]
   ga4: { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }[]
-  campaign_dimension: unknown[]
+  campaign_dimension: { traffic_source: string; campaign_id: string; campaign_name: string; sku: string; funnel: string }[]
+  ads_added: { campaign_id: string; sku: string; ads_added: number }[]
 }
 
 // ── MCI SKU colors ──────────────────────────────────────────────────────────
@@ -349,7 +351,7 @@ export function HealthcareDashboard() {
       if (!fetchFrom || !activeTo) return null
       const bust = refreshNonce > 0 ? `&_r=${refreshNonce}` : ''
       const res = await fetch(
-        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${fetchFrom}&to=${activeTo}${bust}`
+        `${D1_WORKER_URL}/v2/consumer-goods?brand=${activeBrand}&from=${fetchFrom}&to=${activeTo}&ads_from=${activeFrom}${bust}`
       )
       if (!res.ok) throw new Error('consumer-goods fetch failed')
       const data = res.json() as Promise<ConsumerGoodsData>
@@ -553,6 +555,182 @@ export function HealthcareDashboard() {
     const d2 = new Date(activeTo + 'T00:00:00')
     return Math.max(1, Math.round((d2.getTime() - d1.getTime()) / 86400000) + 1)
   }, [activeFrom, activeTo])
+
+  // ── Per-SKU data for SkuPerformanceCards ──
+  const MCI_SKU_LIST = ['CEK', 'A1C', 'WCA']
+  const allSkuData = useMemo(() => {
+    type Point = { date: string; value: number }
+    type SkuOut = {
+      totals: { ctr: number; lpvo: number; vo2l: number; cprl: number; cpaCC: number }
+      ctrSeries: Point[]; lpvoSeries: Point[]; vo2lSeries: Point[]
+      cprlSeries: Point[]; cpaSeries: Point[]
+    }
+    const out = {} as Record<string, SkuOut>
+
+    for (const sku of MCI_SKU_LIST) {
+      // Aggregate daily data by date for this SKU
+      const byDate = new Map<string, { spend: number; clicks: number; impr: number; pv: number; vo: number; subs: number; conv: number }>()
+
+      for (const r of cgData?.performance ?? []) {
+        if (r.sku !== sku) continue
+        const prev = byDate.get(r.date) ?? { spend: 0, clicks: 0, impr: 0, pv: 0, vo: 0, subs: 0, conv: 0 }
+        byDate.set(r.date, { ...prev, spend: prev.spend + (r.ad_spend ?? 0), clicks: prev.clicks + (r.link_click ?? 0), impr: prev.impr + (r.impressions ?? 0) })
+      }
+      for (const r of cgData?.conversions ?? []) {
+        if (r.sku !== sku) continue
+        const prev = byDate.get(r.date) ?? { spend: 0, clicks: 0, impr: 0, pv: 0, vo: 0, subs: 0, conv: 0 }
+        byDate.set(r.date, { ...prev, subs: prev.subs + (r.mongo_form_submission ?? 0), conv: prev.conv + (r.mongo_form_conversion ?? 0) })
+      }
+      for (const r of cgData?.ga4 ?? []) {
+        if (r.sku !== sku) continue
+        const prev = byDate.get(r.date) ?? { spend: 0, clicks: 0, impr: 0, pv: 0, vo: 0, subs: 0, conv: 0 }
+        byDate.set(r.date, { ...prev, pv: prev.pv + (r.ga4_page_view ?? 0), vo: prev.vo + (r.ga4_view_offer ?? 0) })
+      }
+
+      const daily = Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b))
+      const displayRows = daily.filter(([d]) => d >= activeFrom)
+
+      // Totals
+      let spend = 0, clicks = 0, impr = 0, pv = 0, vo = 0, subs = 0, conv = 0
+      for (const [, v] of displayRows) {
+        spend += v.spend; clicks += v.clicks; impr += v.impr
+        pv += v.pv; vo += v.vo; subs += v.subs; conv += v.conv
+      }
+
+      out[sku] = {
+        totals: {
+          ctr:   impr > 0 ? (clicks / impr) * 100 : 0,
+          lpvo:  pv > 0   ? (vo / pv) * 100       : 0,
+          vo2l:  vo > 0   ? (subs / vo) * 100      : 0,
+          cprl:  subs > 0 ? spend / subs           : 0,
+          cpaCC: conv > 0 ? spend / conv           : 0,
+        },
+        ctrSeries: daily.map(([date, v]) => ({ date, value: v.impr > 0 ? (v.clicks / v.impr) * 100 : 0 }))
+          .filter(p => p.value > 0).filter(p => p.date >= activeFrom),
+        lpvoSeries: daily.map(([date, v]) => ({ date, value: v.pv > 0 ? (v.vo / v.pv) * 100 : 0 }))
+          .filter(p => p.value > 0).filter(p => p.date >= activeFrom),
+        vo2lSeries: daily.map(([date, v]) => ({ date, value: v.vo > 0 ? (v.subs / v.vo) * 100 : 0 }))
+          .filter(p => p.value > 0).filter(p => p.date >= activeFrom),
+        cprlSeries: (() => {
+          const win = 7
+          return daily.map((_, i) => {
+            const slice = daily.slice(Math.max(0, i - win + 1), i + 1)
+            const ts = slice.reduce((s, [, v]) => s + v.spend, 0)
+            const tl = slice.reduce((s, [, v]) => s + v.subs, 0)
+            return { date: daily[i][0], value: tl > 0 ? ts / tl : 0 }
+          }).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+        })(),
+        cpaSeries: (() => {
+          const win = 7
+          return daily.map((_, i) => {
+            const slice = daily.slice(Math.max(0, i - win + 1), i + 1)
+            const ts = slice.reduce((s, [, v]) => s + v.spend, 0)
+            const tc = slice.reduce((s, [, v]) => s + v.conv, 0)
+            return { date: daily[i][0], value: tc > 0 ? ts / tc : 0 }
+          }).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+        })(),
+      }
+    }
+    return out
+  }, [cgData, activeFrom])
+
+  // ── Global averages (benchmark target lines for SKU cards) ──
+  const globalCtrAvg = useMemo(() => {
+    const series = MCI_SKU_LIST.flatMap(sku => allSkuData[sku]?.ctrSeries ?? []).map(p => p.value).filter(v => v > 0)
+    return series.length > 0 ? series.reduce((s, v) => s + v, 0) / series.length : 0
+  }, [allSkuData])
+  const globalLpvoAvg = useMemo(() => {
+    const series = MCI_SKU_LIST.flatMap(sku => allSkuData[sku]?.lpvoSeries ?? []).map(p => p.value).filter(v => v > 0)
+    return series.length > 0 ? series.reduce((s, v) => s + v, 0) / series.length : 0
+  }, [allSkuData])
+  const globalVo2lAvg = useMemo(() => {
+    const series = MCI_SKU_LIST.flatMap(sku => allSkuData[sku]?.vo2lSeries ?? []).map(p => p.value).filter(v => v > 0)
+    return series.length > 0 ? series.reduce((s, v) => s + v, 0) / series.length : 0
+  }, [allSkuData])
+
+  // ── MCI SKU card metadata ──
+  const MCI_SKU_META: Record<string, { productName: string; color: string }> = {
+    CEK: { productName: 'CEK', color: '#34d399' },
+    A1C: { productName: 'A1C', color: '#38bdf8' },
+    WCA: { productName: 'WCA', color: '#a78bfa' },
+  }
+
+  // ── Per-SKU campaign breakdown (for CampaignEvaluator inside SkuPerformanceCard) ──
+  const campaignBreakdownBySku = useMemo(() => {
+    if (!cgData) return {} as Record<string, CampaignRow[]>
+    const perf = cgData.performance
+    const conv = cgData.conversions
+    const ga4Data = cgData.ga4
+    const dims = cgData.campaign_dimension
+
+    // dimension lookup
+    const dimMap = new Map<string, { campaign_name: string; funnel: string }>()
+    for (const d of dims) dimMap.set(`${d.traffic_source}|${d.campaign_id}`, d)
+
+    // Accumulate per (traffic_source, campaign_id, sku)
+    type Key = string
+    const acc = new Map<Key, { ts: string; cid: string; sku: string; spend: number; pv: number; vo: number; subs: number; conv: number }>()
+    const getOrInit = (ts: string, cid: string, sku: string) => {
+      const k = `${ts}|${cid}|${sku}`
+      let v = acc.get(k)
+      if (!v) { v = { ts, cid, sku, spend: 0, pv: 0, vo: 0, subs: 0, conv: 0 }; acc.set(k, v) }
+      return v
+    }
+    for (const r of perf) { if (r.date < activeFrom) continue; const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.spend += r.ad_spend }
+    for (const r of ga4Data) { if (r.date < activeFrom) continue; const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.pv += r.ga4_page_view; v.vo += r.ga4_view_offer }
+    for (const r of conv) { if (r.date < activeFrom) continue; const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id, r.sku); v.subs += (r.mongo_form_submission ?? 0); v.conv += (r.mongo_form_conversion ?? 0) }
+
+    // Build ads_added lookup: campaign_id|sku → count
+    const adsAddedMap = new Map<string, number>()
+    for (const a of (cgData.ads_added ?? [])) {
+      adsAddedMap.set(`${a.campaign_id}|${a.sku}`, a.ads_added)
+    }
+
+    // Build CampaignRow[] per SKU — map form_submission→real_lead_ccom, form_conversion→purchase_ccom
+    const out: Record<string, CampaignRow[]> = {}
+    for (const v of acc.values()) {
+      const dim = dimMap.get(`${v.ts}|${v.cid}`)
+      const row: CampaignRow = {
+        traffic_source: v.ts,
+        campaign_id: v.cid,
+        campaign_name: dim?.campaign_name ?? v.cid,
+        funnel: dim?.funnel ?? '-',
+        ad_spend: v.spend,
+        ga4_page_view: v.pv,
+        ga4_view_offer: v.vo,
+        real_lead_ccom: v.subs,  // form_submission mapped as "lead"
+        real_lead_d2or: 0,
+        real_lead_mpsh: 0,
+        real_lead_ofls: 0,
+        purchase_ccom: v.conv,   // form_conversion mapped as "purchase"
+        ads_added: adsAddedMap.get(`${v.cid}|${v.sku}`) ?? 0,
+      }
+      if (!out[v.sku]) out[v.sku] = []
+      out[v.sku].push(row)
+    }
+    return out
+  }, [cgData, activeFrom])
+
+  // ── Per-SKU budget data ──
+  const campaignBudgetData = useMemo(() => cgData?.campaign_budgets ?? [], [cgData])
+  const mciSkuBudgets = useMemo(() => {
+    const out = {} as Record<string, { spend: number; periodBudget: number; dailyBudget: number; targetDailyBudget: number; budgetDate: string }>
+    for (const sku of MCI_SKU_LIST) {
+      const spend = skuSpend.find(s => s.sku === sku)?.spend ?? 0
+      const skuPeriodBudget = targetData.filter(r => r.sku === sku).reduce((s, r) => s + r.daily_ad_spend, 0)
+      const latestTarget = latestTargetBySku.find(r => r.sku === sku)
+      const targetDailyBud = latestTarget?.daily_ad_spend ?? 0
+      const campaignDailyBud = campaignBudgetData.filter(r => r.sku === sku).reduce((s, r) => s + r.daily_budget, 0)
+      out[sku] = {
+        spend,
+        periodBudget: skuPeriodBudget,
+        dailyBudget: campaignDailyBud,
+        targetDailyBudget: targetDailyBud,
+        budgetDate: latestTarget?.date ?? '',
+      }
+    }
+    return out
+  }, [skuSpend, targetData, latestTargetBySku, campaignBudgetData])
 
   // ── Loading screen ──
   const isInitialLoad = cgLoading || (cgFetching && !cgData) || !activeFrom || !cgData
@@ -940,6 +1118,44 @@ export function HealthcareDashboard() {
           fvSeries={fvSeries}
           changelog={filteredChangelog}
         />
+
+        {/* Product Performance Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 40, marginTop: 20 }}>
+          {MCI_SKU_LIST.map(sku => {
+            const d = allSkuData[sku]
+            if (!d) return null
+            const meta = MCI_SKU_META[sku]
+            const b = mciSkuBudgets[sku]
+            return (
+              <SkuPerformanceCard
+                key={sku}
+                sku={sku}
+                productName={meta?.productName ?? sku}
+                skuColor={meta?.color ?? '#818cf8'}
+                from={activeFrom}
+                to={activeTo}
+                totalCtr={d.totals.ctr}
+                totalLpvo={d.totals.lpvo}
+                totalVo2l={d.totals.vo2l}
+                totalCprl={d.totals.cprl}
+                totalCpaCC={d.totals.cpaCC}
+                ctrSeries={d.ctrSeries}
+                lpvoSeries={d.lpvoSeries}
+                vo2lSeries={d.vo2lSeries}
+                cprlSeries={d.cprlSeries}
+                cpaSeries={d.cpaSeries}
+                globalCtrAvg={globalCtrAvg}
+                globalLpvoAvg={globalLpvoAvg}
+                globalVo2lAvg={globalVo2lAvg}
+                cprlLabel="CPR"
+                cpaLabel="CPV"
+                hideRoas
+                changelog={filteredChangelog}
+                campaignBreakdown={campaignBreakdownBySku[sku] ?? []}
+              />
+            )
+          })}
+        </div>
 
       </div>
     </div>

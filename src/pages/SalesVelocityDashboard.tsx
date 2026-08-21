@@ -36,7 +36,7 @@ const MA_BUFFER_DAYS = 30
 // Channel contribution percentages of total RoAS target
 const MNC_CHANNELS = {
   ccom_ca:  { label: 'CA (CCOM)',   pct: 0.067 },
-  ccom_crm: { label: 'CRM (CCOM)',  pct: 0.08  },
+  ccom_crm: { label: 'CLR (CCOM)',  pct: 0.08  },
   mpsh:     { label: 'MPSH',        pct: 0.19  },
   d2or:     { label: 'D2OR',        pct: 0.65  },
   ofls:     { label: 'OFLS',        pct: 0.013 },
@@ -1227,7 +1227,7 @@ export function SalesVelocityDashboard({
 
                 {/* Misc */}
                 <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', lineHeight: 1.7, marginTop: 2 }}>
-                  <div>CA · CRM · MPSH · D2OR · OFLS</div>
+                  <div>CA · CLR · MPSH · D2OR · OFLS</div>
                   <div>30-Day Moving Average</div>
                 </div>
               </div>
@@ -1243,7 +1243,7 @@ export function SalesVelocityDashboard({
               {skuVelocity.length > 0 && (
                 <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 20, paddingRight: 16, display: 'flex', flexDirection: 'column', gap: 5 }}>
                   <div style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2 }}>
-                    By SKU
+                    By Product
                   </div>
                   {skuVelocity.map(s => (
                     <div key={s.sku} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -1328,7 +1328,7 @@ export function SalesVelocityDashboard({
           changelog={filteredChangelog}
         />
         <ChannelRevCard
-          channelKey="ccom_crm" title="CRM Revenue"
+          channelKey="ccom_crm" title="CLR Revenue"
           revByDate={channelRevByDate.ccom_crm}
           soByDate={channelSOByDate.ccom_crm}
           dailyTarget={dailyAdSpendTarget}

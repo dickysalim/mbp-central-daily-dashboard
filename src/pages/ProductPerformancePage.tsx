@@ -993,7 +993,7 @@ export function ProductPerformancePage() {
       {/* SKU Cards — dynamic from DB */}
       <div className="dp-cards">
         {activeSkus.length === 0 && isLoading && (
-          <div className="dp-card-loading"><div className="tv-spinner" /><span>Loading SKUs…</span></div>
+          <div className="dp-card-loading"><div className="tv-spinner" /><span>Loading Products…</span></div>
         )}
         {activeSkus.map((sku, idx) => (
           <SKUCard
