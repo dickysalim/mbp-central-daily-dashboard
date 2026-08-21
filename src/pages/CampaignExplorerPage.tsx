@@ -326,6 +326,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
   }, [activeBounds, lastInit])
 
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null)
+  const [selectedSku, setSelectedSku] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('funnel')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [adSortKey, setAdSortKey] = useState<SortKey>('leads')
@@ -497,8 +498,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
         cpa: purchases > 0 ? a.ad_spend / purchases : 0,
         roas: a.ad_spend > 0 ? revenue / a.ad_spend : 0,
       }
-    }).filter(a => a.ad_title !== null && !a.ad_title.toLowerCase().includes('(deleted ad)'))
-  }, [adData])
+    })
+    .filter(a => a.ad_title !== null && !a.ad_title.toLowerCase().includes('(deleted ad)'))
+    .filter(a => !selectedSku || a.sku === selectedSku)
+  }, [adData, selectedSku])
 
   // ── Sorted ads ──
   const sortedAds = useMemo(() => {
@@ -737,12 +740,12 @@ function CampaignPage({ config }: { config: BrandConfig }) {
 
                     {/* Campaign rows (shown when expanded) */}
                     {isExpanded && skuCampaigns.map(c => {
-                      const isSelected = selectedCampaign === c.campaign_id
+                      const isSelected = selectedCampaign === c.campaign_id && selectedSku === sku
                       const funnelLabel = c.funnel === '00' ? 'ToFU00' : c.funnel === '25' ? 'MoFU25' : c.funnel === '50' ? 'BoFU50' : c.funnel === '75' ? 'BoFU75' : c.funnel ?? '-'
                       const funnelColor = c.funnel === '00' ? '#818cf8' : c.funnel === '25' ? '#60a5fa' : c.funnel === '50' ? '#fbbf24' : c.funnel === '75' ? '#fb923c' : 'rgba(255,255,255,0.3)'
                       return (
-                        <tr key={c.campaign_id}
-                          onClick={() => setSelectedCampaign(isSelected ? null : c.campaign_id)}
+                        <tr key={`${c.campaign_id}-${sku}`}
+                          onClick={() => { if (isSelected) { setSelectedCampaign(null); setSelectedSku(null) } else { setSelectedCampaign(c.campaign_id); setSelectedSku(sku) } }}
                           style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer', background: isSelected ? 'rgba(99,102,241,0.08)' : 'transparent', transition: 'background 0.1s' }}
                           onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
                           onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
