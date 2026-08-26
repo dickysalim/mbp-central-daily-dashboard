@@ -25,12 +25,14 @@ export interface LeadsQualityCardProps {
   purchaseCcom:    number
   purchaseBySku?:  SkuPurchase[]
   cpaSeries?:      CpaPoint[]
+  volumeSeries?:   CpaPoint[]
   changelog?:      ChangelogRow[]
   skuCpaCC?:       SkuCpaCCRow[]
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
-function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogRow[] }) {
+function CpaChart({ data, changelog, mode = 'ratio' }: { data: CpaPoint[]; changelog: ChangelogRow[]; mode?: 'ratio' | 'volume' }) {
+  const isVolume = mode === 'volume'
   const W = 320, H = 180, PAD = { top: 10, right: 44, bottom: 20, left: 6 }
   const innerW = W - PAD.left - PAD.right
   const innerH = H - PAD.top - PAD.bottom
@@ -43,13 +45,15 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
 
   const vals = data.map(d => d.value)
   const minV = 0
-  const maxV = Math.max(CPA_CC_TARGET * 2, ...vals)
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length
+  const refLine = isVolume ? avg : CPA_CC_TARGET
+  const maxV = isVolume ? Math.max(...vals) * 1.15 : Math.max(CPA_CC_TARGET * 2, ...vals)
   const rng  = maxV - minV || 1
   const n    = vals.length
 
   const xs = (i: number) => PAD.left + (i / (n - 1)) * innerW
   const ys = (v: number) => PAD.top + innerH - ((v - minV) / rng) * innerH
-  const tY  = ys(CPA_CC_TARGET)
+  const tY  = ys(refLine)
 
   const mX = (n - 1) / 2
   const mY = vals.reduce((a, b) => a + b, 0) / n
@@ -57,9 +61,11 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
                 vals.reduce((s, _, i) => s + (i - mX) ** 2, 0)
   const ic  = mY - slope * mX
   const tUp = slope > 0
-  const tc  = tUp ? '#f87171' : '#34d399'
-  const rate = Math.abs((slope / CPA_CC_TARGET) * 100)
-  const lineColor = !tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171'
+  const tc  = isVolume ? (tUp ? '#34d399' : '#f87171') : (tUp ? '#f87171' : '#34d399')
+  const rate = Math.abs((slope / (refLine || 1)) * 100)
+  const lineColor = isVolume
+    ? (tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171')
+    : (!tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171')
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
 
@@ -95,11 +101,11 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
       <svg ref={ref} width={W} height={H}
         onMouseMove={onMove} onMouseLeave={() => setTooltip(null)}
         style={{ display: 'block', overflow: 'visible', cursor: 'crosshair' }}>
-        {above.map((p, i) => <polygon key={`a${i}`} points={p} fill="#f87171" fillOpacity="0.1" />)}
-        {below.map((p, i) => <polygon key={`b${i}`} points={p} fill="#34d399" fillOpacity="0.1" />)}
+        {above.map((p, i) => <polygon key={`a${i}`} points={p} fill={isVolume ? '#34d399' : '#f87171'} fillOpacity="0.1" />)}
+        {below.map((p, i) => <polygon key={`b${i}`} points={p} fill={isVolume ? '#f87171' : '#34d399'} fillOpacity="0.1" />)}
         <line x1={PAD.left} y1={tY} x2={W - PAD.right} y2={tY} stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
-        <text x={W - PAD.right + 3} y={tY + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">2M</text>
-        {Math.max(...vals) > CPA_CC_TARGET * 2 && (() => {
+        <text x={W - PAD.right + 3} y={tY + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">{isVolume ? (avg >= 1000 ? `${(avg / 1000).toFixed(1)}K` : Math.round(avg).toString()) : '2M'}</text>
+        {!isVolume && Math.max(...vals) > CPA_CC_TARGET * 2 && (() => {
           const ceilY = ys(CPA_CC_TARGET * 2)
           return <>
             <line x1={PAD.left} y1={ceilY} x2={W - PAD.right} y2={ceilY}
@@ -134,7 +140,7 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
       <div style={{ marginTop: 8 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: `${tc}12`, border: `1px solid ${tc}28`, borderRadius: 4, padding: '3px 7px' }}>
           <span style={{ fontSize: 9, fontWeight: 800, color: tc }}>{tUp ? '↑' : '↓'}</span>
-          <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{tUp ? 'Diverging' : 'Converging'}</span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{isVolume ? (tUp ? 'Increasing' : 'Decreasing') : (tUp ? 'Diverging' : 'Converging')}</span>
           <span style={{ fontSize: 9, color: tc, opacity: 1 }}>{rate.toFixed(1)}%/d</span>
         </div>
       </div>
@@ -148,7 +154,7 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
           borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
         }}>
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginBottom: 1 }}>{sd(tooltip.p.date)}</div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#f472b6' }}>{fmtRp(Math.round(tooltip.p.value))} CPA CC</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#f472b6' }}>{isVolume ? `${Math.round(tooltip.p.value).toLocaleString('id-ID')} purchases` : `${fmtRp(Math.round(tooltip.p.value))} CPA CC`}</div>
         </div>
       )}
 
@@ -162,13 +168,15 @@ function CpaChart({ data, changelog }: { data: CpaPoint[]; changelog: ChangelogR
 
 // ── Main card ─────────────────────────────────────────────────────────────────
 export function LeadsQualityCard({
-  totalSpend, purchaseCcom, purchaseBySku = [], cpaSeries = [], changelog = [], skuCpaCC = [],
+  totalSpend, purchaseCcom, purchaseBySku = [], cpaSeries = [], volumeSeries = [], changelog = [], skuCpaCC = [],
 }: LeadsQualityCardProps) {
   const cpaCC  = purchaseCcom > 0 ? totalSpend / purchaseCcom : 0
   const div    = cpaCC > 0 ? ((cpaCC - CPA_CC_TARGET) / CPA_CC_TARGET) * 100 : null
   const sc     = div === null ? '#818cf8' : div <= 0 ? '#34d399' : div <= 10 ? '#fbbf24' : '#f87171'
   const sl     = div === null ? 'No Data' : div <= 0 ? '🟢 On Target' : div <= 10 ? '🟡 Slightly Over' : '🔴 Over Target'
   const hasChart = cpaSeries.length > 1
+  const [chartMode, setChartMode] = useState<'ratio' | 'volume'>('ratio')
+  const activeChartData = chartMode === 'volume' && volumeSeries.length > 1 ? volumeSeries : cpaSeries
 
   return (
     <div style={{
@@ -210,9 +218,19 @@ export function LeadsQualityCard({
 
         {/* MIDDLE: chart */}
         {hasChart && (
-          <div style={{ flex: '0 0 320px', minWidth: 0, ...T.divider, display: 'flex', alignItems: 'center' }}>
-            <div style={{ width: '100%', maxWidth: 320 }}>
-              <CpaChart data={cpaSeries} changelog={changelog} />
+          <div style={{ flex: '0 0 320px', minWidth: 0, ...T.divider, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
+              {(['ratio', 'volume'] as const).map(m => (
+                <button key={m} onClick={() => setChartMode(m)} style={{
+                  padding: '1px 6px', fontSize: 8, fontWeight: 700, borderRadius: 3,
+                  border: 'none', cursor: 'pointer', letterSpacing: '0.03em',
+                  background: chartMode === m ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+                  color: chartMode === m ? '#fff' : 'rgba(255,255,255,0.35)',
+                }}>{m === 'ratio' ? '7D MA' : 'Volume'}</button>
+              ))}
+            </div>
+            <div style={{ width: '100%', maxWidth: 320, flex: 1, display: 'flex', alignItems: 'center' }}>
+              <CpaChart data={activeChartData} changelog={changelog} mode={chartMode} />
             </div>
           </div>
         )}

@@ -79,6 +79,10 @@ export interface SkuPerformanceCardProps {
 
   // Per-platform CPR/CPV cards (MCI: breakdown by META, SRCH, etc.)
   platformCards?: { source: string; label: string; color: string; image?: string; spend: number; cpr: number; cpv: number; cprSeries: { date: string; value: number }[]; cpvSeries: { date: string; value: number }[]; registrations: number; conversions: number }[]
+
+  // Volume series (daily counts for Volume toggle)
+  cprlVolumeSeries?: SkuPoint[]
+  cpaVolumeSeries?: SkuPoint[]
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -435,9 +439,13 @@ export function SkuPerformanceCard({
   compactLayout = false,
   hideRoas = false,
   platformCards,
+  cprlVolumeSeries = [],
+  cpaVolumeSeries = [],
 }: SkuPerformanceCardProps) {
   const label = skuLabel ?? sku
   const [open, setOpen] = useState(false)
+  const [cprlChartMode, setCprlChartMode] = useState<'ratio' | 'volume'>('ratio')
+  const [cpaChartMode, setCpaChartMode] = useState<'ratio' | 'volume'>('ratio')
 
   // SKU-level changelog: entries that match this SKU specifically,
   // OR have no SKU set (applies to all SKUs). Trim to guard against whitespace.
@@ -464,30 +472,41 @@ export function SkuPerformanceCard({
     ? 'Rp ' + (v / 1_000_000).toFixed(1) + 'M'
     : 'Rp ' + (v / 1_000).toFixed(0) + 'K'
 
+  const mkVolFmt = (v: number) => v >= 1000 ? (v / 1000).toFixed(1) + 'K' : Math.round(v).toString()
+
+  const cprlIsVolume = cprlChartMode === 'volume' && cprlVolumeSeries.length > 1
+  const cpaIsVolume = cpaChartMode === 'volume' && cpaVolumeSeries.length > 1
+  const cprlVolAvg = cprlVolumeSeries.length > 0 ? cprlVolumeSeries.reduce((s, p) => s + p.value, 0) / cprlVolumeSeries.length : 0
+  const cpaVolAvg = cpaVolumeSeries.length > 0 ? cpaVolumeSeries.reduce((s, p) => s + p.value, 0) / cpaVolumeSeries.length : 0
+
   // Top row: CPRL + CPA CC
   const topCharts: ChartDef[] = [
     {
       key: `${sku}-cprl`, label: cprlLabel, color: '#818cf8',
-      series: cprlSeries, higherIsBetter: false, fixedTarget: cprlTarget,
+      series: cprlIsVolume ? cprlVolumeSeries : cprlSeries,
+      higherIsBetter: cprlIsVolume ? true : false,
+      fixedTarget: cprlIsVolume ? cprlVolAvg : cprlTarget,
       metricValue:   totalCprl  > 0 ? fmtRp(Math.round(totalCprl))  : '\u2014',
-      metricSub:     `Target ${fmtShortRp(cprlTarget)}`,
+      metricSub:     cprlIsVolume ? `Avg ${mkVolFmt(cprlVolAvg)}` : `Target ${fmtShortRp(cprlTarget)}`,
       statusLabel:   totalCprl  > 0 ? (totalCprl  <= cprlTarget ? 'On Target' : 'Off Target') : null,
       statusGood:    totalCprl  <= cprlTarget,
       divergencePct: totalCprl  > 0 ? divPct(totalCprl,  cprlTarget) : 0,
-      fmt:      (v) => fmtRp(Math.round(v)),
-      fmtShort: (v) => mkRpFmt(v),
+      fmt:      cprlIsVolume ? (v: number) => Math.round(v).toLocaleString('id-ID') : (v: number) => fmtRp(Math.round(v)),
+      fmtShort: cprlIsVolume ? (v: number) => mkVolFmt(v) : (v: number) => mkRpFmt(v),
       targetFontSize: 12,
     },
     {
       key: `${sku}-cpa`, label: cpaLabel, color: '#f472b6',
-      series: cpaSeries, higherIsBetter: false, fixedTarget: cpaTarget,
+      series: cpaIsVolume ? cpaVolumeSeries : cpaSeries,
+      higherIsBetter: cpaIsVolume ? true : false,
+      fixedTarget: cpaIsVolume ? cpaVolAvg : cpaTarget,
       metricValue:   totalCpaCC > 0 ? fmtRp(Math.round(totalCpaCC)) : '\u2014',
-      metricSub:     `Target ${fmtShortRp(cpaTarget)}`,
+      metricSub:     cpaIsVolume ? `Avg ${mkVolFmt(cpaVolAvg)}` : `Target ${fmtShortRp(cpaTarget)}`,
       statusLabel:   totalCpaCC > 0 ? (totalCpaCC <= cpaTarget  ? 'On Target' : 'Off Target') : null,
       statusGood:    totalCpaCC <= cpaTarget,
       divergencePct: totalCpaCC > 0 ? divPct(totalCpaCC, cpaTarget)  : 0,
-      fmt:      (v) => fmtRp(Math.round(v)),
-      fmtShort: (v) => mkRpFmt(v),
+      fmt:      cpaIsVolume ? (v: number) => Math.round(v).toLocaleString('id-ID') : (v: number) => fmtRp(Math.round(v)),
+      fmtShort: cpaIsVolume ? (v: number) => mkVolFmt(v) : (v: number) => mkRpFmt(v),
       targetFontSize: 12,
     },
     ...(!hideRoas ? [{
@@ -948,6 +967,23 @@ export function SkuPerformanceCard({
                     <div style={{ width: 5, height: 5, borderRadius: '50%', background: c.color }} />
                     <span style={{ fontSize: 10, fontWeight: 700, color: c.color, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>{c.label}</span>
                   </div>
+                  {/* 7D MA / Volume toggle */}
+                  {((idx === 0 && cprlVolumeSeries.length > 1) || (idx === 1 && cpaVolumeSeries.length > 1)) && (
+                    <div style={{ display: 'flex', gap: 3, marginBottom: -2 }}>
+                      {(['ratio', 'volume'] as const).map(m => {
+                        const active = idx === 0 ? cprlChartMode === m : cpaChartMode === m
+                        const setMode = idx === 0 ? setCprlChartMode : setCpaChartMode
+                        return (
+                          <button key={m} onClick={() => setMode(m)} style={{
+                            padding: '1px 5px', fontSize: 7, fontWeight: 700, borderRadius: 3,
+                            border: 'none', cursor: 'pointer', letterSpacing: '0.03em',
+                            background: active ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+                            color: active ? '#fff' : 'rgba(255,255,255,0.35)',
+                          }}>{m === 'ratio' ? '7D MA' : 'Volume'}</button>
+                        )
+                      })}
+                    </div>
+                  )}
                   {/* Value */}
                   <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
                     {c.metricValue}

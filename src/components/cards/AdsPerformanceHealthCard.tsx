@@ -21,6 +21,7 @@ export interface AdsPerformanceHealthCardProps {
   realLeadCcom: number; realLeadD2or: number
   realLeadMpsh: number; realLeadOfls: number
   cprlSeries?: CprlPoint[]
+  volumeSeries?: CprlPoint[]
   changelog?: ChangelogRow[]
   skuCprl?: SkuCprlRow[]
   cprlTarget?: number
@@ -36,7 +37,8 @@ const CHANNELS = [
 ] as const
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
-function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changelog: ChangelogRow[]; cprlTarget: number }) {
+function CprlChart({ data, changelog, cprlTarget, mode = 'ratio' }: { data: CprlPoint[]; changelog: ChangelogRow[]; cprlTarget: number; mode?: 'ratio' | 'volume' }) {
+  const isVolume = mode === 'volume'
   const W = 320, H = 180, PAD = { top: 10, right: 52, bottom: 20, left: 6 }
   const innerW = W - PAD.left - PAD.right
   const innerH = H - PAD.top - PAD.bottom
@@ -49,13 +51,15 @@ function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changel
 
   const vals = data.map(d => d.value)
   const minV = 0
-  const maxV = Math.max(cprlTarget * 2, ...vals)
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length
+  const refLine = isVolume ? avg : cprlTarget
+  const maxV = isVolume ? Math.max(...vals) * 1.15 : Math.max(cprlTarget * 2, ...vals)
   const rng  = maxV - minV || 1
   const n    = vals.length
 
   const xs = (i: number) => PAD.left + (i / (n - 1)) * innerW
   const ys = (v: number) => PAD.top + innerH - ((v - minV) / rng) * innerH
-  const tY  = ys(cprlTarget)
+  const tY  = ys(refLine)
 
   const mX = (n - 1) / 2
   const mY = vals.reduce((a, b) => a + b, 0) / n
@@ -63,9 +67,12 @@ function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changel
                 vals.reduce((s, _, i) => s + (i - mX) ** 2, 0)
   const ic  = mY - slope * mX
   const tUp = slope > 0
-  const tc  = tUp ? '#f87171' : '#34d399'
-  const rate = Math.abs((slope / cprlTarget) * 100)
-  const lineColor = !tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171'
+  // Volume: higher is better (up=green). Ratio: lower is better (up=red)
+  const tc  = isVolume ? (tUp ? '#34d399' : '#f87171') : (tUp ? '#f87171' : '#34d399')
+  const rate = Math.abs((slope / (refLine || 1)) * 100)
+  const lineColor = isVolume
+    ? (tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171')
+    : (!tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171')
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
 
@@ -101,11 +108,11 @@ function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changel
       <svg ref={ref} width={W} height={H}
         onMouseMove={onMove} onMouseLeave={() => setTooltip(null)}
         style={{ display: 'block', overflow: 'visible', cursor: 'crosshair' }}>
-        {above.map((p, i) => <polygon key={`a${i}`} points={p} fill="#f87171" fillOpacity="0.1" />)}
-        {below.map((p, i) => <polygon key={`b${i}`} points={p} fill="#34d399" fillOpacity="0.1" />)}
+        {above.map((p, i) => <polygon key={`a${i}`} points={p} fill={isVolume ? '#34d399' : '#f87171'} fillOpacity="0.1" />)}
+        {below.map((p, i) => <polygon key={`b${i}`} points={p} fill={isVolume ? '#f87171' : '#34d399'} fillOpacity="0.1" />)}
         <line x1={PAD.left} y1={tY} x2={W - PAD.right} y2={tY} stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
-        <text x={W - PAD.right + 3} y={tY + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">{cprlTarget >= 1_000_000 ? `${(cprlTarget / 1_000_000).toFixed(1)}M` : `${Math.round(cprlTarget / 1_000)}K`}</text>
-        {Math.max(...vals) > cprlTarget * 2 && (() => {
+        <text x={W - PAD.right + 3} y={tY + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">{isVolume ? (avg >= 1000 ? `${(avg / 1000).toFixed(1)}K` : Math.round(avg).toString()) : (cprlTarget >= 1_000_000 ? `${(cprlTarget / 1_000_000).toFixed(1)}M` : `${Math.round(cprlTarget / 1_000)}K`)}</text>
+        {!isVolume && Math.max(...vals) > cprlTarget * 2 && (() => {
           const ceilY = ys(cprlTarget * 2)
           return <>
             <line x1={PAD.left} y1={ceilY} x2={W - PAD.right} y2={ceilY}
@@ -141,7 +148,7 @@ function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changel
       <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: `${tc}12`, border: `1px solid ${tc}28`, borderRadius: 4, padding: '3px 7px' }}>
           <span style={{ fontSize: 9, fontWeight: 800, color: tc }}>{tUp ? '↑' : '↓'}</span>
-          <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{tUp ? 'Diverging' : 'Converging'}</span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{isVolume ? (tUp ? 'Increasing' : 'Decreasing') : (tUp ? 'Diverging' : 'Converging')}</span>
           <span style={{ fontSize: 9, color: tc, opacity: 1 }}>{rate.toFixed(1)}%/d</span>
         </div>
       </div>
@@ -155,7 +162,7 @@ function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changel
           borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
         }}>
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginBottom: 1 }}>{sd(tooltip.p.date)}</div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#818cf8' }}>{fmtRp(Math.round(tooltip.p.value))} / lead</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#818cf8' }}>{isVolume ? `${Math.round(tooltip.p.value).toLocaleString('id-ID')} leads` : `${fmtRp(Math.round(tooltip.p.value))} / lead`}</div>
         </div>
       )}
 
@@ -170,7 +177,7 @@ function CprlChart({ data, changelog, cprlTarget }: { data: CprlPoint[]; changel
 // ── Main card ─────────────────────────────────────────────────────────────────
 export function AdsPerformanceHealthCard({
   totalSpend, realLeadCcom, realLeadD2or, realLeadMpsh, realLeadOfls,
-  cprlSeries = [], changelog = [], skuCprl = [], cprlTarget,
+  cprlSeries = [], volumeSeries = [], changelog = [], skuCprl = [], cprlTarget,
 }: AdsPerformanceHealthCardProps) {
   const CPRL_TARGET = cprlTarget ?? DEFAULT_CPRL_TARGET
   const vals  = { ccom: realLeadCcom, d2or: realLeadD2or, mpsh: realLeadMpsh, ofls: realLeadOfls }
@@ -180,6 +187,8 @@ export function AdsPerformanceHealthCard({
   const sc    = div === null ? '#818cf8' : div <= 0 ? '#34d399' : div <= 10 ? '#fbbf24' : '#f87171'
   const sl    = div === null ? 'No Data' : div <= 0 ? '🟢 On Target' : div <= 10 ? '🟡 Slightly Over' : '🔴 Over Target'
   const hasChart = cprlSeries.length > 1
+  const [chartMode, setChartMode] = useState<'ratio' | 'volume'>('ratio')
+  const activeChartData = chartMode === 'volume' && volumeSeries.length > 1 ? volumeSeries : cprlSeries
 
   return (
     <div style={{
@@ -251,9 +260,19 @@ export function AdsPerformanceHealthCard({
 
         {/* MIDDLE: chart */}
         {hasChart && (
-          <div style={{ flex: '0 0 320px', minWidth: 0, ...T.divider, display: 'flex', alignItems: 'center' }}>
-            <div style={{ width: '100%', maxWidth: 320 }}>
-              <CprlChart data={cprlSeries} changelog={changelog} cprlTarget={CPRL_TARGET} />
+          <div style={{ flex: '0 0 320px', minWidth: 0, ...T.divider, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
+              {(['ratio', 'volume'] as const).map(m => (
+                <button key={m} onClick={() => setChartMode(m)} style={{
+                  padding: '1px 6px', fontSize: 8, fontWeight: 700, borderRadius: 3,
+                  border: 'none', cursor: 'pointer', letterSpacing: '0.03em',
+                  background: chartMode === m ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+                  color: chartMode === m ? '#fff' : 'rgba(255,255,255,0.35)',
+                }}>{m === 'ratio' ? 'Daily' : 'Volume'}</button>
+              ))}
+            </div>
+            <div style={{ width: '100%', maxWidth: 320, flex: 1, display: 'flex', alignItems: 'center' }}>
+              <CprlChart data={activeChartData} changelog={changelog} cprlTarget={chartMode === 'ratio' ? CPRL_TARGET : 0} mode={chartMode} />
             </div>
           </div>
         )}

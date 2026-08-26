@@ -116,15 +116,17 @@ function DonutPie({ slices, title }: {
 }
 
 // ── SVG Trend Chart (CPR / CPV) with Changelog ─────────────────────────────
-function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel }: {
+function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel, mode = 'ratio' }: {
   data: { date: string; value: number }[]
   color: string
   unit: string
   changelog?: ChangelogRow[]
   target?: number
   targetLabel?: string
+  mode?: 'ratio' | 'volume'
 }) {
-  const W = 320, H = 180, PAD = { top: 10, right: target ? 52 : 10, bottom: 20, left: 6 }
+  const isVolume = mode === 'volume'
+  const W = 320, H = 180, PAD = { top: 10, right: (isVolume || target) ? 52 : 10, bottom: 20, left: 6 }
   const innerW = W - PAD.left - PAD.right
   const innerH = H - PAD.top - PAD.bottom
   const [tooltip, setTooltip] = useState<{ x: number; y: number; p: { date: string; value: number } } | null>(null)
@@ -136,7 +138,9 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
 
   const vals = data.map(d => d.value)
   const minV = 0
-  const maxV = Math.max((target ?? Math.max(...vals)) * 2, ...vals)
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length
+  const refLine = isVolume ? avg : target
+  const maxV = isVolume ? Math.max(...vals) * 1.15 : Math.max((target ?? Math.max(...vals)) * 2, ...vals)
   const rng = maxV - minV || 1
   const n = vals.length
 
@@ -150,16 +154,18 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
                 vals.reduce((s, _, i) => s + (i - mX) ** 2, 0)
   const ic = mY - slope * mX
   const tUp = slope > 0
-  const tc = tUp ? '#f87171' : '#34d399'
-  const rate = target ? Math.abs((slope / target) * 100) : Math.abs((slope / mY) * 100)
-  const lineColor = !tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171'
+  const tc = isVolume ? (tUp ? '#34d399' : '#f87171') : (tUp ? '#f87171' : '#34d399')
+  const rate = refLine ? Math.abs((slope / refLine) * 100) : Math.abs((slope / mY) * 100)
+  const lineColor = isVolume
+    ? (tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171')
+    : (!tUp ? '#34d399' : rate < 1 ? '#fbbf24' : '#f87171')
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
 
   // Target zones — above/below polygons per segment
   const above: string[] = [], below: string[] = []
-  if (target != null) {
-    const tY = ys(target)
+  if (isVolume || target != null) {
+    const tY = ys(isVolume ? avg : target!)
     for (let i = 0; i < n - 1; i++) {
       const ya = ys(data[i].value), yb = ys(data[i + 1].value)
       const xa = xs(i), xb = xs(i + 1)
@@ -197,16 +203,16 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
         onMouseMove={onMove} onMouseLeave={() => setTooltip(null)}
         style={{ display: 'block', overflow: 'visible', cursor: 'crosshair', width: '100%', height: 'auto' }}>
         {/* Target zones */}
-        {above.map((p, i) => <polygon key={`a${i}`} points={p} fill="#f87171" fillOpacity="0.1" />)}
-        {below.map((p, i) => <polygon key={`b${i}`} points={p} fill="#34d399" fillOpacity={target != null ? "0.1" : "0.06"} />)}
-        {/* Target line */}
-        {target != null && (
+        {above.map((p, i) => <polygon key={`a${i}`} points={p} fill={isVolume ? '#34d399' : '#f87171'} fillOpacity="0.1" />)}
+        {below.map((p, i) => <polygon key={`b${i}`} points={p} fill={isVolume ? '#f87171' : '#34d399'} fillOpacity={(!isVolume && target == null) ? "0.06" : "0.1"} />)}
+        {/* Reference line (target or avg) */}
+        {(isVolume || target != null) && (
           <>
-            <line x1={PAD.left} y1={ys(target)} x2={W - PAD.right} y2={ys(target)} stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
-            <text x={W - PAD.right + 3} y={ys(target) + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">{targetLabel ?? ''}</text>
+            <line x1={PAD.left} y1={ys(isVolume ? avg : target!)} x2={W - PAD.right} y2={ys(isVolume ? avg : target!)} stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
+            <text x={W - PAD.right + 3} y={ys(isVolume ? avg : target!) + 5} fontSize="12" fill="#94a3b8" opacity="1" fontWeight="700">{isVolume ? (avg >= 1000 ? `${(avg / 1000).toFixed(1)}K` : Math.round(avg).toString()) : (targetLabel ?? '')}</text>
           </>
         )}
-        {target != null && Math.max(...vals) > target * 2 && (() => {
+        {!isVolume && target != null && Math.max(...vals) > target * 2 && (() => {
           const ceilY = ys(target * 2)
           return <>
             <line x1={PAD.left} y1={ceilY} x2={W - PAD.right} y2={ceilY}
@@ -243,10 +249,10 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
       </svg>
 
       {/* Trend badge */}
-      <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 18 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: `${tc}12`, border: `1px solid ${tc}28`, borderRadius: 4, padding: '3px 7px' }}>
           <span style={{ fontSize: 9, fontWeight: 800, color: tc }}>{tUp ? '↑' : '↓'}</span>
-          <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{tUp ? 'Diverging' : 'Converging'}</span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{isVolume ? (tUp ? 'Increasing' : 'Decreasing') : (tUp ? 'Diverging' : 'Converging')}</span>
           <span style={{ fontSize: 9, color: tc, opacity: 1 }}>{rate.toFixed(1)}%/d</span>
         </div>
       </div>
@@ -260,7 +266,7 @@ function MciTrendChart({ data, color, unit, changelog = [], target, targetLabel 
           borderRadius: 7, padding: '4px 8px', backdropFilter: 'blur(8px)',
         }}>
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginBottom: 1 }}>{sd(tooltip.p.date)}</div>
-          <div style={{ fontSize: 11, fontWeight: 700, color }}>{fmtRp(Math.round(tooltip.p.value))} {unit}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color }}>{isVolume ? `${Math.round(tooltip.p.value).toLocaleString('id-ID')} ${unit}` : `${fmtRp(Math.round(tooltip.p.value))} ${unit}`}</div>
         </div>
       )}
 
@@ -336,6 +342,8 @@ export function HealthcareDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const spinRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [spinAngle, setSpinAngle] = useState(0)
+  const [cprChartMode, setCprChartMode] = useState<'ratio' | 'volume'>('ratio')
+  const [cpvChartMode, setCpvChartMode] = useState<'ratio' | 'volume'>('ratio')
 
   const handleRefresh = () => {
     setIsRefreshing(true)
@@ -482,6 +490,28 @@ export function HealthcareDashboard() {
     }).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
   }, [cgData, activeFrom])
 
+  // Daily form submissions volume (for Volume toggle on Ads Performance)
+  const cprVolumeSeries = useMemo(() => {
+    const byDate = new Map<string, number>()
+    for (const r of cgData?.conversions ?? []) {
+      if (!r.sku || r.sku === '-' || !MCI_SKUS.has(r.sku)) continue
+      byDate.set(r.date, (byDate.get(r.date) ?? 0) + (r.mongo_form_submission ?? 0))
+    }
+    return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, value]) => ({ date, value })).filter(p => p.date >= activeFrom)
+  }, [cgData, activeFrom])
+
+  // Daily form conversions volume (for Volume toggle on Leads Quality)
+  const cpvVolumeSeries = useMemo(() => {
+    const byDate = new Map<string, number>()
+    for (const r of cgData?.conversions ?? []) {
+      if (!r.sku || r.sku === '-' || !MCI_SKUS.has(r.sku)) continue
+      byDate.set(r.date, (byDate.get(r.date) ?? 0) + (r.mongo_form_conversion ?? 0))
+    }
+    return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, value]) => ({ date, value })).filter(p => p.date >= activeFrom)
+  }, [cgData, activeFrom])
+
   // Per-SKU CPR and CPV
   const skuCpr = useMemo(() => {
     return (['CEK', 'A1C', 'WCA'] as const).map(sku => {
@@ -565,6 +595,7 @@ export function HealthcareDashboard() {
       ctrSeries: Point[]; lpvoSeries: Point[]; vo2lSeries: Point[]
       cprlSeries: Point[]; cpaSeries: Point[]
       cprlRawSeries: Point[]; cpaRawSeries: Point[]
+      cprlVolumeSeries: Point[]; cpaVolumeSeries: Point[]
     }
     const out = {} as Record<string, SkuOut>
 
@@ -634,6 +665,10 @@ export function HealthcareDashboard() {
           .filter(p => p.value > 0).filter(p => p.date >= activeFrom),
         cpaRawSeries: daily.map(([date, v]) => ({ date, value: v.conv > 0 ? v.spend / v.conv : 0 }))
           .filter(p => p.value > 0).filter(p => p.date >= activeFrom),
+        cprlVolumeSeries: daily.map(([date, v]) => ({ date, value: v.subs }))
+          .filter(p => p.date >= activeFrom),
+        cpaVolumeSeries: daily.map(([date, v]) => ({ date, value: v.conv }))
+          .filter(p => p.date >= activeFrom),
       }
     }
     return out
@@ -1004,9 +1039,19 @@ export function HealthcareDashboard() {
 
               {/* MIDDLE: CPR chart */}
               {cprSeries.length > 1 && (
-                <div style={{ flex: '0 0 320px', minWidth: 0, borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 24, display: 'flex', alignItems: 'center' }}>
-                  <div style={{ width: '100%', maxWidth: 320 }}>
-                    <MciTrendChart data={cprSeries} color="#34d399" unit="/ result" changelog={filteredChangelog} target={100_000} targetLabel="100K" />
+                <div style={{ flex: '0 0 320px', minWidth: 0, borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 24, display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
+                    {(['ratio', 'volume'] as const).map(m => (
+                      <button key={m} onClick={() => setCprChartMode(m)} style={{
+                        padding: '1px 6px', fontSize: 8, fontWeight: 700, borderRadius: 3,
+                        border: 'none', cursor: 'pointer', letterSpacing: '0.03em',
+                        background: cprChartMode === m ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+                        color: cprChartMode === m ? '#fff' : 'rgba(255,255,255,0.35)',
+                      }}>{m === 'ratio' ? '7D MA' : 'Volume'}</button>
+                    ))}
+                  </div>
+                  <div style={{ width: '100%', maxWidth: 320, flex: 1, display: 'flex', alignItems: 'center' }}>
+                    <MciTrendChart data={cprChartMode === 'volume' ? cprVolumeSeries : cprSeries} color="#34d399" unit={cprChartMode === 'volume' ? 'submissions' : '/ result'} changelog={filteredChangelog} target={cprChartMode === 'ratio' ? 100_000 : undefined} targetLabel="100K" mode={cprChartMode} />
                   </div>
                 </div>
               )}
@@ -1077,9 +1122,19 @@ export function HealthcareDashboard() {
 
               {/* MIDDLE: CPV chart */}
               {cpvSeries.length > 1 && (
-                <div style={{ flex: '0 0 320px', minWidth: 0, borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 24, display: 'flex', alignItems: 'center' }}>
-                  <div style={{ width: '100%', maxWidth: 320 }}>
-                    <MciTrendChart data={cpvSeries} color="#f472b6" unit="/ visit" changelog={filteredChangelog} target={500_000} targetLabel="500K" />
+                <div style={{ flex: '0 0 320px', minWidth: 0, borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 24, display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
+                    {(['ratio', 'volume'] as const).map(m => (
+                      <button key={m} onClick={() => setCpvChartMode(m)} style={{
+                        padding: '1px 6px', fontSize: 8, fontWeight: 700, borderRadius: 3,
+                        border: 'none', cursor: 'pointer', letterSpacing: '0.03em',
+                        background: cpvChartMode === m ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+                        color: cpvChartMode === m ? '#fff' : 'rgba(255,255,255,0.35)',
+                      }}>{m === 'ratio' ? '7D MA' : 'Volume'}</button>
+                    ))}
+                  </div>
+                  <div style={{ width: '100%', maxWidth: 320, flex: 1, display: 'flex', alignItems: 'center' }}>
+                    <MciTrendChart data={cpvChartMode === 'volume' ? cpvVolumeSeries : cpvSeries} color="#f472b6" unit={cpvChartMode === 'volume' ? 'visits' : '/ visit'} changelog={filteredChangelog} target={cpvChartMode === 'ratio' ? 500_000 : undefined} targetLabel="500K" mode={cpvChartMode} />
                   </div>
                 </div>
               )}
@@ -1151,6 +1206,8 @@ export function HealthcareDashboard() {
                 cpaSeries={d.cpaSeries}
                 cprlRawSeries={d.cprlRawSeries}
                 cpaRawSeries={d.cpaRawSeries}
+                cprlVolumeSeries={d.cprlVolumeSeries}
+                cpaVolumeSeries={d.cpaVolumeSeries}
                 cprlMaLabel="7d MA"
                 cpaMaLabel="7d MA"
                 globalCtrAvg={globalCtrAvg}

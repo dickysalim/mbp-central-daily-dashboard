@@ -341,6 +341,18 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       .filter(p => p.value > 0).filter(p => p.date >= activeFrom)
   }, [rawData, activeFrom])
 
+  // Daily leads volume series (for Ratio/Volume toggle)
+  const leadsVolumeSeries = useMemo((): CprlPoint[] => {
+    const byDate = new Map<string, number>()
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
+      byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls)
+    }
+    return Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, value]) => ({ date, value }))
+      .filter(p => p.date >= activeFrom)
+  }, [rawData, activeFrom])
+
   // CPA CC totals + daily series + SKU breakdown
   const totalPurchaseCcom = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.purchase_ccom, 0), [rawData, activeFrom])
   const cpaSeries = useMemo(() => {
@@ -360,6 +372,18 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       const totalPurchases = slice.reduce((s, d) => s + d.purchases, 0)
       return { date: daily[i].date, value: totalPurchases > 0 ? totalSpend / totalPurchases : 0 }
     }).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [rawData, activeFrom])
+
+  // Daily purchases volume series (for Ratio/Volume toggle)
+  const purchasesVolumeSeries = useMemo((): CprlPoint[] => {
+    const byDate = new Map<string, number>()
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
+      byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.purchase_ccom)
+    }
+    return Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, value]) => ({ date, value }))
+      .filter(p => p.date >= activeFrom)
   }, [rawData, activeFrom])
 
   const purchaseBySku = useMemo(() => {
@@ -836,6 +860,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             realLeadMpsh={totalLeadMpsh}
             realLeadOfls={totalLeadOfls}
             cprlSeries={cprlSeries}
+            volumeSeries={leadsVolumeSeries}
             changelog={filteredChangelog}
             cprlTarget={fixedBrand === 'GOL' ? (cprlSeries.length > 0 ? Math.round(cprlSeries.reduce((s, p) => s + p.value, 0) / cprlSeries.length) : undefined) : undefined}
             skuCprl={skuList.map((sku): SkuCprlRow => {
@@ -852,6 +877,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             purchaseCcom={totalPurchaseCcom}
             purchaseBySku={purchaseBySku}
             cpaSeries={cpaSeries}
+            volumeSeries={purchasesVolumeSeries}
             changelog={filteredChangelog}
             skuCpaCC={skuList.map((sku): SkuCpaCCRow => {
               const d = allSkuData[sku]
