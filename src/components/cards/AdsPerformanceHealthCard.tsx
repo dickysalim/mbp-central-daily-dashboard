@@ -199,7 +199,7 @@ export function AdsPerformanceHealthCard({
       <div style={{ display: 'flex', flexDirection: 'row', gap: 24 }}>
 
         {/* LEFT: CPRL metrics */}
-        <div style={{ flex: '0 0 150px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ flex: '0 0 140px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div>
             <div style={{ ...T.section, marginBottom: 3 }}>CPRL</div>
             <div style={T.headline}>
@@ -217,6 +217,36 @@ export function AdsPerformanceHealthCard({
               <span style={T.tiny}>real leads</span>
             </div>
           </div>
+
+          {/* Channel breakdown */}
+          {total > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+              <div style={{ ...T.section, marginBottom: -2 }}>By Channel</div>
+              {CHANNELS.map(ch => {
+                const v = vals[ch.key]
+                if (v <= 0) return null
+                const pct = (v / total) * 100
+                return (
+                  <div key={ch.key}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: ch.color, letterSpacing: '0.07em' }}>{ch.label}</span>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
+                          {v.toLocaleString('id-ID')}
+                        </span>
+                        <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>
+                          {pct.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: ch.color, borderRadius: 2, transition: 'width 0.4s ease' }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* MIDDLE: chart */}
@@ -263,6 +293,8 @@ export function AdsPerformanceHealthCard({
             })()}
           </div>
         )}
+
+
       </div>
     </div>
   )

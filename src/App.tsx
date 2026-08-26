@@ -10,6 +10,7 @@ import { GeneralOverviewPage } from './pages/GeneralOverviewPage'
 import { SalesVelocityDashboard, GOLSalesVelocityDashboard } from './pages/SalesVelocityDashboard'
 import { PipelineStatusPage } from './pages/PipelineStatusPage'
 import { CampaignExplorerPage, GolCampaignExplorerPage, MciCampaignExplorerPage } from './pages/CampaignExplorerPage'
+import { CsvDownloaderPage } from './pages/CsvDownloaderPage'
 import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO, IS_MNC, IS_MCI } from './config/domainConfig'
 
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ function App() {
 
             {/* Shared routes */}
             <Route path="/platform-overview" element={<PlatformOverviewPage brand={platformBrand} />} />
+            <Route path="/csv-downloader" element={<CsvDownloaderPage />} />
 
             {/* MNC routes — available on MNC + main domain */}
             {!IS_GOLO && !IS_MCI && <>

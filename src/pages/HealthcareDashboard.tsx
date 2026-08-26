@@ -564,6 +564,7 @@ export function HealthcareDashboard() {
       totals: { ctr: number; lpvo: number; vo2l: number; cprl: number; cpaCC: number }
       ctrSeries: Point[]; lpvoSeries: Point[]; vo2lSeries: Point[]
       cprlSeries: Point[]; cpaSeries: Point[]
+      cprlRawSeries: Point[]; cpaRawSeries: Point[]
     }
     const out = {} as Record<string, SkuOut>
 
@@ -629,6 +630,10 @@ export function HealthcareDashboard() {
             return { date: daily[i][0], value: tc > 0 ? ts / tc : 0 }
           }).filter(p => p.value > 0).filter(p => p.date >= activeFrom)
         })(),
+        cprlRawSeries: daily.map(([date, v]) => ({ date, value: v.subs > 0 ? v.spend / v.subs : 0 }))
+          .filter(p => p.value > 0).filter(p => p.date >= activeFrom),
+        cpaRawSeries: daily.map(([date, v]) => ({ date, value: v.conv > 0 ? v.spend / v.conv : 0 }))
+          .filter(p => p.value > 0).filter(p => p.date >= activeFrom),
       }
     }
     return out
@@ -1144,6 +1149,10 @@ export function HealthcareDashboard() {
                 vo2lSeries={d.vo2lSeries}
                 cprlSeries={d.cprlSeries}
                 cpaSeries={d.cpaSeries}
+                cprlRawSeries={d.cprlRawSeries}
+                cpaRawSeries={d.cpaRawSeries}
+                cprlMaLabel="7d MA"
+                cpaMaLabel="7d MA"
                 globalCtrAvg={globalCtrAvg}
                 globalLpvoAvg={globalLpvoAvg}
                 globalVo2lAvg={globalVo2lAvg}

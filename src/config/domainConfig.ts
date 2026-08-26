@@ -14,12 +14,12 @@ export const DOMAIN_BRAND = IS_GOLO ? 'GOLO' : IS_MNC ? 'MNC' : IS_MCI ? 'MCI' :
 
 /** Sidebar routes visible on the current domain */
 export const ALLOWED_ROUTES: string[] = IS_GOLO
-  ? ['/gol', '/gol-sales-velocity', '/gol-campaigns', '/platform-overview']
+  ? ['/gol', '/gol-sales-velocity', '/gol-campaigns', '/platform-overview', '/csv-downloader']
   : IS_MNC
-  ? ['/mnc', '/platform-overview', '/sales-velocity', '/campaign-explorer']
+  ? ['/mnc', '/platform-overview', '/sales-velocity', '/campaign-explorer', '/csv-downloader']
   : IS_MCI
-  ? ['/mci', '/mci-campaigns', '/platform-overview']
-  : ['/overview', '/mnc', '/gol', '/mci', '/platform-overview', '/sales-velocity', '/gol-sales-velocity', '/campaign-explorer', '/gol-campaigns', '/mci-campaigns', '/pipeline-status']
+  ? ['/mci', '/mci-campaigns', '/platform-overview', '/csv-downloader']
+  : ['/overview', '/mnc', '/gol', '/mci', '/platform-overview', '/sales-velocity', '/gol-sales-velocity', '/campaign-explorer', '/gol-campaigns', '/mci-campaigns', '/pipeline-status', '/csv-downloader']
 
 /** Default landing page */
 export const DEFAULT_ROUTE = IS_GOLO ? '/gol' : IS_MNC ? '/mnc' : IS_MCI ? '/mci' : '/overview'

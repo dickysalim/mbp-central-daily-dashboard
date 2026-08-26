@@ -38,7 +38,7 @@ interface ApiResponse {
   daily_perf: DailyPerfRow[]
   daily_conv: DailyConvRow[]
   daily_ga4: DailyGa4Row[]
-  ads_added: { campaign_id: string; ads_added: number }[]
+  ads_added: { campaign_id: string; sku: string; ads_added: number }[]
   bridge_page: { ad_id: string; created_by: string | null; lp_url: string | null; notion_url: string | null }[]
 }
 
@@ -46,6 +46,7 @@ const fmtK = (n: number) => n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' : 
 const fmtRpShort = (n: number) => 'Rp ' + fmtK(n)
 const fmtPct = (n: number) => (n * 100).toFixed(1) + '%'
 const fmtPctShort = (n: number) => (n * 100).toFixed(1) + '%'
+const fmtNum = (n: number) => Math.round(n).toLocaleString('id-ID')
 const stripAdPrefix = (title: string) => { const idx = title.indexOf('ADS'); return idx >= 0 ? title.slice(idx) : title }
 
 // ── Moving average helper ──
@@ -198,20 +199,26 @@ function FullChart({ data, color, fixedTarget, higherIsBetter, fmt, fmtShort, ch
 }
 
 // ── Metric Card with full chart ──
-function MetricCard({ label, value, sub, color, series, fixedTarget, higherIsBetter, fmt: fmtFn, fmtShort: fmtShortFn, adsMarkers }: {
+function MetricCard({ label, value, sub, color, series, fixedTarget, higherIsBetter, fmt: fmtFn, fmtShort: fmtShortFn, adsMarkers, rawSeries, maLabel }: {
   label: string; value: string; sub?: string; color: string; series: ChartPoint[]
   fixedTarget?: number; higherIsBetter: boolean
   fmt: (v: number) => string; fmtShort: (v: number) => string
   adsMarkers?: AdsMarker[]
+  rawSeries?: ChartPoint[]
+  maLabel?: string
 }) {
+  const [showMA, setShowMA] = useState(true)
+  const hasToggle = !!rawSeries && rawSeries.length >= 2
+  const activeSeries = hasToggle && !showMA ? rawSeries! : series
+
   const isGood = (() => {
-    if (series.length < 2 || !fixedTarget) return true
-    const last = series[series.length - 1].value
+    if (activeSeries.length < 2 || !fixedTarget) return true
+    const last = activeSeries[activeSeries.length - 1].value
     return higherIsBetter ? last >= fixedTarget : last <= fixedTarget
   })()
   const divergence = (() => {
-    if (series.length < 2 || !fixedTarget) return 0
-    const last = series[series.length - 1].value
+    if (activeSeries.length < 2 || !fixedTarget) return 0
+    const last = activeSeries[activeSeries.length - 1].value
     return Math.abs(((last - fixedTarget) / fixedTarget) * 100)
   })()
   const isWarn = !isGood && divergence < 10
@@ -234,7 +241,23 @@ function MetricCard({ label, value, sub, color, series, fixedTarget, higherIsBet
           </div>
         )}
       </div>
-      <FullChart data={series} color={color} fixedTarget={fixedTarget} higherIsBetter={higherIsBetter} fmt={fmtFn} fmtShort={fmtShortFn} chartKey={label} adsMarkers={adsMarkers} />
+      {hasToggle && (
+        <div style={{ display: 'flex', gap: 3, marginBottom: 4, justifyContent: 'flex-start' }}>
+          <button onClick={() => setShowMA(true)} style={{
+            padding: '1px 6px', fontSize: 8, fontWeight: 700, borderRadius: 3,
+            border: 'none', cursor: 'pointer', letterSpacing: '0.03em',
+            background: showMA ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+            color: showMA ? '#fff' : 'rgba(255,255,255,0.35)',
+          }}>{maLabel}</button>
+          <button onClick={() => setShowMA(false)} style={{
+            padding: '1px 6px', fontSize: 8, fontWeight: 700, borderRadius: 3,
+            border: 'none', cursor: 'pointer', letterSpacing: '0.03em',
+            background: !showMA ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+            color: !showMA ? '#fff' : 'rgba(255,255,255,0.35)',
+          }}>Daily</button>
+        </div>
+      )}
+      <FullChart data={activeSeries} color={color} fixedTarget={fixedTarget} higherIsBetter={higherIsBetter} fmt={fmtFn} fmtShort={fmtShortFn} chartKey={label} adsMarkers={adsMarkers} />
     </div>
   )
 }
@@ -380,14 +403,14 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     const convMap = new Map<string, ConvRow>()
     for (const c of campData.campaign_conversions) convMap.set(`${c.campaign_id}|${c.sku ?? ''}`, c)
     const adsAddedMap = new Map<string, number>()
-    for (const a of (campData.ads_added ?? [])) adsAddedMap.set(a.campaign_id, a.ads_added)
+    for (const a of (campData.ads_added ?? [])) adsAddedMap.set(`${a.campaign_id}|${a.sku ?? ''}`, a.ads_added)
 
     return campData.campaigns.filter(c => c.campaign_name?.includes('[META]')).map(c => {
       const cv = convMap.get(`${c.campaign_id}|${c.sku ?? ''}`)
       const leads = cv ? (useFormConversions ? (cv.form_submission ?? 0) : (cv.real_lead_ccom + cv.real_lead_d2or + cv.real_lead_mpsh + cv.real_lead_ofls)) : 0
       const purchases = cv ? (useFormConversions ? (cv.form_conversion ?? 0) : (cv.purchase_ccom ?? 0)) : 0
       const revenue = useFormConversions ? 0 : (cv?.purchase_revenue ?? 0)
-      const adsAdded = adsAddedMap.get(c.campaign_id) ?? 0
+      const adsAdded = adsAddedMap.get(`${c.campaign_id}|${c.sku ?? ''}`) ?? 0
       return { ...c, leads, purchases, revenue, cprl: leads > 0 ? c.ad_spend / leads : 0, cpa: purchases > 0 ? c.ad_spend / purchases : 0, roas: c.ad_spend > 0 ? revenue / c.ad_spend : 0, adsAdded }
     })
   }, [campData])
@@ -550,10 +573,12 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     const spendMA = movingAvg(dailySpend, 14)
     const leadsMA = movingAvg(dailyLeads, 14)
     const cprlSeriesRaw: ChartPoint[] = dates.map((d, i) => ({ date: d, value: leadsMA[i] > 0 ? spendMA[i] / leadsMA[i] : 0 }))
+    const cprlDailySeriesRaw: ChartPoint[] = dates.map((d, i) => ({ date: d, value: dailyLeads[i] > 0 ? dailySpend[i] / dailyLeads[i] : 0 }))
 
     // CPA CC = MA14(spend) / MA14(purchases)
     const purchasesMA = movingAvg(dailyPurchases, 14)
     const cpaSeriesRaw: ChartPoint[] = dates.map((d, i) => ({ date: d, value: purchasesMA[i] > 0 ? spendMA[i] / purchasesMA[i] : 0 }))
+    const cpaDailySeriesRaw: ChartPoint[] = dates.map((d, i) => ({ date: d, value: dailyPurchases[i] > 0 ? dailySpend[i] / dailyPurchases[i] : 0 }))
 
     // CTR = clicks / impressions
     const ctrSeriesRaw: ChartPoint[] = dates.map((d, i) => ({ date: d, value: dailyImpressions[i] > 0 ? dailyClicks[i] / dailyImpressions[i] : 0 }))
@@ -567,7 +592,9 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     // Trim warm-up rows — only keep dates >= dateFrom
     const trim = (s: ChartPoint[]) => s.filter(p => p.date >= dateFrom)
     const cprlSeries = trim(cprlSeriesRaw)
+    const cprlDailySeries = trim(cprlDailySeriesRaw)
     const cpaSeries = trim(cpaSeriesRaw)
+    const cpaDailySeries = trim(cpaDailySeriesRaw)
     const ctrSeries = trim(ctrSeriesRaw)
     const lpvoSeries = trim(lpvoSeriesRaw)
     const vo2lSeries = trim(vo2lSeriesRaw)
@@ -585,8 +612,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     return {
       cprl: totalLeads > 0 ? totalSpend / totalLeads : 0,
       cprlSeries,
+      cprlDailySeries,
       cpa: totalPurchases > 0 ? totalSpend / totalPurchases : 0,
       cpaSeries,
+      cpaDailySeries,
       ctr: totalImpressions > 0 ? totalClicks / totalImpressions : 0,
       ctrSeries,
       lpvo: totalPageView > 0 ? totalViewOffer / totalPageView : 0,
@@ -695,8 +724,8 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                   <td style={{ padding: '7px 10px', fontWeight: 800, color: '#818cf8' }}>ALL PRODUCTS</td>
                   <td style={{ padding: '7px 10px' }}></td>
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.spend)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.leads}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.purchases}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtNum(totals.leads)}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtNum(totals.purchases)}</td>
                   {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.revenue)}</td>}
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRp(Math.round(totals.cprl))}</td>
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRp(Math.round(totals.cpa))}</td>
@@ -729,8 +758,8 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                       </td>
                       <td style={{ padding: '8px 10px' }}></td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(t.spend)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.leads}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.purchases}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtNum(t.leads)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtNum(t.purchases)}</td>
                       {!hideRoas && <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(t.revenue)}</td>}
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.cprl > 0 ? fmtRp(Math.round(t.cprl)) : '-'}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.cpa > 0 ? fmtRp(Math.round(t.cpa)) : '-'}</td>
@@ -756,8 +785,8 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                           </td>
                           <td style={{ padding: '7px 10px' }}><span style={{ fontSize: 9, fontWeight: 700, color: funnelColor, padding: '1px 5px', borderRadius: 3, background: `${funnelColor}18`, border: `1px solid ${funnelColor}30` }}>{funnelLabel}</span></td>
                           <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(c.ad_spend)}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.leads || '-'}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.purchases || '-'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.leads ? fmtNum(c.leads) : '-'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.purchases ? fmtNum(c.purchases) : '-'}</td>
                           {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.revenue > 0 ? fmtRpShort(c.revenue) : '-'}</td>}
                           <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cprl > 0 ? fmtRp(Math.round(c.cprl)) : '-'}</td>
                           <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cpa > 0 ? fmtRp(Math.round(c.cpa)) : '-'}</td>
@@ -784,11 +813,13 @@ function CampaignPage({ config }: { config: BrandConfig }) {
             <MetricCard label={cfgCprlLabel ?? 'CPRL'} value={campaignCharts.cprl > 0 ? fmtRp(Math.round(campaignCharts.cprl)) : '—'}
               sub="Target Rp 150K" color="#818cf8" series={campaignCharts.cprlSeries}
               fixedTarget={150_000} higherIsBetter={false}
-              fmt={(v) => fmtRp(Math.round(v))} fmtShort={(v) => fmtRpShort(v)} adsMarkers={adsMarkers} />
+              fmt={(v) => fmtRp(Math.round(v))} fmtShort={(v) => fmtRpShort(v)} adsMarkers={adsMarkers}
+              rawSeries={campaignCharts.cprlDailySeries} maLabel="14d MA" />
             <MetricCard label={cfgCpaLabel ?? 'CPA CC'} value={campaignCharts.cpa > 0 ? fmtRp(Math.round(campaignCharts.cpa)) : '—'}
               sub="Target Rp 2M" color="#f472b6" series={campaignCharts.cpaSeries}
               fixedTarget={2_000_000} higherIsBetter={false}
-              fmt={(v) => fmtRp(Math.round(v))} fmtShort={(v) => fmtRpShort(v)} adsMarkers={adsMarkers} />
+              fmt={(v) => fmtRp(Math.round(v))} fmtShort={(v) => fmtRpShort(v)} adsMarkers={adsMarkers}
+              rawSeries={campaignCharts.cpaDailySeries} maLabel="14d MA" />
             <MetricCard label="LPVO" value={fmtPct(campaignCharts.lpvo)} color="#fbbf24" series={campaignCharts.lpvoSeries}
               higherIsBetter={true} fmt={(v) => fmtPct(v)} fmtShort={(v) => fmtPctShort(v)} adsMarkers={adsMarkers} />
             <MetricCard label="VO2L" value={fmtPct(campaignCharts.vo2l)} color="#f87171" series={campaignCharts.vo2lSeries}
@@ -876,7 +907,12 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                         ? <a href={a.notion_url} target="_blank" rel="noopener noreferrer" style={{ color: '#818cf8', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')} onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}>{titleText}</a>
                         : <span style={{ color: 'rgba(255,255,255,0.7)' }}>{titleText}</span>}
                     </td>
-                    <td style={{ padding: '6px 10px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap', fontSize: 9 }}>{a.publish_date ?? '-'}</td>
+                    <td style={{ padding: '6px 10px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap', fontSize: 9 }}>
+                      {a.publish_date ? <>
+                        {a.publish_date >= dateFrom && a.publish_date <= dateTo && <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#f87171', marginRight: 4, verticalAlign: 'middle' }} title="Published within selected period" />}
+                        {a.publish_date}
+                      </> : '-'}
+                    </td>
                     <td style={{ padding: '6px 10px', color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap', fontSize: 9 }}>{a.created_by ?? '-'}</td>
                     <td style={{ padding: '6px 10px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 9 }}>
                       {a.lp_url
@@ -903,8 +939,8 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                       })()}
                     </td>}
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(a.ad_spend)}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.leads || '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.purchases || '-'}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.leads ? fmtNum(a.leads) : '-'}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.purchases ? fmtNum(a.purchases) : '-'}</td>
                     {!hideRoas && <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.revenue > 0 ? fmtRpShort(a.revenue) : '-'}</td>}
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.cprl > 0 ? fmtRp(Math.round(a.cprl)) : '-'}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.cpa > 0 ? fmtRp(Math.round(a.cpa)) : '-'}</td>
