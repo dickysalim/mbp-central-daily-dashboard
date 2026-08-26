@@ -2,7 +2,7 @@
  * CsvDownloaderPage — Aggregated data table with CSV export
  */
 import React, { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import { DOMAIN_BRAND } from '../config/domainConfig'
 
@@ -89,6 +89,7 @@ interface AggRow {
 }
 
 export function CsvDownloaderPage() {
+  const queryClient = useQueryClient()
   const [brand, setBrand] = useState<string>(BRANDS[0])
   const [dateFrom, setDateFrom] = useState(daysAgo(30))
   const [dateTo, setDateTo] = useState(daysAgo(2))
@@ -280,6 +281,14 @@ export function CsvDownloaderPage() {
             ))}
           </div>
         </div>
+
+        {/* Refresh button */}
+        <button onClick={() => queryClient.invalidateQueries({ queryKey: ['csv-data', brand, dateFrom, dateTo] })} style={{
+          padding: '8px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer',
+          fontWeight: 700, fontSize: 12, letterSpacing: '0.03em',
+          background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)',
+          transition: 'all 0.15s',
+        }}>⟳ Refresh</button>
 
         {/* Download button */}
         <button onClick={handleDownload} disabled={rows.length === 0} style={{
