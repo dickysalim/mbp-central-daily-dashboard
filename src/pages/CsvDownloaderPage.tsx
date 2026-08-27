@@ -160,14 +160,40 @@ const defaultColumnsForBrand = (b: string) =>
 
 export function CsvDownloaderPage() {
   const queryClient = useQueryClient()
+
+  // ── LocalStorage helpers ─────────────────────────────────────────────────
+  const LS_KEY = 'csv_dl_config'
+  type SavedConfig = {
+    selectedColumns: string[]
+    dimensions: { trafficSource: boolean; product: boolean }
+    dimSortBy: 'none' | 'trafficSource' | 'product'
+    dimSortDir: 'asc' | 'desc'
+    dateBreakdown: 'daily' | 'isoweek' | 'monthly'
+    dateSortDir: 'asc' | 'desc'
+  }
+
+  const loadConfig = useCallback((b: string): SavedConfig | null => {
+    try {
+      const raw = localStorage.getItem(`${LS_KEY}_${b}`)
+      return raw ? JSON.parse(raw) : null
+    } catch { return null }
+  }, [])
+
+  const saveConfig = useCallback((b: string, cfg: SavedConfig) => {
+    try { localStorage.setItem(`${LS_KEY}_${b}`, JSON.stringify(cfg)) } catch {}
+  }, [])
+
+  // ── State ────────────────────────────────────────────────────────────────
   const [brand, setBrand] = useState<string>(BRANDS[0])
+
+  const initCfg = loadConfig(BRANDS[0])
   const [dateFrom, setDateFrom] = useState(daysAgo(30))
   const [dateTo, setDateTo] = useState(daysAgo(2))
-  const [dateBreakdown, setDateBreakdown] = useState<'daily' | 'isoweek' | 'monthly'>('daily')
-  const [dateSortDir, setDateSortDir] = useState<'asc' | 'desc'>('asc')
-  const [dimSortBy, setDimSortBy] = useState<'none' | 'trafficSource' | 'product'>('none')
-  const [dimSortDir, setDimSortDir] = useState<'asc' | 'desc'>('asc')
-  const [dimensions, setDimensions] = useState<{ trafficSource: boolean; product: boolean }>({ trafficSource: false, product: false })
+  const [dateBreakdown, setDateBreakdown] = useState<'daily' | 'isoweek' | 'monthly'>(initCfg?.dateBreakdown ?? 'daily')
+  const [dateSortDir, setDateSortDir] = useState<'asc' | 'desc'>(initCfg?.dateSortDir ?? 'asc')
+  const [dimSortBy, setDimSortBy] = useState<'none' | 'trafficSource' | 'product'>(initCfg?.dimSortBy ?? 'none')
+  const [dimSortDir, setDimSortDir] = useState<'asc' | 'desc'>(initCfg?.dimSortDir ?? 'asc')
+  const [dimensions, setDimensions] = useState<{ trafficSource: boolean; product: boolean }>(initCfg?.dimensions ?? { trafficSource: false, product: false })
 
   const toggleDim = (key: 'trafficSource' | 'product') =>
     setDimensions(prev => ({ ...prev, [key]: !prev[key] }))
@@ -267,17 +293,37 @@ export function CsvDownloaderPage() {
   const availableMetrics = useMemo(() => availableColumns.filter(c => c.group === 'metrics'), [availableColumns])
   const availableRatios  = useMemo(() => availableColumns.filter(c => c.group === 'ratios'), [availableColumns])
 
-  const [selectedColumns, setSelectedColumns] = useState<string[]>(() => defaultColumnsForBrand(brand))
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(() =>
+    initCfg?.selectedColumns ?? defaultColumnsForBrand(brand)
+  )
   const [showColumnPicker, setShowColumnPicker] = useState(false)
 
-  // Reset columns when brand changes
+  // Restore config when brand changes
   const prevBrandRef = React.useRef(brand)
   React.useEffect(() => {
     if (prevBrandRef.current !== brand) {
-      setSelectedColumns(defaultColumnsForBrand(brand))
+      const cfg = loadConfig(brand)
+      if (cfg) {
+        setSelectedColumns(cfg.selectedColumns)
+        setDimensions(cfg.dimensions)
+        setDimSortBy(cfg.dimSortBy)
+        setDimSortDir(cfg.dimSortDir)
+        setDateBreakdown(cfg.dateBreakdown)
+        setDateSortDir(cfg.dateSortDir)
+      } else {
+        setSelectedColumns(defaultColumnsForBrand(brand))
+        setDimensions({ trafficSource: false, product: false })
+        setDimSortBy('none')
+        setDimSortDir('asc')
+      }
       prevBrandRef.current = brand
     }
-  }, [brand])
+  }, [brand, loadConfig])
+
+  // Auto-save config to localStorage
+  React.useEffect(() => {
+    saveConfig(brand, { selectedColumns, dimensions, dimSortBy, dimSortDir, dateBreakdown, dateSortDir })
+  }, [brand, selectedColumns, dimensions, dimSortBy, dimSortDir, dateBreakdown, dateSortDir, saveConfig])
 
   const activeColumns = useMemo(() =>
     selectedColumns.map(id => availableColumns.find(c => c.id === id)).filter((c): c is ColDef => c != null),
