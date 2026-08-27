@@ -194,9 +194,11 @@ export function CsvDownloaderPage() {
   const [dimSortBy, setDimSortBy] = useState<'none' | 'trafficSource' | 'product'>(initCfg?.dimSortBy ?? 'none')
   const [dimSortDir, setDimSortDir] = useState<'asc' | 'desc'>(initCfg?.dimSortDir ?? 'asc')
   const [dimensions, setDimensions] = useState<{ trafficSource: boolean; product: boolean }>(initCfg?.dimensions ?? { trafficSource: false, product: false })
+  const [dimFilterTS, setDimFilterTS] = useState<Set<string> | null>(null)   // null = show all
+  const [dimFilterProd, setDimFilterProd] = useState<Set<string> | null>(null)
 
-  const toggleDim = (key: 'trafficSource' | 'product') =>
-    setDimensions(prev => ({ ...prev, [key]: !prev[key] }))
+  const toggleDim = useCallback((key: 'trafficSource' | 'product') =>
+    setDimensions(prev => ({ ...prev, [key]: !prev[key] })), [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['csv-data', brand, dateFrom, dateTo],
@@ -206,6 +208,23 @@ export function CsvDownloaderPage() {
     },
     enabled: !!dateFrom && !!dateTo,
   })
+
+  // Unique dimension values from raw data
+  const uniqueTrafficSources = useMemo(() => {
+    if (!data) return []
+    const s = new Set<string>()
+    for (const p of data.performance) s.add(p.traffic_source)
+    for (const g of (data.ga4 ?? [])) s.add(g.traffic_source)
+    return [...s].sort()
+  }, [data])
+
+  const uniqueProducts = useMemo(() => {
+    if (!data) return []
+    const s = new Set<string>()
+    for (const p of data.performance) if (p.sku && !p.sku.toUpperCase().includes('B2B')) s.add(p.sku)
+    for (const g of (data.ga4 ?? [])) if (g.sku && !g.sku.toUpperCase().includes('B2B')) s.add(g.sku)
+    return [...s].sort()
+  }, [data])
 
   // Aggregate data
   const rows = useMemo((): AggRow[] => {
@@ -275,19 +294,24 @@ export function CsvDownloaderPage() {
 
     const dateDir = dateSortDir === 'asc' ? 1 : -1
     const dDir = dimSortDir === 'asc' ? 1 : -1
-    return Array.from(map.values()).filter(r => r.ad_spend > 0).sort((a, b) => {
-      // Dimension sort first
-      if (dimSortBy === 'trafficSource') {
-        const cmp = dDir * a.traffic_source.localeCompare(b.traffic_source)
-        if (cmp !== 0) return cmp
-      } else if (dimSortBy === 'product') {
-        const cmp = dDir * a.product.localeCompare(b.product)
-        if (cmp !== 0) return cmp
-      }
-      // Date sort second
-      return dateDir * a.period.localeCompare(b.period)
-    })
-  }, [data, dateBreakdown, dateSortDir, dimSortBy, dimSortDir, dimensions])
+    return Array.from(map.values())
+      .filter(r => r.ad_spend > 0)
+      .filter(r => {
+        if (dimensions.trafficSource && dimFilterTS && !dimFilterTS.has(r.traffic_source)) return false
+        if (dimensions.product && dimFilterProd && !dimFilterProd.has(r.product)) return false
+        return true
+      })
+      .sort((a, b) => {
+        if (dimSortBy === 'trafficSource') {
+          const cmp = dDir * a.traffic_source.localeCompare(b.traffic_source)
+          if (cmp !== 0) return cmp
+        } else if (dimSortBy === 'product') {
+          const cmp = dDir * a.product.localeCompare(b.product)
+          if (cmp !== 0) return cmp
+        }
+        return dateDir * a.period.localeCompare(b.period)
+      })
+  }, [data, dateBreakdown, dateSortDir, dimSortBy, dimSortDir, dimensions, dimFilterTS, dimFilterProd])
 
   const availableColumns = useMemo(() => ALL_COLUMNS.filter(c => c.brands.includes(brand)), [brand])
   const availableMetrics = useMemo(() => availableColumns.filter(c => c.group === 'metrics'), [availableColumns])
@@ -302,6 +326,9 @@ export function CsvDownloaderPage() {
   const prevBrandRef = React.useRef(brand)
   React.useEffect(() => {
     if (prevBrandRef.current !== brand) {
+      // Always reset dim value filters on brand change (they're data-specific)
+      setDimFilterTS(null)
+      setDimFilterProd(null)
       const cfg = loadConfig(brand)
       if (cfg) {
         setSelectedColumns(cfg.selectedColumns)
@@ -370,15 +397,31 @@ export function CsvDownloaderPage() {
   }, [])
   const handleDragEnd = useCallback(() => { dragItemRef.current = null; setDragOverId(null) }, [])
 
-  // Build headers
-  const dimHeaders: string[] = []
-  if (dimensions.trafficSource) dimHeaders.push('Traffic Source')
-  if (dimensions.product) dimHeaders.push('Product')
+  // Build headers (memoized)
+  const dimHeaders = useMemo(() => {
+    const h: string[] = []
+    if (dimensions.trafficSource) h.push('Traffic Source')
+    if (dimensions.product) h.push('Product')
+    return h
+  }, [dimensions.trafficSource, dimensions.product])
 
   const dateLabel = dateBreakdown === 'isoweek' ? 'ISO Week' : dateBreakdown === 'monthly' ? 'Month' : 'Date'
-  const allHeaders = [dateLabel, ...dimHeaders, ...activeColumns.map(c => c.label)]
+  const allHeaders = useMemo(() => [dateLabel, ...dimHeaders, ...activeColumns.map(c => c.label)], [dateLabel, dimHeaders, activeColumns])
 
-  const handleDownload = () => {
+  // Frozen column config (memoized)
+  const frozen = useMemo(() => {
+    const DATE_W = 180, DIM_W = 80
+    const widths = [DATE_W]
+    if (dimensions.trafficSource) widths.push(DIM_W)
+    if (dimensions.product) widths.push(DIM_W)
+    const lefts = widths.reduce<number[]>((acc, _, i) => {
+      acc.push(i === 0 ? 0 : acc[i - 1] + widths[i - 1])
+      return acc
+    }, [])
+    return { count: widths.length, widths, lefts }
+  }, [dimensions.trafficSource, dimensions.product])
+
+  const handleDownload = useCallback(() => {
     const csvRows = rows.map(r => {
       const dims: (string | number)[] = []
       if (dimensions.trafficSource) dims.push(r.traffic_source)
@@ -388,7 +431,7 @@ export function CsvDownloaderPage() {
     })
     const csv = toCsv(allHeaders, csvRows)
     downloadCsv(`${brand}_data_${dateBreakdown}_${dateFrom}_${dateTo}.csv`, csv)
-  }
+  }, [rows, dimensions, activeColumns, allHeaders, brand, dateBreakdown, dateFrom, dateTo])
 
   return (
     <div style={{ padding: '32px 40px', fontFamily: 'Inter, system-ui, sans-serif', color: '#fff' }}>
@@ -510,6 +553,92 @@ export function CsvDownloaderPage() {
                 )
               })}
             </div>
+
+            {/* Traffic Source value filter */}
+            {dimensions.trafficSource && uniqueTrafficSources.length > 0 && (
+              <>
+                <div style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 10, marginBottom: 4 }}>
+                  Sources
+                  <button onClick={() => setDimFilterTS(null)} style={{
+                    marginLeft: 6, padding: '1px 5px', fontSize: 7, fontWeight: 700, borderRadius: 3,
+                    border: 'none', cursor: 'pointer',
+                    background: !dimFilterTS ? 'rgba(129,140,248,0.2)' : 'rgba(255,255,255,0.06)',
+                    color: !dimFilterTS ? '#818cf8' : 'rgba(255,255,255,0.35)',
+                  }}>All</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {uniqueTrafficSources.map(ts => {
+                    const isOn = !dimFilterTS || dimFilterTS.has(ts)
+                    return (
+                      <button key={ts} onClick={() => {
+                        setDimFilterTS(prev => {
+                          if (!prev) { const s = new Set(uniqueTrafficSources); s.delete(ts); return s }
+                          const next = new Set(prev)
+                          if (next.has(ts)) next.delete(ts); else next.add(ts)
+                          return next.size === uniqueTrafficSources.length ? null : next
+                        })
+                      }} style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        padding: '2px 6px', fontSize: 9, fontWeight: 600, borderRadius: 3,
+                        border: 'none', cursor: 'pointer', textAlign: 'left',
+                        background: isOn ? 'rgba(52,211,153,0.1)' : 'rgba(255,255,255,0.02)',
+                        color: isOn ? '#34d399' : 'rgba(255,255,255,0.3)',
+                      }}>
+                        <span style={{
+                          width: 10, height: 10, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          border: isOn ? '1.5px solid #34d399' : '1.5px solid rgba(255,255,255,0.12)',
+                          background: isOn ? '#34d399' : 'transparent', fontSize: 7, color: '#111', fontWeight: 900,
+                        }}>{isOn ? '✓' : ''}</span>
+                        {ts}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Product value filter */}
+            {dimensions.product && uniqueProducts.length > 0 && (
+              <>
+                <div style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 10, marginBottom: 4 }}>
+                  Products
+                  <button onClick={() => setDimFilterProd(null)} style={{
+                    marginLeft: 6, padding: '1px 5px', fontSize: 7, fontWeight: 700, borderRadius: 3,
+                    border: 'none', cursor: 'pointer',
+                    background: !dimFilterProd ? 'rgba(129,140,248,0.2)' : 'rgba(255,255,255,0.06)',
+                    color: !dimFilterProd ? '#818cf8' : 'rgba(255,255,255,0.35)',
+                  }}>All</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {uniqueProducts.map(prod => {
+                    const isOn = !dimFilterProd || dimFilterProd.has(prod)
+                    return (
+                      <button key={prod} onClick={() => {
+                        setDimFilterProd(prev => {
+                          if (!prev) { const s = new Set(uniqueProducts); s.delete(prod); return s }
+                          const next = new Set(prev)
+                          if (next.has(prod)) next.delete(prod); else next.add(prod)
+                          return next.size === uniqueProducts.length ? null : next
+                        })
+                      }} style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        padding: '2px 6px', fontSize: 9, fontWeight: 600, borderRadius: 3,
+                        border: 'none', cursor: 'pointer', textAlign: 'left',
+                        background: isOn ? 'rgba(52,211,153,0.1)' : 'rgba(255,255,255,0.02)',
+                        color: isOn ? '#34d399' : 'rgba(255,255,255,0.3)',
+                      }}>
+                        <span style={{
+                          width: 10, height: 10, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          border: isOn ? '1.5px solid #34d399' : '1.5px solid rgba(255,255,255,0.12)',
+                          background: isOn ? '#34d399' : 'transparent', fontSize: 7, color: '#111', fontWeight: 900,
+                        }}>{isOn ? '✓' : ''}</span>
+                        {prod}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
 
             <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 14, marginBottom: 6 }}>Dim. Sort</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -650,25 +779,37 @@ export function CsvDownloaderPage() {
       {/* Table */}
       {rows.length > 0 && (
         <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 11 }}>
             <thead>
               <tr>
-                {allHeaders.map((h, i) => (
-                  <th key={h} style={{ ...thStyle, textAlign: i <= dimHeaders.length ? 'left' : 'right' }}>{h}</th>
-                ))}
+                {allHeaders.map((h, i) => {
+                  const isFrozen = i < frozen.count
+                  return (
+                    <th key={h} style={{
+                      ...thStyle,
+                      textAlign: isFrozen ? 'left' : 'right',
+                      ...(isFrozen ? { position: 'sticky' as const, left: frozen.lefts[i], zIndex: 3, background: '#111', minWidth: frozen.widths[i], maxWidth: frozen.widths[i], width: frozen.widths[i] } : {}),
+                    }}>{h}</th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
-                  <td style={{ ...tdStyle, textAlign: 'left', color: '#fff', fontWeight: 700 }}>{r.period}</td>
-                  {dimensions.trafficSource && <td style={{ ...tdStyle, textAlign: 'left' }}>{r.traffic_source}</td>}
-                  {dimensions.product && <td style={{ ...tdStyle, textAlign: 'left' }}>{r.product}</td>}
-                  {activeColumns.map(c => (
-                    <td key={c.id} style={tdStyle}>{c.fmt(c.get(r))}</td>
-                  ))}
-                </tr>
-              ))}
+              {rows.map((r, ri) => {
+                const bg = ri % 2 === 0 ? '#0d0e12' : '#111215'
+                let fi = 0
+                const fz = (idx: number): React.CSSProperties => ({ position: 'sticky', left: frozen.lefts[idx], zIndex: 1, background: bg, minWidth: frozen.widths[idx], maxWidth: frozen.widths[idx], width: frozen.widths[idx] })
+                return (
+                  <tr key={ri}>
+                    <td style={{ ...tdStyle, textAlign: 'left', color: '#fff', fontWeight: 700, ...fz(fi++) }}>{r.period}</td>
+                    {dimensions.trafficSource && <td style={{ ...tdStyle, textAlign: 'left', ...fz(fi++) }}>{r.traffic_source}</td>}
+                    {dimensions.product && <td style={{ ...tdStyle, textAlign: 'left', ...fz(fi++) }}>{r.product}</td>}
+                    {activeColumns.map(c => (
+                      <td key={c.id} style={tdStyle}>{c.fmt(c.get(r))}</td>
+                    ))}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

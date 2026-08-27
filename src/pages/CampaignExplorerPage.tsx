@@ -354,7 +354,8 @@ function CampaignPage({ config }: { config: BrandConfig }) {
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [adSortKey, setAdSortKey] = useState<SortKey>('leads')
   const [adSortDir, setAdSortDir] = useState<SortDir>('desc')
-  const [searchTerm, setSearchTerm] = useState('')
+
+  const [adSearchTerm, setAdSearchTerm] = useState('')
   const [expandedSkus, setExpandedSkus] = useState<Set<string>>(new Set())
 
   const applyPreset = (days: number) => {
@@ -452,16 +453,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     return out
   }, [campaignsBySku])
 
-  // ── Search: auto-expand matching SKUs ──
-  const filteredSkus = useMemo(() => {
-    if (!searchTerm) return activeSkus
-    const s = searchTerm.toLowerCase()
-    return activeSkus.filter(sku => {
-      const meta = SKU_META[sku]
-      if (meta?.name.toLowerCase().includes(s) || sku.toLowerCase().includes(s)) return true
-      return (campaignsBySku[sku] ?? []).some(c => (c.campaign_name ?? '').toLowerCase().includes(s) || c.campaign_id.includes(s))
-    })
-  }, [activeSkus, searchTerm, campaignsBySku])
+  const filteredSkus = activeSkus
 
   const toggleSku = (sku: string) => {
     setExpandedSkus(prev => {
@@ -472,13 +464,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     setSelectedCampaign(null)
   }
 
-  // Filter campaigns within expanded SKU by search term
-  const getFilteredCampaigns = (sku: string) => {
-    const list = campaignsBySku[sku] ?? []
-    if (!searchTerm) return list
-    const s = searchTerm.toLowerCase()
-    return list.filter(c => (c.campaign_name ?? '').toLowerCase().includes(s) || c.campaign_id.includes(s) || (c.sku ?? '').toLowerCase().includes(s))
-  }
+  const getFilteredCampaigns = (sku: string) => campaignsBySku[sku] ?? []
 
   // ── Merged ad data ──
   const ads = useMemo(() => {
@@ -539,6 +525,16 @@ function CampaignPage({ config }: { config: BrandConfig }) {
       return typeof av === 'string' ? mult * av.localeCompare(bv as string) : mult * ((av as number) - (bv as number))
     })
   }, [ads, adSortKey, adSortDir])
+
+  const filteredAds = useMemo(() => {
+    if (!adSearchTerm.trim()) return sortedAds
+    const q = adSearchTerm.toLowerCase().trim()
+    return sortedAds.filter(a =>
+      (a.ad_title && a.ad_title.toLowerCase().includes(q)) ||
+      (a.internal_ad_id && a.internal_ad_id.toLowerCase().includes(q)) ||
+      a.ad_id.toLowerCase().includes(q)
+    )
+  }, [sortedAds, adSearchTerm])
 
   // ── Campaign-level chart series (CPRL, CPA CC, CTR, LPVO, VO2L) ──
   const campaignCharts = useMemo(() => {
@@ -686,14 +682,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
         </div>
       </div>
 
-      {/* Search */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <input
-          type="text" placeholder="Search campaigns…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-          style={{ padding: '5px 12px', fontSize: 10, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)', color: '#fff', width: 280, outline: 'none' }}
-        />
-        {campLoading && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>Loading…</div>}
-      </div>
+      {campLoading && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 16 }}>Loading…</div>}
 
       {/* Hierarchical campaign table */}
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, overflow: 'hidden', marginBottom: 24 }}>
@@ -739,7 +728,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                 const t = skuTotals[sku]
                 if (!t) return null
                 const meta = SKU_META[sku]
-                const isExpanded = expandedSkus.has(sku) || !!searchTerm
+                const isExpanded = expandedSkus.has(sku)
                 const skuCampaigns = getFilteredCampaigns(sku)
                 return (
                   <React.Fragment key={sku}>
@@ -839,7 +828,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
               </div>
             )}
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 'auto' }}>
-              {adLoading ? 'Loading…' : `${sortedAds.length} ads`}
+              {adLoading ? 'Loading…' : adSearchTerm ? `${filteredAds.length} / ${sortedAds.length} ads` : `${sortedAds.length} ads`}
             </div>
             <button onClick={() => setSelectedCampaign(null)}
               style={{ padding: '3px 8px', fontSize: 9, fontWeight: 600, borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>
@@ -847,7 +836,21 @@ function CampaignPage({ config }: { config: BrandConfig }) {
             </button>
           </div>
 
-          {/* Bleeder vs Productive spend summary */}
+          {/* Search bar */}
+          <div style={{ padding: '6px 14px' }}>
+            <input
+              type="text"
+              placeholder="Search ads by title or name…"
+              value={adSearchTerm}
+              onChange={e => setAdSearchTerm(e.target.value)}
+              style={{
+                width: '100%', maxWidth: 400, padding: '6px 10px', fontSize: 11, fontWeight: 500,
+                borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)',
+                background: 'rgba(255,255,255,0.04)', color: '#e0e2e6',
+                outline: 'none',
+              }}
+            />
+          </div>
           {(() => {
             const h2 = new Date(); h2.setDate(h2.getDate() - 2); const h2Str = h2.toISOString().slice(0, 10)
             const bleederSpend = sortedAds.filter(a => {
@@ -895,7 +898,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                 </tr>
               </thead>
               <tbody>
-                {sortedAds.map(a => {
+                {filteredAds.map(a => {
                   const statusColor = a.status === 'Learning' ? '#fbbf24' : a.status === 'Bleeder' ? '#f87171' : '#34d399'
                   const statusBg = a.status === 'Learning' ? 'rgba(251,191,36,0.15)' : a.status === 'Bleeder' ? 'rgba(248,113,113,0.15)' : 'rgba(52,211,153,0.15)'
                   const statusBdr = a.status === 'Learning' ? 'rgba(251,191,36,0.3)' : a.status === 'Bleeder' ? 'rgba(248,113,113,0.3)' : 'rgba(52,211,153,0.3)'
