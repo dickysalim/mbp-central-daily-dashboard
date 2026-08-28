@@ -91,6 +91,7 @@ interface Ga4Row { date: string; traffic_source: string; sku: string; ga4_first_
 interface ConvRow {
   date: string; traffic_source: string; sku: string
   mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number
+  mongo_qualified_lead_ccom: number
   mongo_lead_dispatch_d2or: number; mongo_lead_dispatch_mpsh: number
   mongo_so_created_ccom: number
   mongo_purchase_ccom: number; mongo_purchase_ccom_revenue: number
@@ -101,6 +102,7 @@ interface AggRow {
   ad_spend: number; impressions: number; link_click: number
   first_visit: number; lp_view: number; view_offer: number
   rl_ccom: number; rl_d2or: number; rl_mpsh: number; rl_ofls: number
+  qual_ccom: number
   ledi_d2or: number; ledi_mpsh: number; socr_ccom: number
   purchase_ccom: number; revenue_ccom: number
   form_submission: number; visit: number
@@ -132,6 +134,7 @@ const ALL_COLUMNS: ColDef[] = [
   { id: 'rl_d2or',         label: 'RL D2OR',           get: r => r.rl_d2or,         fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'rl_mpsh',         label: 'RL MPSH',           get: r => r.rl_mpsh,         fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'rl_ofls',         label: 'RL OFLS',           get: r => r.rl_ofls,         fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
+  { id: 'qual_ccom',       label: 'Qual CCOM',         get: r => r.qual_ccom,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'ledi_d2or',       label: 'LEDI D2OR',         get: r => r.ledi_d2or,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'ledi_mpsh',       label: 'LEDI MPSH',         get: r => r.ledi_mpsh,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'socr_ccom',       label: 'SOCR CCOM',         get: r => r.socr_ccom,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
@@ -249,6 +252,7 @@ export function CsvDownloaderPage() {
           ad_spend: 0, impressions: 0, link_click: 0,
           first_visit: 0, lp_view: 0, view_offer: 0,
           rl_ccom: 0, rl_d2or: 0, rl_mpsh: 0, rl_ofls: 0,
+          qual_ccom: 0,
           ledi_d2or: 0, ledi_mpsh: 0, socr_ccom: 0,
           purchase_ccom: 0, revenue_ccom: 0,
           form_submission: 0, visit: 0,
@@ -283,6 +287,7 @@ export function CsvDownloaderPage() {
       r.rl_d2or += c.mongo_real_lead_d2or ?? 0
       r.rl_mpsh += c.mongo_real_lead_mpsh ?? 0
       r.rl_ofls += c.mongo_real_lead_ofls ?? 0
+      r.qual_ccom += c.mongo_qualified_lead_ccom ?? 0
       r.ledi_d2or += c.mongo_lead_dispatch_d2or ?? 0
       r.ledi_mpsh += c.mongo_lead_dispatch_mpsh ?? 0
       r.socr_ccom += c.mongo_so_created_ccom ?? 0
