@@ -11,6 +11,7 @@ import { SalesVelocityDashboard, GOLSalesVelocityDashboard } from './pages/Sales
 import { PipelineStatusPage } from './pages/PipelineStatusPage'
 import { CampaignExplorerPage, GolCampaignExplorerPage, MciCampaignExplorerPage } from './pages/CampaignExplorerPage'
 import { CsvDownloaderPage } from './pages/CsvDownloaderPage'
+import { DpLeadsPage } from './pages/DpLeadsPage'
 import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO, IS_MNC, IS_MCI } from './config/domainConfig'
 
 const queryClient = new QueryClient({
@@ -42,6 +43,7 @@ function App() {
             {/* Shared routes */}
             <Route path="/platform-overview" element={<PlatformOverviewPage brand={platformBrand} />} />
             <Route path="/csv-downloader" element={<CsvDownloaderPage />} />
+            <Route path="/dp-leads" element={<DpLeadsPage />} />
 
             {/* MNC routes — available on MNC + main domain */}
             {!IS_GOLO && !IS_MCI && <>
