@@ -114,6 +114,7 @@ const fmtX   = (v: number) => v > 0 ? v.toFixed(2) + '×' : '—'
 const fmtRpD = (v: number) => v > 0 ? fmtRp(Math.round(v)) : '—'
 const safeDiv = (num: number, den: number) => den > 0 ? num / den : 0
 const rlAll = (r: AggRow) => r.rl_ccom + r.rl_d2or + r.rl_mpsh + r.rl_ofls
+const qlAll = (r: AggRow) => r.qual_ccom + r.ledi_d2or + r.ledi_mpsh
 
 // ── Column definitions (module-level) ────────────────────────────────────────
 type ColGroup = 'metrics' | 'ratios'
@@ -137,6 +138,7 @@ const ALL_COLUMNS: ColDef[] = [
   { id: 'qual_ccom',       label: 'Qual CCOM',         get: r => r.qual_ccom,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'ledi_d2or',       label: 'LEDI D2OR',         get: r => r.ledi_d2or,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'ledi_mpsh',       label: 'LEDI MPSH',         get: r => r.ledi_mpsh,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
+  { id: 'ql_all',           label: 'Quality Leads (All)', get: qlAll,                fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'socr_ccom',       label: 'SOCR CCOM',         get: r => r.socr_ccom,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'purchase_ccom',   label: 'Purchase CCOM',     get: r => r.purchase_ccom,   fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'revenue_ccom',    label: 'Revenue CCOM',      get: r => r.revenue_ccom,    fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
@@ -154,6 +156,7 @@ const ALL_COLUMNS: ColDef[] = [
   { id: 'r_aov_cc',        label: 'AOV CC',            get: r => safeDiv(r.revenue_ccom, r.purchase_ccom),  fmt: fmtRpD,  brands: ['MNC','GOL'],       group: 'ratios' },
   { id: 'r_cpc',           label: 'CPC',               get: r => safeDiv(r.ad_spend, r.link_click),         fmt: fmtRpD,  brands: ['MNC','GOL','MCI'], group: 'ratios' },
   { id: 'r_cprl_all',      label: 'CPRL (All)',        get: r => safeDiv(r.ad_spend, rlAll(r)),             fmt: fmtRpD,  brands: ['MNC','GOL'],       group: 'ratios' },
+  { id: 'r_cpql_all',      label: 'CPQL (All)',        get: r => safeDiv(r.ad_spend, qlAll(r)),             fmt: fmtRpD,  brands: ['MNC','GOL'],       group: 'ratios' },
   { id: 'r_cpa_cc',        label: 'CPA CC',            get: r => safeDiv(r.ad_spend, r.purchase_ccom),      fmt: fmtRpD,  brands: ['MNC','GOL'],       group: 'ratios' },
   { id: 'r_roas_cc',       label: 'RoAS CC',           get: r => safeDiv(r.revenue_ccom, r.ad_spend),       fmt: fmtX,    brands: ['MNC','GOL'],       group: 'ratios' },
 ]
