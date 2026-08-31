@@ -25,7 +25,7 @@ interface AdPerfRow    { date: string; traffic_source: string; ads_platform_camp
 interface CampaignBudgetRow { date: string; campaign_name: string; sku: string; daily_budget: number }
 interface TargetRow    { date: string; sku: string; daily_ad_spend: number }
 interface Ga4Row       { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }
-interface ConvRow      { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number; mongo_purchase_ccom: number; mongo_purchase_ccom_revenue: number }
+interface ConvRow      { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number; mongo_qualified_lead_ccom: number; mongo_lead_dispatch_d2or: number; mongo_lead_dispatch_mpsh: number; mongo_purchase_ccom: number; mongo_purchase_ccom_revenue: number }
 interface BrandBounds  { brand: string; earliest: string; latest: string; skus: string[] }
 interface SalesRow   { date: string; brand: string; sku: string; so_ccom_ca: number; so_ccom_crm: number; so_mpsh: number; so_d2or: number; so_ofls: number; rev_ccom_ca: number; rev_ccom_crm: number; rev_mpsh: number; rev_d2or: number; rev_ofls: number }
 interface CampaignDimRow { campaign_id: string; traffic_source: string; sku: string; funnel: string; campaign_name: string }
@@ -41,6 +41,7 @@ interface AggRow {
   date: string; sku: string
   ad_spend: number; impressions: number; link_click: number
   real_lead_ccom: number; real_lead_d2or: number; real_lead_mpsh: number; real_lead_ofls: number
+  qual_lead_ccom: number; ledi_lead_d2or: number; ledi_lead_mpsh: number
   purchase_ccom: number; purchase_ccom_revenue: number
   ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number
   ga4_predicted?: boolean
@@ -145,6 +146,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
       date: '', sku: '',
       ad_spend: 0, impressions: 0, link_click: 0,
       real_lead_ccom: 0, real_lead_d2or: 0, real_lead_mpsh: 0, real_lead_ofls: 0,
+      qual_lead_ccom: 0, ledi_lead_d2or: 0, ledi_lead_mpsh: 0,
       purchase_ccom: 0, purchase_ccom_revenue: 0,
       ga4_first_visit: 0, ga4_page_view: 0, ga4_view_offer: 0,
     })
@@ -169,6 +171,9 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
         real_lead_d2or: p.real_lead_d2or + (r.mongo_real_lead_d2or ?? 0),
         real_lead_mpsh: p.real_lead_mpsh + (r.mongo_real_lead_mpsh ?? 0),
         real_lead_ofls: p.real_lead_ofls + (r.mongo_real_lead_ofls ?? 0),
+        qual_lead_ccom: p.qual_lead_ccom + (r.mongo_qualified_lead_ccom ?? 0),
+        ledi_lead_d2or: p.ledi_lead_d2or + (r.mongo_lead_dispatch_d2or ?? 0),
+        ledi_lead_mpsh: p.ledi_lead_mpsh + (r.mongo_lead_dispatch_mpsh ?? 0),
         purchase_ccom:  p.purchase_ccom  + (r.mongo_purchase_ccom ?? 0),
         purchase_ccom_revenue: p.purchase_ccom_revenue + (r.mongo_purchase_ccom_revenue ?? 0),
       })
@@ -364,6 +369,11 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
   const totalLeadMpsh = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.real_lead_mpsh, 0), [rawData, activeFrom])
   const totalLeadOfls = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.real_lead_ofls, 0), [rawData, activeFrom])
 
+  // Quality Leads totals: QUAL (CCOM) + LEDI (D2OR, MPSH)
+  const totalQualCcom = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.qual_lead_ccom, 0), [rawData, activeFrom])
+  const totalLediD2or = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.ledi_lead_d2or, 0), [rawData, activeFrom])
+  const totalLediMpsh = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + r.ledi_lead_mpsh, 0), [rawData, activeFrom])
+
   // Daily CPRL series (grouped by date)
   const cprlSeries = useMemo((): CprlPoint[] => {
     const byDate = new Map<string, { spend: number; leads: number }>()
@@ -385,6 +395,34 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
     const byDate = new Map<string, number>()
     for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
       byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls)
+    }
+    return Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, value]) => ({ date, value }))
+      .filter(p => p.date >= activeFrom)
+  }, [rawData, activeFrom])
+
+  // Daily CPQL series (Cost Per Quality Lead)
+  const cpqlSeries = useMemo((): CprlPoint[] => {
+    const byDate = new Map<string, { spend: number; leads: number }>()
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
+      const prev = byDate.get(r.date) ?? { spend: 0, leads: 0 }
+      byDate.set(r.date, {
+        spend: prev.spend + r.ad_spend,
+        leads: prev.leads + r.qual_lead_ccom + r.ledi_lead_d2or + r.ledi_lead_mpsh,
+      })
+    }
+    return Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, { spend, leads }]) => ({ date, value: leads > 0 ? spend / leads : 0 }))
+      .filter(p => p.value > 0).filter(p => p.date >= activeFrom)
+  }, [rawData, activeFrom])
+
+  // Daily quality leads volume series
+  const qualLeadsVolumeSeries = useMemo((): CprlPoint[] => {
+    const byDate = new Map<string, number>()
+    for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
+      byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.qual_lead_ccom + r.ledi_lead_d2or + r.ledi_lead_mpsh)
     }
     return Array.from(byDate.entries())
       .sort(([a], [b]) => a.localeCompare(b))
@@ -898,15 +936,21 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             realLeadD2or={totalLeadD2or}
             realLeadMpsh={totalLeadMpsh}
             realLeadOfls={totalLeadOfls}
+            qualLeadCcom={totalQualCcom}
+            lediLeadD2or={totalLediD2or}
+            lediLeadMpsh={totalLediMpsh}
             cprlSeries={cprlSeries}
+            cpqlSeries={cpqlSeries}
             volumeSeries={leadsVolumeSeries}
+            qualVolumeSeries={qualLeadsVolumeSeries}
             changelog={filteredChangelog}
             cprlTarget={fixedBrand === 'GOL' ? (cprlSeries.length > 0 ? Math.round(cprlSeries.reduce((s, p) => s + p.value, 0) / cprlSeries.length) : undefined) : undefined}
             skuCprl={skuList.map((sku): SkuCprlRow => {
               const d = allSkuData[sku]
               const rows = (rawData ?? []).filter(r => r.sku === sku)
               const leads = rows.reduce((s, r) => s + r.real_lead_ccom + r.real_lead_d2or + r.real_lead_mpsh + r.real_lead_ofls, 0)
-              return { sku, cprl: d?.totals.cprl ?? 0, leads }
+              const qualLeads = rows.reduce((s, r) => s + r.qual_lead_ccom + r.ledi_lead_d2or + r.ledi_lead_mpsh, 0)
+              return { sku, cprl: d?.totals.cprl ?? 0, leads, qualLeads }
             })}
           />
 
@@ -941,7 +985,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
           changelog={filteredChangelog}
           forecastFromDate={latestGa4Date}
         />
-        {hasGa4Predicted && <div style={{ fontSize: 9, color: '#fbbf24', fontStyle: 'italic', marginTop: 4, opacity: 0.8 }}>*First Visit Ratio includes forecasted GA4 data for latest day</div>}
+
 
         {/* SKU Performance Cards — 2×2 grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 40, marginTop: 20 }}>
@@ -1000,7 +1044,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             )
           })}
         </div>
-        {hasGa4Predicted && <div style={{ fontSize: 9, color: '#fbbf24', fontStyle: 'italic', marginTop: 4, opacity: 0.8 }}>*LPVO and VO2L charts include forecasted GA4 data for latest day</div>}
+
 
       </div>
 

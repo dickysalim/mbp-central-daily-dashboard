@@ -14,14 +14,17 @@ import { T } from '../../utils/tokens'
 export interface CprlPoint   { date: string; value: number }
 export type { ChangelogRow }
 
-export interface SkuCprlRow { sku: string; cprl: number; leads: number }
+export interface SkuCprlRow { sku: string; cprl: number; leads: number; qualLeads?: number }
 
 export interface AdsPerformanceHealthCardProps {
   totalSpend: number
   realLeadCcom: number; realLeadD2or: number
   realLeadMpsh: number; realLeadOfls: number
+  qualLeadCcom?: number; lediLeadD2or?: number; lediLeadMpsh?: number
   cprlSeries?: CprlPoint[]
+  cpqlSeries?: CprlPoint[]
   volumeSeries?: CprlPoint[]
+  qualVolumeSeries?: CprlPoint[]
   changelog?: ChangelogRow[]
   skuCprl?: SkuCprlRow[]
   cprlTarget?: number
@@ -34,6 +37,12 @@ const CHANNELS = [
   { key: 'd2or', label: 'D2OR', color: '#34d399' },
   { key: 'mpsh', label: 'MPSH', color: '#fbbf24' },
   { key: 'ofls', label: 'OFLS', color: '#f87171' },
+] as const
+
+const QUAL_CHANNELS = [
+  { key: 'ccom', label: 'QUAL (CCOM)', color: '#818cf8' },
+  { key: 'd2or', label: 'LEDI (D2OR)', color: '#34d399' },
+  { key: 'mpsh', label: 'LEDI (MPSH)', color: '#fbbf24' },
 ] as const
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
@@ -177,18 +186,35 @@ function CprlChart({ data, changelog, cprlTarget, mode = 'ratio' }: { data: Cprl
 // ── Main card ─────────────────────────────────────────────────────────────────
 export function AdsPerformanceHealthCard({
   totalSpend, realLeadCcom, realLeadD2or, realLeadMpsh, realLeadOfls,
-  cprlSeries = [], volumeSeries = [], changelog = [], skuCprl = [], cprlTarget,
+  qualLeadCcom = 0, lediLeadD2or = 0, lediLeadMpsh = 0,
+  cprlSeries = [], cpqlSeries = [], volumeSeries = [], qualVolumeSeries = [],
+  changelog = [], skuCprl = [], cprlTarget,
 }: AdsPerformanceHealthCardProps) {
   const CPRL_TARGET = cprlTarget ?? DEFAULT_CPRL_TARGET
-  const vals  = { ccom: realLeadCcom, d2or: realLeadD2or, mpsh: realLeadMpsh, ofls: realLeadOfls }
-  const total = realLeadCcom + realLeadD2or + realLeadMpsh + realLeadOfls
+  const [leadMode, setLeadMode] = useState<'real' | 'quality'>('real')
+  const isQual = leadMode === 'quality'
+
+  const realVals = { ccom: realLeadCcom, d2or: realLeadD2or, mpsh: realLeadMpsh, ofls: realLeadOfls }
+  const qualVals = { ccom: qualLeadCcom, d2or: lediLeadD2or, mpsh: lediLeadMpsh }
+
+  // For CPQL, use average as target since we don't have a fixed target yet
+  const cpqlAvg = cpqlSeries.length > 0
+    ? Math.round(cpqlSeries.reduce((s, p) => s + p.value, 0) / cpqlSeries.length)
+    : 0
+  const activeTarget = isQual ? cpqlAvg : CPRL_TARGET
+
+  const total = isQual
+    ? qualLeadCcom + lediLeadD2or + lediLeadMpsh
+    : realLeadCcom + realLeadD2or + realLeadMpsh + realLeadOfls
   const cprl  = total > 0 ? totalSpend / total : 0
-  const div   = cprl > 0 ? ((cprl - CPRL_TARGET) / CPRL_TARGET) * 100 : null
+  const div   = cprl > 0 && activeTarget > 0 ? ((cprl - activeTarget) / activeTarget) * 100 : null
   const sc    = div === null ? '#818cf8' : div <= 0 ? '#34d399' : div <= 10 ? '#fbbf24' : '#f87171'
   const sl    = div === null ? 'No Data' : div <= 0 ? '🟢 On Target' : div <= 10 ? '🟡 Slightly Over' : '🔴 Over Target'
-  const hasChart = cprlSeries.length > 1
+  const activeCprlSeries = isQual ? cpqlSeries : cprlSeries
+  const activeVolumeSeries = isQual ? qualVolumeSeries : volumeSeries
+  const hasChart = activeCprlSeries.length > 1
   const [chartMode, setChartMode] = useState<'ratio' | 'volume'>('ratio')
-  const activeChartData = chartMode === 'volume' && volumeSeries.length > 1 ? volumeSeries : cprlSeries
+  const activeChartData = chartMode === 'volume' && activeVolumeSeries.length > 1 ? activeVolumeSeries : activeCprlSeries
 
   return (
     <div style={{
@@ -201,8 +227,21 @@ export function AdsPerformanceHealthCard({
       overflow: 'hidden',
     }}>
 
-      {/* TITLE row */}
-      <div style={T.cardTitle}>Ads Performance</div>
+      {/* TITLE row with toggle */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={T.cardTitle}>Ads Performance</div>
+        <div style={{ display: 'flex', gap: 2, background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: 2 }}>
+          {(['real', 'quality'] as const).map(m => (
+            <button key={m} onClick={() => setLeadMode(m)} style={{
+              padding: '3px 10px', fontSize: 9, fontWeight: 700, borderRadius: 4,
+              border: 'none', cursor: 'pointer', letterSpacing: '0.04em',
+              background: leadMode === m ? 'rgba(255,255,255,0.15)' : 'transparent',
+              color: leadMode === m ? '#fff' : 'rgba(255,255,255,0.40)',
+              transition: 'all 0.2s',
+            }}>{m === 'real' ? 'Real Leads' : 'Quality Leads'}</button>
+          ))}
+        </div>
+      </div>
 
       {/* CONTENT row */}
       <div style={{ display: 'flex', flexDirection: 'row', gap: 24 }}>
@@ -210,7 +249,7 @@ export function AdsPerformanceHealthCard({
         {/* LEFT: CPRL metrics */}
         <div style={{ flex: '0 0 140px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div>
-            <div style={{ ...T.section, marginBottom: 3 }}>CPRL</div>
+            <div style={{ ...T.section, marginBottom: 3 }}>{isQual ? 'CPQL' : 'CPRL'}</div>
             <div style={T.headline}>
               {cprl > 0 ? fmtRp(Math.round(cprl)) : '—'}
             </div>
@@ -223,7 +262,7 @@ export function AdsPerformanceHealthCard({
             )}
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 6 }}>
               <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.02em', color: 'rgba(255,255,255,0.72)' }}>{total.toLocaleString('id-ID')}</span>
-              <span style={T.tiny}>real leads</span>
+              <span style={T.tiny}>{isQual ? 'quality leads' : 'real leads'}</span>
             </div>
           </div>
 
@@ -231,29 +270,55 @@ export function AdsPerformanceHealthCard({
           {total > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
               <div style={{ ...T.section, marginBottom: -2 }}>By Channel</div>
-              {CHANNELS.map(ch => {
-                const v = vals[ch.key]
-                if (v <= 0) return null
-                const pct = (v / total) * 100
-                return (
-                  <div key={ch.key}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: ch.color, letterSpacing: '0.07em' }}>{ch.label}</span>
-                      <div style={{ textAlign: 'right' }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
-                          {v.toLocaleString('id-ID')}
-                        </span>
-                        <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>
-                          {pct.toFixed(1)}%
-                        </span>
+              {isQual ? (
+                QUAL_CHANNELS.map(ch => {
+                  const v = qualVals[ch.key]
+                  if (v <= 0) return null
+                  const pct = (v / total) * 100
+                  return (
+                    <div key={ch.key}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: ch.color, letterSpacing: '0.07em' }}>{ch.label}</span>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
+                            {v.toLocaleString('id-ID')}
+                          </span>
+                          <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>
+                            {pct.toFixed(1)}%
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: ch.color, borderRadius: 2, transition: 'width 0.4s ease' }} />
                       </div>
                     </div>
-                    <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: ch.color, borderRadius: 2, transition: 'width 0.4s ease' }} />
+                  )
+                })
+              ) : (
+                CHANNELS.map(ch => {
+                  const v = realVals[ch.key]
+                  if (v <= 0) return null
+                  const pct = (v / total) * 100
+                  return (
+                    <div key={ch.key}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: ch.color, letterSpacing: '0.07em' }}>{ch.label}</span>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
+                            {v.toLocaleString('id-ID')}
+                          </span>
+                          <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>
+                            {pct.toFixed(1)}%
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: ch.color, borderRadius: 2, transition: 'width 0.4s ease' }} />
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })
+              )}
             </div>
           )}
         </div>
@@ -272,31 +337,34 @@ export function AdsPerformanceHealthCard({
               ))}
             </div>
             <div style={{ width: '100%', maxWidth: 320, flex: 1, display: 'flex', alignItems: 'center' }}>
-              <CprlChart data={activeChartData} changelog={changelog} cprlTarget={chartMode === 'ratio' ? CPRL_TARGET : 0} mode={chartMode} />
+              <CprlChart data={activeChartData} changelog={changelog} cprlTarget={chartMode === 'ratio' ? activeTarget : 0} mode={chartMode} />
             </div>
           </div>
         )}
 
-        {/* RIGHT: Breakdown by Product (CPRL per SKU) */}
+        {/* RIGHT: Breakdown by Product (CPRL/CPQL per SKU) */}
         {skuCprl.length > 0 && (
           <div style={{ flex: '1 1 auto', ...T.divider, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={T.section}>Breakdown by Product</div>
             {(() => {
-              const maxCprl = Math.max(...skuCprl.map(s => s.cprl), 1)
-              return skuCprl.filter(s => s.leads > 0).map(s => {
+              return skuCprl.map(s => {
+                const skuLeads = isQual ? (s.qualLeads ?? 0) : s.leads
+                if (skuLeads <= 0) return null
+                const skuCost = totalSpend > 0 && total > 0 ? totalSpend * (skuLeads / total) : 0
+                const skuCprlVal = skuLeads > 0 ? skuCost / skuLeads : 0
                 const color = SKU_COLORS[s.sku] ?? 'rgba(255,255,255,0.68)'
-                const onTarget = s.cprl <= CPRL_TARGET
-                // Efficiency bar: full = at/under target, shrinks as cost rises above target
-                const efficiency = Math.min(CPRL_TARGET / Math.max(s.cprl, 1), 1) * 100
+                const onTarget = (isQual ? skuCprlVal : s.cprl) <= activeTarget
+                const displayCprl = isQual ? skuCprlVal : s.cprl
+                const efficiency = Math.min(activeTarget / Math.max(displayCprl, 1), 1) * 100
                 const barColor = onTarget ? '#34d399' : '#f87171'
-                const diff = ((s.cprl - CPRL_TARGET) / CPRL_TARGET) * 100
+                const diff = ((displayCprl - activeTarget) / activeTarget) * 100
                 return (
                   <div key={s.sku}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
                       <span style={{ fontSize: 13, fontWeight: 700, color, letterSpacing: '0.07em' }}>{s.sku}</span>
                       <div style={{ textAlign: 'right' }}>
                         <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
-                          {fmtRp(Math.round(s.cprl))}
+                          {fmtRp(Math.round(displayCprl))}
                         </span>
                         <span style={{ fontSize: 9, fontWeight: 600, color: onTarget ? '#34d399' : '#f87171', marginLeft: 4 }}>
                           {diff > 0 ? '+' : ''}{diff.toFixed(0)}%
