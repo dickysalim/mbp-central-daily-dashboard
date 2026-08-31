@@ -208,6 +208,11 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
   }, [cgData])
 
   const hasGa4Predicted = useMemo(() => (rawData ?? []).some(r => r.ga4_predicted), [rawData])
+  const latestGa4Date = useMemo(() => {
+    const dates = new Set<string>()
+    for (const g of cgData?.ga4 ?? []) dates.add(g.date)
+    return dates.size > 0 ? [...dates].sort().pop()! : undefined
+  }, [cgData])
 
   const targetData       = useMemo(() => (cgData?.targets         ?? []).filter(r => r.date >= activeFrom), [cgData, activeFrom])
   const filteredChangelog = useMemo(() => cgData?.changelog      ?? [], [cgData])
@@ -934,6 +939,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
           ctrSeries={ctrSeries}
           fvSeries={fvSeries}
           changelog={filteredChangelog}
+          forecastFromDate={latestGa4Date}
         />
         {hasGa4Predicted && <div style={{ fontSize: 9, color: '#fbbf24', fontStyle: 'italic', marginTop: 4, opacity: 0.8 }}>*First Visit Ratio includes forecasted GA4 data for latest day</div>}
 
@@ -989,6 +995,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
                 budgetDate={skuBudgets[sku]?.budgetDate}
                 totalRoas={skuRoas.find(r => r.sku === sku)?.roas ?? 0}
                 roasTarget={6.59}
+                forecastFromDate={latestGa4Date}
               />
             )
           })}

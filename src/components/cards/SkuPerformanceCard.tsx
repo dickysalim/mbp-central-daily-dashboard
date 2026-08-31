@@ -83,6 +83,7 @@ export interface SkuPerformanceCardProps {
   // Volume series (daily counts for Volume toggle)
   cprlVolumeSeries?: SkuPoint[]
   cpaVolumeSeries?: SkuPoint[]
+  forecastFromDate?: string
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ const T = {
 // ── Sparkline (same tokens as reference, supports fixed OR computed target) ──
 function Sparkline({
   data = [],           changelog, color, fmt, fmtShort, chartKey,
-  higherIsBetter, fixedTarget, targetFontSize = 14, filterSku,
+  higherIsBetter, fixedTarget, targetFontSize = 14, filterSku, forecastFromDate,
 }: {
   data:            SkuPoint[]
   changelog:       ChangelogRow[]
@@ -111,6 +112,7 @@ function Sparkline({
   fixedTarget?:    number   // if provided, draw fixed line; otherwise use series avg
   targetFontSize?: number  // viewBox font size for target label (default 14)
   filterSku?:      string  // if set, only show markers for this SKU or empty-sku entries
+  forecastFromDate?: string
 }) {
   const VW = 320, VH = 140
   const PAD = { top: 10, right: 52, bottom: 20, left: 6 }
@@ -184,6 +186,11 @@ function Sparkline({
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
 
+  // Forecast split: find last actual data point index
+  const fcIdx = forecastFromDate ? data.findIndex(d => d.date > forecastFromDate) : -1
+  const solidPts = fcIdx > 0 ? data.slice(0, fcIdx).map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ') : pts
+  const dashPts = fcIdx > 0 ? data.slice(fcIdx - 1).map((d, i) => `${xs(i + fcIdx - 1)},${ys(d.value)}`).join(' ') : ''
+
   const markers = data
     .map((d, i) => {
       const entries = changelog.filter(c => {
@@ -253,9 +260,15 @@ function Sparkline({
           <line x1={xs(0)} y1={cl(ys(ic))} x2={xs(n - 1)} y2={cl(ys(slope * (n - 1) + ic))}
             stroke={tc} strokeOpacity="0.65" strokeWidth="3.5" strokeDasharray="4,3" />
 
-          {/* Main line */}
-          <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="2.5"
+          {/* Main line — split solid/dashed at forecast boundary */}
+          <polyline points={solidPts} fill="none" stroke={lineColor} strokeWidth="2.5"
             strokeLinejoin="round" strokeLinecap="round" />
+          {dashPts && <>
+            <polyline points={dashPts} fill="none" stroke={lineColor} strokeWidth="2" strokeOpacity="0.6"
+              strokeLinejoin="round" strokeLinecap="round" strokeDasharray="4,3" />
+            <circle cx={xs(fcIdx - 1)} cy={ys(data[fcIdx - 1].value)} r="3.5"
+              fill={lineColor} stroke="#0d0e12" strokeWidth="1.5" />
+          </>}
 
           {/* Changelog markers */}
           {markers.map(m => (
@@ -441,6 +454,7 @@ export function SkuPerformanceCard({
   platformCards,
   cprlVolumeSeries = [],
   cpaVolumeSeries = [],
+  forecastFromDate,
 }: SkuPerformanceCardProps) {
   const label = skuLabel ?? sku
   const [open, setOpen] = useState(false)
@@ -466,6 +480,7 @@ export function SkuPerformanceCard({
     statusLabel: string | null; statusGood: boolean; divergencePct: number
     fmt: (v: number) => string; fmtShort: (v: number) => string
     targetFontSize?: number
+    forecast?: string
   }
 
   const mkRpFmt = (v: number) => v >= 1_000_000
@@ -547,6 +562,7 @@ export function SkuPerformanceCard({
       fmt:      (v) => fmtPct(v),
       fmtShort: (v) => v.toFixed(1) + '%',
       targetFontSize: 18,
+      forecast: forecastFromDate,
     },
     {
       key: `${sku}-vo2l`, label: 'VO2L', color: '#a78bfa',
@@ -559,6 +575,7 @@ export function SkuPerformanceCard({
       fmt:      (v) => fmtPct(v),
       fmtShort: (v) => v.toFixed(1) + '%',
       targetFontSize: 18,
+      forecast: forecastFromDate,
     },
   ]
 
@@ -605,6 +622,7 @@ export function SkuPerformanceCard({
           chartKey={c.key} higherIsBetter={c.higherIsBetter}
           fixedTarget={c.fixedTarget}
           targetFontSize={c.targetFontSize}
+          forecastFromDate={c.forecast}
         />
       </div>
     )

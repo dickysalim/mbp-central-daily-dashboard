@@ -32,6 +32,7 @@ export interface AtlPerformanceCardProps {
   ctrSeries?:       AtlPoint[]
   fvSeries?:        AtlPoint[]
   changelog?:       ChangelogRow[]
+  forecastFromDate?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ const T = {
 
 // ── Sparkline ─────────────────────────────────────────────────────────────────
 function Sparkline({
-  data, changelog, color, fmt, fmtShort, chartKey, higherIsBetter,
+  data, changelog, color, fmt, fmtShort, chartKey, higherIsBetter, forecastFromDate,
 }: {
   data:            AtlPoint[]
   changelog:       ChangelogRow[]
@@ -59,6 +60,7 @@ function Sparkline({
   fmtShort:        (v: number) => string
   chartKey:        string
   higherIsBetter:  boolean
+  forecastFromDate?: string
 }) {
   // ── Layout (viewBox coordinate system) ──────────────────────────────────────
   const VW = 320, VH = 180
@@ -137,6 +139,11 @@ function Sparkline({
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
 
+  // Forecast split: find last actual data point index
+  const fcIdx = forecastFromDate ? data.findIndex(d => d.date > forecastFromDate) : -1
+  const solidPts = fcIdx > 0 ? data.slice(0, fcIdx).map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ') : pts
+  const dashPts = fcIdx > 0 ? data.slice(fcIdx - 1).map((d, i) => `${xs(i + fcIdx - 1)},${ys(d.value)}`).join(' ') : ''
+
   const markers = data
     .map((d, i) => ({ d, i, entries: changelog.filter(c => c.date === d.date) }))
     .filter(m => m.entries.length > 0)
@@ -188,9 +195,15 @@ function Sparkline({
           <line x1={xs(0)} y1={cl(ys(ic))} x2={xs(n - 1)} y2={cl(ys(slope * (n - 1) + ic))}
             stroke={tc} strokeOpacity="0.65" strokeWidth="3.5" strokeDasharray="4,3" />
 
-          {/* Main data line */}
-          <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="2.5"
+          {/* Main data line — split solid/dashed at forecast boundary */}
+          <polyline points={solidPts} fill="none" stroke={lineColor} strokeWidth="2.5"
             strokeLinejoin="round" strokeLinecap="round" />
+          {dashPts && <>
+            <polyline points={dashPts} fill="none" stroke={lineColor} strokeWidth="2" strokeOpacity="0.6"
+              strokeLinejoin="round" strokeLinecap="round" strokeDasharray="4,3" />
+            <circle cx={xs(fcIdx - 1)} cy={ys(data[fcIdx - 1].value)} r="3.5"
+              fill={lineColor} stroke="#0d0e12" strokeWidth="1.5" />
+          </>}
 
           {/* Changelog markers — same as reference */}
           {markers.map(m => (
@@ -259,7 +272,7 @@ export function AtlPerformanceCard({
   totalSpend, totalImpressions, totalLinkClicks,
   totalFirstVisit, totalPageView,
   cpmSeries = [], ctrSeries = [], fvSeries = [],
-  changelog = [],
+  changelog = [], forecastFromDate,
 }: AtlPerformanceCardProps) {
   const cpm = totalImpressions > 0 ? (totalSpend / totalImpressions) * 1000 : 0
   const ctr = totalImpressions > 0 ? (totalLinkClicks / totalImpressions) * 100 : 0
@@ -271,7 +284,7 @@ export function AtlPerformanceCard({
     { label: 'First Visit Ratio', value: fvr > 0 ? fmtPct(fvr)            : '—', sub: totalPageView > 0 ? `${fmtK(totalFirstVisit)} FV · ${fmtK(totalPageView)} PV` : 'No page view data' },
   ]
 
-  const charts = [
+  const charts: { series: AtlPoint[]; color: string; key: string; label: string; higherIsBetter: boolean; fmt: (v: number) => string; fmtShort: (v: number) => string; forecast?: string }[] = [
     {
       series: cpmSeries, color: '#818cf8', key: 'cpm', label: 'CPM',
       higherIsBetter: false,
@@ -289,6 +302,7 @@ export function AtlPerformanceCard({
       higherIsBetter: true,
       fmt:      (v: number) => fmtPct(v),
       fmtShort: (v: number) => v.toFixed(1) + '%',
+      forecast: forecastFromDate,
     },
   ]
 
@@ -341,6 +355,7 @@ export function AtlPerformanceCard({
                 data={c.series} changelog={changelog}
                 color={c.color} fmt={c.fmt} fmtShort={c.fmtShort}
                 chartKey={c.key} higherIsBetter={c.higherIsBetter}
+                forecastFromDate={c.forecast}
               />
             </div>
           ))}
