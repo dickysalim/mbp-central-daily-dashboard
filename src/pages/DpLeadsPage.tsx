@@ -188,35 +188,28 @@ export function DpLeadsPage() {
     staleTime: 1000 * 60 * 60,
   })
 
-  // 2) Fetch D1 leads
+  // 2) Fetch D1 leads + page views (single endpoint)
   const { data: leadsData, isLoading: leadsLoading } = useQuery({
     queryKey: ['dp-leads', brand, dateFrom, dateTo, refreshNonce],
     queryFn: async () => {
       const bust = refreshNonce > 0 ? `&_r=${refreshNonce}` : ''
       const res = await fetch(`${D1_WORKER_URL}/v2/dp-leads?brand=${bc.d1Brand}&from=${dateFrom}&to=${dateTo}${bust}`)
       setIsRefreshing(false)
-      return res.json() as Promise<{ rows: AgentRow[] }>
-    },
-    enabled: !!dateFrom && !!dateTo,
-  })
-
-  // 2b) Fetch page views by province+city for heatmap + table
-  const { data: pvData } = useQuery({
-    queryKey: ['pv-province', brand, dateFrom, dateTo],
-    queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/page-views-by-province?brand=${bc.d1Brand}&from=${dateFrom}&to=${dateTo}`)
-      return res.json() as Promise<{ rows: { province: string; city: string; page_views: number }[] }>
+      return res.json() as Promise<{
+        rows: AgentRow[]
+        pageViews: { province: string; city: string; page_views: number }[]
+      }>
     },
     enabled: !!dateFrom && !!dateTo,
   })
 
   const { heatData, pvByIsland, pvByProvince, pvByCity } = useMemo(() => {
-    if (!pvData?.rows) return { heatData: undefined, pvByIsland: new Map<string, number>(), pvByProvince: new Map<string, number>(), pvByCity: new Map<string, number>() }
+    if (!leadsData?.pageViews) return { heatData: undefined, pvByIsland: new Map<string, number>(), pvByProvince: new Map<string, number>(), pvByCity: new Map<string, number>() }
     const hm = new Map<string, number>()
     const isl = new Map<string, number>()
     const prov = new Map<string, number>()
     const city = new Map<string, number>()
-    for (const r of pvData.rows) {
+    for (const r of leadsData.pageViews) {
       // Province-level for heatmap
       hm.set(r.province, (hm.get(r.province) ?? 0) + r.page_views)
       // Island-level
@@ -228,7 +221,7 @@ export function DpLeadsPage() {
       city.set(r.city, (city.get(r.city) ?? 0) + r.page_views)
     }
     return { heatData: hm, pvByIsland: isl, pvByProvince: prov, pvByCity: city }
-  }, [pvData])
+  }, [leadsData])
 
   // 3) Index leads by agent code + name (composite key) — already aggregated by worker
   const leadsMap = useMemo(() => {
