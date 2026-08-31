@@ -50,11 +50,11 @@ interface CmsAgent {
   isActive: boolean; provinceName: string; cityName: string
 }
 interface AgentRow {
-  date: string; brand: string; sku: string; kode_agen: string; nama_agen: string; traffic_source: string; traffic_context: string
-  kota_agen: string; provinsi_agen: string; location: string
-  real_whatsapp: number; real_location: number; real_shopee: number; real_tokopedia: number; real_lazada: number
-  ledi_whatsapp: number; ledi_location: number; ledi_shopee: number; ledi_tokopedia: number; ledi_lazada: number
-  agdi: number
+  kode_agen: string; nama_agen: string
+  rl_total: number; ledi_total: number; agdi: number
+  rl_paid: number; ledi_paid: number
+  rl_dmag: number; ledi_dmag: number
+  rl_organic: number; ledi_organic: number
 }
 interface MergedAgent {
   code: string; name: string; city: string; province: string; island: string
@@ -110,7 +110,7 @@ export function DpLeadsPage() {
   const [drillFilter, setDrillFilter] = useState<{ island?: string; province?: string; city?: string }>({})
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  type SortCol = 'label' | 'count' | 'pv' | 'rl_total' | 'leadsPerAgent' | 'ledi_total' | 'lediRate' | 'agdi' | 'agdiRate'
+  type SortCol = 'label' | 'count' | 'pv' | 'rl_total' | 'dailyRl' | 'leadsPerAgent' | 'ledi_total' | 'lediRate' | 'agdi' | 'agdiRate'
   const [sortCol, setSortCol] = useState<SortCol>('rl_total')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const toggleSort = (col: SortCol) => {
@@ -161,7 +161,7 @@ export function DpLeadsPage() {
   }, [])
 
   // 1) Fetch CMS
-  const { data: cmsData } = useQuery({
+  const { data: cmsData, isLoading: cmsLoading } = useQuery({
     queryKey: ['dp-cms', brand],
     queryFn: async () => {
       const res = await fetch(bc.cmsUrl)
@@ -230,31 +230,25 @@ export function DpLeadsPage() {
     return { heatData: hm, pvByIsland: isl, pvByProvince: prov, pvByCity: city }
   }, [pvData])
 
-  // 3) Aggregate leads by agent code + name (composite key)
+  // 3) Index leads by agent code + name (composite key) — already aggregated by worker
   const leadsMap = useMemo(() => {
     const m = new Map<string, { rl_total: number; ledi_total: number; agdi: number }>()
     if (!leadsData?.rows) return m
     for (const r of leadsData.rows) {
       const key = `${r.kode_agen}|${r.nama_agen.trim()}`
-      let a = m.get(key)
-      if (!a) { a = { rl_total: 0, ledi_total: 0, agdi: 0 }; m.set(key, a) }
-      a.rl_total += r.real_whatsapp + r.real_location + r.real_shopee + r.real_tokopedia + r.real_lazada
-      a.ledi_total += r.ledi_whatsapp + r.ledi_location + r.ledi_shopee + r.ledi_tokopedia + r.ledi_lazada
-      a.agdi += r.agdi
+      m.set(key, { rl_total: r.rl_total, ledi_total: r.ledi_total, agdi: r.agdi })
     }
     return m
   }, [leadsData])
 
-  // Paid vs DM Agen vs Organic breakdown (RL + LEDI)
+  // Paid vs DM Agen vs Organic breakdown (RL + LEDI) — pre-aggregated by worker
   const leadBreakdown = useMemo(() => {
     const r = { paid: 0, dmag: 0, organic: 0, paidLedi: 0, dmagLedi: 0, organicLedi: 0 }
     if (!leadsData?.rows) return r
     for (const row of leadsData.rows) {
-      const rl = row.real_whatsapp + row.real_location + row.real_shopee + row.real_tokopedia + row.real_lazada
-      const ledi = row.ledi_whatsapp + row.ledi_location + row.ledi_shopee + row.ledi_tokopedia + row.ledi_lazada
-      if (row.traffic_context?.toUpperCase() === 'DMAG') { r.dmag += rl; r.dmagLedi += ledi }
-      else if (row.sku && row.sku !== '-' && row.traffic_source && row.traffic_source !== '-') { r.paid += rl; r.paidLedi += ledi }
-      else { r.organic += rl; r.organicLedi += ledi }
+      r.paid += row.rl_paid; r.paidLedi += row.ledi_paid
+      r.dmag += row.rl_dmag; r.dmagLedi += row.ledi_dmag
+      r.organic += row.rl_organic; r.organicLedi += row.ledi_organic
     }
     return r
   }, [leadsData])
@@ -331,6 +325,7 @@ export function DpLeadsPage() {
       .map(([key, g]) => ({
         key, label: viewLevel === 'agent' ? key.split('|')[1] || key : key,
         count: g.count, rl_total: g.rl, ledi_total: g.ledi, agdi: g.agdi,
+        dailyRl: numDays > 0 ? g.rl / numDays : 0,
         leadsPerAgent: g.count > 0 ? g.rl / g.count / numDays : 0,
         pv: viewLevel !== 'agent' ? (pvMap.get(key) ?? 0) : 0,
       }))
@@ -345,6 +340,7 @@ export function DpLeadsPage() {
           case 'count': cmp = a.count - b.count; break
           case 'pv': cmp = a.pv - b.pv; break
           case 'rl_total': cmp = a.rl_total - b.rl_total; break
+          case 'dailyRl': cmp = a.dailyRl - b.dailyRl; break
           case 'leadsPerAgent': cmp = a.leadsPerAgent - b.leadsPerAgent; break
           case 'ledi_total': cmp = a.ledi_total - b.ledi_total; break
           case 'lediRate': cmp = lediRateA - lediRateB; break
@@ -384,6 +380,76 @@ export function DpLeadsPage() {
 
   // Column label for first column
   const firstColLabel = viewLevel === 'island' ? 'Island' : viewLevel === 'province' ? 'Province' : viewLevel === 'city' ? 'City' : 'Agent'
+
+  const isDataLoading = cmsLoading || leadsLoading
+
+  if (isDataLoading) return (
+    <div style={{
+      minHeight: '100vh', background: '#0d0e12',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: 'Inter, system-ui, sans-serif', color: '#fff',
+      flexDirection: 'column', gap: 0,
+    }}>
+      <style>{`
+        @keyframes dpPulse { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(2.2); opacity: 0; } }
+        @keyframes dpSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes dpBlink { 0%,100% { opacity: 0.2; } 50% { opacity: 1; } }
+      `}</style>
+      {/* Pulse rings + spinner */}
+      <div style={{ position: 'relative', width: 80, height: 80, marginBottom: 32 }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            border: '1.5px solid rgba(129,140,248,0.25)',
+            animation: `dpPulse 2s ease-out ${i * 0.6}s infinite`,
+          }} />
+        ))}
+        <div style={{
+          position: 'absolute', inset: 14, borderRadius: '50%',
+          border: '2px solid rgba(129,140,248,0.15)',
+          borderTopColor: '#818cf8', borderRightColor: '#38bdf8',
+          animation: 'dpSpin 1s linear infinite',
+        }} />
+        <div style={{
+          position: 'absolute', inset: '50%', transform: 'translate(-50%,-50%)',
+          width: 8, height: 8, borderRadius: '50%',
+          background: 'radial-gradient(circle, #818cf8, #38bdf8)',
+          boxShadow: '0 0 12px #818cf8cc',
+        }} />
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#818cf8', marginBottom: 6 }}>
+        DP Leads
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 6 }}>Loading data…</div>
+      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 32 }}>
+        Fetching {brand} — {dateFrom} → {dateTo}
+      </div>
+      {/* Step checklist */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 240 }}>
+        {[
+          { label: 'Agent directory (CMS)', done: !cmsLoading },
+          { label: 'Real leads (D1)', done: !leadsLoading },
+        ].map((step, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
+              border: step.done ? 'none' : '1.5px solid rgba(129,140,248,0.4)',
+              background: step.done ? 'rgba(52,211,153,0.2)' : 'transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {step.done
+                ? <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#34d399" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                : <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#818cf8', animation: `dpBlink 1.4s ease-in-out ${i * 0.25}s infinite` }} />
+              }
+            </div>
+            <span style={{ fontSize: 12, color: step.done ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.85)', textDecoration: step.done ? 'line-through' : 'none' }}>
+              {step.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 
   return (
     <div style={{ padding: '32px 40px', fontFamily: 'Inter, system-ui, sans-serif', color: '#fff' }}>
@@ -608,6 +674,7 @@ export function DpLeadsPage() {
                   {viewLevel !== 'agent' && sth('count', 'Resellers', 'right')}
                   {(viewLevel === 'island' || viewLevel === 'province') && sth('pv', 'Page Views', 'right')}
                   {sth('rl_total', 'RL Total', 'right')}
+                  {sth('dailyRl', 'Daily RL', 'right')}
                   {viewLevel !== 'agent' && sth('leadsPerAgent', 'Daily RL/Agent', 'right')}
                   {sth('ledi_total', 'LEDI Total', 'right')}
                   {sth('lediRate', 'LEDI Rate', 'right')}
@@ -638,6 +705,7 @@ export function DpLeadsPage() {
                   {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', color: 'rgba(255,255,255,0.5)' }}>{fmtNum(row.count)}</td>}
                   {(viewLevel === 'island' || viewLevel === 'province') && <td style={{ ...tdStyle, textAlign: 'right', color: row.pv > 0 ? '#f59e0b' : 'rgba(255,255,255,0.15)' }}>{row.pv > 0 ? fmtNum(row.pv) : '-'}</td>}
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_total > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)', fontWeight: 800 }}>{fmtNum(row.rl_total)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right', color: row.dailyRl > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)' }}>{row.dailyRl > 0 ? row.dailyRl.toFixed(1) : '-'}</td>
                   {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', color: row.leadsPerAgent > 0 ? '#34d399' : 'rgba(255,255,255,0.15)' }}>{row.leadsPerAgent.toFixed(2)}</td>}
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.ledi_total > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)', fontWeight: 800 }}>{fmtNum(row.ledi_total)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_total > 0 ? '#34d399' : 'rgba(255,255,255,0.15)' }}>{row.rl_total > 0 ? (row.ledi_total / row.rl_total * 100).toFixed(1) + '%' : '-'}</td>
@@ -655,6 +723,7 @@ export function DpLeadsPage() {
                 {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: 'rgba(255,255,255,0.5)', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.total)}</td>}
                 {(viewLevel === 'island' || viewLevel === 'province') && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#f59e0b', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(aggRows.reduce((s, r) => s + r.pv, 0))}</td>}
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#818cf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.rl_total)}</td>
+                <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#818cf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{numDays > 0 ? (totals.rl_total / numDays).toFixed(1) : '0'}</td>
                 {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.total > 0 ? (totals.rl_total / totals.total / numDays).toFixed(2) : '0'}</td>}
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#818cf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.ledi_total)}</td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.rl_total > 0 ? (totals.ledi_total / totals.rl_total * 100).toFixed(1) + '%' : '-'}</td>
