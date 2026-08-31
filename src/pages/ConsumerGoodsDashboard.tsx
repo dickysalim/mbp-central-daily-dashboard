@@ -43,6 +43,7 @@ interface AggRow {
   real_lead_ccom: number; real_lead_d2or: number; real_lead_mpsh: number; real_lead_ofls: number
   purchase_ccom: number; purchase_ccom_revenue: number
   ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number
+  ga4_predicted?: boolean
 }
 export interface CprlPoint { date: string; value: number }
 
@@ -172,8 +173,41 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
         purchase_ccom_revenue: p.purchase_ccom_revenue + (r.mongo_purchase_ccom_revenue ?? 0),
       })
     }
+
+    // ── GA4 prediction: fill dates beyond latest GA4 with trailing avg ───
+    const ga4Dates = new Set<string>()
+    for (const g of cgData?.ga4 ?? []) ga4Dates.add(g.date)
+    const latestGa4 = ga4Dates.size > 0 ? [...ga4Dates].sort().pop()! : ''
+    if (latestGa4) {
+      const trailMap = new Map<string, { fv: number[]; pv: number[]; vo: number[] }>()
+      for (const [, row] of map) {
+        if (row.date > latestGa4) continue
+        let t = trailMap.get(row.sku)
+        if (!t) { t = { fv: [], pv: [], vo: [] }; trailMap.set(row.sku, t) }
+        t.fv.push(row.ga4_first_visit)
+        t.pv.push(row.ga4_page_view)
+        t.vo.push(row.ga4_view_offer)
+      }
+      const avg = (arr: number[]) => {
+        const last7 = arr.slice(-7)
+        return last7.length > 0 ? Math.round(last7.reduce((s, v) => s + v, 0) / last7.length) : 0
+      }
+      for (const [, row] of map) {
+        if (row.date <= latestGa4) continue
+        const t = trailMap.get(row.sku)
+        if (t) {
+          row.ga4_first_visit = avg(t.fv)
+          row.ga4_page_view = avg(t.pv)
+          row.ga4_view_offer = avg(t.vo)
+          row.ga4_predicted = true
+        }
+      }
+    }
+
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date))
   }, [cgData])
+
+  const hasGa4Predicted = useMemo(() => (rawData ?? []).some(r => r.ga4_predicted), [rawData])
 
   const targetData       = useMemo(() => (cgData?.targets         ?? []).filter(r => r.date >= activeFrom), [cgData, activeFrom])
   const filteredChangelog = useMemo(() => cgData?.changelog      ?? [], [cgData])
@@ -901,6 +935,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
           fvSeries={fvSeries}
           changelog={filteredChangelog}
         />
+        {hasGa4Predicted && <div style={{ fontSize: 9, color: '#fbbf24', fontStyle: 'italic', marginTop: 4, opacity: 0.8 }}>*First Visit Ratio includes forecasted GA4 data for latest day</div>}
 
         {/* SKU Performance Cards — 2×2 grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 40, marginTop: 20 }}>
@@ -958,6 +993,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
             )
           })}
         </div>
+        {hasGa4Predicted && <div style={{ fontSize: 9, color: '#fbbf24', fontStyle: 'italic', marginTop: 4, opacity: 0.8 }}>*LPVO and VO2L charts include forecasted GA4 data for latest day</div>}
 
       </div>
 

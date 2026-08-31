@@ -110,7 +110,7 @@ export function DpLeadsPage() {
   const [drillFilter, setDrillFilter] = useState<{ island?: string; province?: string; city?: string }>({})
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  type SortCol = 'label' | 'count' | 'pv' | 'rl_total' | 'dailyRl' | 'leadsPerAgent' | 'ledi_total' | 'lediRate' | 'agdi' | 'agdiRate'
+  type SortCol = 'label' | 'count' | 'pv' | 'rl_total' | 'leadsPerAgent' | 'ledi_total' | 'lediRate' | 'agdi' | 'agdiRate'
   const [sortCol, setSortCol] = useState<SortCol>('rl_total')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const toggleSort = (col: SortCol) => {
@@ -318,7 +318,6 @@ export function DpLeadsPage() {
       .map(([key, g]) => ({
         key, label: viewLevel === 'agent' ? key.split('|')[1] || key : key,
         count: g.count, rl_total: g.rl, ledi_total: g.ledi, agdi: g.agdi,
-        dailyRl: numDays > 0 ? g.rl / numDays : 0,
         leadsPerAgent: g.count > 0 ? g.rl / g.count / numDays : 0,
         pv: viewLevel !== 'agent' ? (pvMap.get(key) ?? 0) : 0,
       }))
@@ -333,7 +332,6 @@ export function DpLeadsPage() {
           case 'count': cmp = a.count - b.count; break
           case 'pv': cmp = a.pv - b.pv; break
           case 'rl_total': cmp = a.rl_total - b.rl_total; break
-          case 'dailyRl': cmp = a.dailyRl - b.dailyRl; break
           case 'leadsPerAgent': cmp = a.leadsPerAgent - b.leadsPerAgent; break
           case 'ledi_total': cmp = a.ledi_total - b.ledi_total; break
           case 'lediRate': cmp = lediRateA - lediRateB; break
@@ -667,8 +665,7 @@ export function DpLeadsPage() {
                   {viewLevel !== 'agent' && sth('count', 'Resellers', 'right')}
                   {(viewLevel === 'island' || viewLevel === 'province') && sth('pv', 'Page Views', 'right')}
                   {sth('rl_total', 'RL Total', 'right')}
-                  {sth('dailyRl', 'Daily RL', 'right')}
-                  {viewLevel !== 'agent' && sth('leadsPerAgent', 'Daily RL/Agent', 'right')}
+                  {sth('leadsPerAgent', 'Daily RL/Agent', 'right')}
                   {sth('ledi_total', 'LEDI Total', 'right')}
                   {sth('lediRate', 'LEDI Rate', 'right')}
                   {sth('agdi', 'AGDI', 'right')}
@@ -698,8 +695,7 @@ export function DpLeadsPage() {
                   {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', color: 'rgba(255,255,255,0.5)' }}>{fmtNum(row.count)}</td>}
                   {(viewLevel === 'island' || viewLevel === 'province') && <td style={{ ...tdStyle, textAlign: 'right', color: row.pv > 0 ? '#f59e0b' : 'rgba(255,255,255,0.15)' }}>{row.pv > 0 ? fmtNum(row.pv) : '-'}</td>}
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_total > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)', fontWeight: 800 }}>{fmtNum(row.rl_total)}</td>
-                  <td style={{ ...tdStyle, textAlign: 'right', color: row.dailyRl > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)' }}>{row.dailyRl > 0 ? row.dailyRl.toFixed(1) : '-'}</td>
-                  {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', color: row.leadsPerAgent > 0 ? '#34d399' : 'rgba(255,255,255,0.15)' }}>{row.leadsPerAgent.toFixed(2)}</td>}
+                  <td style={{ ...tdStyle, textAlign: 'right', color: row.leadsPerAgent > 0 ? '#34d399' : 'rgba(255,255,255,0.15)' }}>{row.leadsPerAgent.toFixed(2)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.ledi_total > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)', fontWeight: 800 }}>{fmtNum(row.ledi_total)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_total > 0 ? '#34d399' : 'rgba(255,255,255,0.15)' }}>{row.rl_total > 0 ? (row.ledi_total / row.rl_total * 100).toFixed(1) + '%' : '-'}</td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.agdi > 0 ? '#e0e2e6' : 'rgba(255,255,255,0.15)' }}>{fmtNum(row.agdi)}</td>
@@ -716,8 +712,7 @@ export function DpLeadsPage() {
                 {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: 'rgba(255,255,255,0.5)', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.total)}</td>}
                 {(viewLevel === 'island' || viewLevel === 'province') && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#f59e0b', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(aggRows.reduce((s, r) => s + r.pv, 0))}</td>}
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#818cf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.rl_total)}</td>
-                <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#818cf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{numDays > 0 ? (totals.rl_total / numDays).toFixed(1) : '0'}</td>
-                {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.total > 0 ? (totals.rl_total / totals.total / numDays).toFixed(2) : '0'}</td>}
+                <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.total > 0 ? (totals.rl_total / totals.total / numDays).toFixed(2) : '0'}</td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#818cf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.ledi_total)}</td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.rl_total > 0 ? (totals.ledi_total / totals.rl_total * 100).toFixed(1) + '%' : '-'}</td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#e0e2e6', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.agdi)}</td>

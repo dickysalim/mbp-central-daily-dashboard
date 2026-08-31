@@ -67,7 +67,7 @@ export function dateStr(d: Date): string {
 
 export function getDateRange(days: number): { from: string; to: string } {
   const to = new Date()
-  to.setDate(to.getDate() - 2) // H-2 (ETL pipeline latest available)
+  to.setDate(to.getDate() - 1) // H-1 (GA4 data forecasted for gap day)
   if (days === 0) {
     // MTD
     const from = new Date(to.getFullYear(), to.getMonth(), 1)
@@ -78,12 +78,12 @@ export function getDateRange(days: number): { from: string; to: string } {
   return { from: dateStr(from), to: dateStr(to) }
 }
 
-/** Cap a date string to H-2 (ETL pipeline lag — data only available up to 2 days ago) */
+/** Cap a date string to H-1 (GA4 data forecasted for gap day) */
 export function capToH2(dateString: string): string {
   if (!dateString) return dateString
-  const h2 = new Date()
-  h2.setDate(h2.getDate() - 2)
-  const cap = dateStr(h2)
+  const h1 = new Date()
+  h1.setDate(h1.getDate() - 1)
+  const cap = dateStr(h1)
   return dateString > cap ? cap : dateString
 }
 

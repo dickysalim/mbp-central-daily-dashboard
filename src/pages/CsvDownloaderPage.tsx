@@ -106,6 +106,7 @@ interface AggRow {
   ledi_d2or: number; ledi_mpsh: number; socr_ccom: number
   purchase_ccom: number; revenue_ccom: number
   form_submission: number; visit: number
+  ga4_predicted?: boolean
 }
 
 // ── Formatters (module-level) ────────────────────────────────────────────────
@@ -161,6 +162,9 @@ const ALL_COLUMNS: ColDef[] = [
   { id: 'r_roas_cc',       label: 'RoAS CC',           get: r => safeDiv(r.revenue_ccom, r.ad_spend),       fmt: fmtX,    brands: ['MNC','GOL'],       group: 'ratios' },
 ]
 
+// Column IDs that depend on GA4 data (will be styled yellow italic when predicted)
+const GA4_COLS = new Set(['first_visit', 'lp_view', 'view_offer', 'r_fvr', 'r_oclp', 'r_lpvo', 'r_vo2l'])
+
 const defaultColumnsForBrand = (b: string) =>
   ALL_COLUMNS.filter(c => c.brands.includes(b) && c.group === 'metrics').map(c => c.id)
 
@@ -194,7 +198,7 @@ export function CsvDownloaderPage() {
 
   const initCfg = loadConfig(BRANDS[0])
   const [dateFrom, setDateFrom] = useState(daysAgo(30))
-  const [dateTo, setDateTo] = useState(daysAgo(2))
+  const [dateTo, setDateTo] = useState(daysAgo(1))
   const [dateBreakdown, setDateBreakdown] = useState<'daily' | 'isoweek' | 'monthly'>(initCfg?.dateBreakdown ?? 'daily')
   const [dateSortDir, setDateSortDir] = useState<'asc' | 'desc'>(initCfg?.dateSortDir ?? 'asc')
   const [dimSortBy, setDimSortBy] = useState<'none' | 'trafficSource' | 'product'>(initCfg?.dimSortBy ?? 'none')
@@ -298,6 +302,43 @@ export function CsvDownloaderPage() {
       r.revenue_ccom += c.mongo_purchase_ccom_revenue ?? 0
       r.form_submission += (c as any).mongo_form_submission ?? 0
       r.visit += (c as any).mongo_form_conversion ?? 0
+    }
+
+    // ── GA4 prediction for H-1 ──────────────────────────────────────────────
+    // Find latest date with actual GA4 data
+    const ga4Dates = new Set<string>()
+    for (const g of (data.ga4 ?? [])) ga4Dates.add(g.date)
+    const latestGa4 = ga4Dates.size > 0 ? [...ga4Dates].sort().pop()! : ''
+
+    // For daily breakdown, predict GA4 for dates beyond latestGa4
+    if (dateBreakdown === 'daily' && latestGa4) {
+      // Build trailing averages per (traffic_source, sku) from rows WITH GA4 data
+      const trailMap = new Map<string, { fv: number[]; lp: number[]; vo: number[] }>()
+      for (const [, row] of map) {
+        if (row.period > latestGa4) continue // skip dates without GA4
+        const dk = `${row.traffic_source}|${row.product}`
+        let t = trailMap.get(dk)
+        if (!t) { t = { fv: [], lp: [], vo: [] }; trailMap.set(dk, t) }
+        t.fv.push(row.first_visit)
+        t.lp.push(row.lp_view)
+        t.vo.push(row.view_offer)
+      }
+      const avg = (arr: number[]) => {
+        const last7 = arr.slice(-7)
+        return last7.length > 0 ? last7.reduce((s, v) => s + v, 0) / last7.length : 0
+      }
+      // Fill predicted values
+      for (const [, row] of map) {
+        if (row.period <= latestGa4) continue
+        const dk = `${row.traffic_source}|${row.product}`
+        const t = trailMap.get(dk)
+        if (t) {
+          row.first_visit = Math.round(avg(t.fv))
+          row.lp_view = Math.round(avg(t.lp))
+          row.view_offer = Math.round(avg(t.vo))
+          row.ga4_predicted = true
+        }
+      }
     }
 
     const dateDir = dateSortDir === 'asc' ? 1 : -1
@@ -812,14 +853,26 @@ export function CsvDownloaderPage() {
                     <td style={{ ...tdStyle, textAlign: 'left', color: '#fff', fontWeight: 700, ...fz(fi++) }}>{r.period}</td>
                     {dimensions.trafficSource && <td style={{ ...tdStyle, textAlign: 'left', ...fz(fi++) }}>{r.traffic_source}</td>}
                     {dimensions.product && <td style={{ ...tdStyle, textAlign: 'left', ...fz(fi++) }}>{r.product}</td>}
-                    {activeColumns.map(c => (
-                      <td key={c.id} style={tdStyle}>{c.fmt(c.get(r))}</td>
-                    ))}
+                    {activeColumns.map(c => {
+                      const isPredicted = r.ga4_predicted && GA4_COLS.has(c.id)
+                      return (
+                        <td key={c.id} style={{
+                          ...tdStyle,
+                          ...(isPredicted ? { color: '#fbbf24', fontStyle: 'italic' } : {}),
+                        }}>{c.fmt(c.get(r))}</td>
+                      )
+                    })}
                   </tr>
                 )
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {rows.some(r => r.ga4_predicted) && activeColumns.some(c => GA4_COLS.has(c.id)) && (
+        <div style={{ marginTop: 6, fontSize: 10, color: '#fbbf24', fontStyle: 'italic' }}>
+          *numbers in yellow is forecasted value, not actual value
         </div>
       )}
 
