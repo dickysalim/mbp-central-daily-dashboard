@@ -350,8 +350,8 @@ export function AdsPerformanceHealthCard({
               return skuCprl.map(s => {
                 const skuLeads = isQual ? (s.qualLeads ?? 0) : s.leads
                 if (skuLeads <= 0) return null
-                const skuCost = totalSpend > 0 && total > 0 ? totalSpend * (skuLeads / total) : 0
-                const skuCprlVal = skuLeads > 0 ? skuCost / skuLeads : 0
+                const skuSpend = s.cprl * s.leads  // derive actual spend from cprl × real leads
+                const skuCprlVal = skuSpend > 0 ? skuSpend / skuLeads : 0
                 const color = SKU_COLORS[s.sku] ?? 'rgba(255,255,255,0.68)'
                 const onTarget = (isQual ? skuCprlVal : s.cprl) <= activeTarget
                 const displayCprl = isQual ? skuCprlVal : s.cprl

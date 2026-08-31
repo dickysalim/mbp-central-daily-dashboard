@@ -53,6 +53,12 @@ export interface SkuPerformanceCardProps {
   cprlLabel?:     string   // 'CPRL' (default) or 'CPR' etc.
   cpaLabel?:      string   // 'CPA CC' (default) or 'CPV' etc.
 
+  // Optional CPQL chart (inserted between CPRL and CPA CC)
+  totalCpql?:     number
+  cpqlSeries?:    SkuPoint[]
+  cpqlTarget?:    number
+  cpqlLabel?:     string   // 'CPQL' (default)
+
   changelog?:    ChangelogRow[]
 
   // Campaign breakdown (computed from consumer-goods data)
@@ -436,6 +442,10 @@ export function SkuPerformanceCard({
   cpaTarget  = 5_000_000,
   cprlLabel  = 'CPRL',
   cpaLabel   = 'CPA CC',
+  totalCpql,
+  cpqlSeries = [],
+  cpqlTarget,
+  cpqlLabel  = 'CPQL',
   changelog  = [],
   campaignBreakdown = [],
   skuSpend             = 0,
@@ -510,6 +520,20 @@ export function SkuPerformanceCard({
       fmtShort: cprlIsVolume ? (v: number) => mkVolFmt(v) : (v: number) => mkRpFmt(v),
       targetFontSize: 12,
     },
+    ...(cpqlSeries.length > 0 && totalCpql != null ? [{
+      key: `${sku}-cpql`, label: cpqlLabel, color: '#a78bfa',
+      series: cpqlSeries,
+      higherIsBetter: false,
+      fixedTarget: cpqlTarget ?? (cpqlSeries.length > 0 ? Math.round(cpqlSeries.reduce((s, p) => s + p.value, 0) / cpqlSeries.length) : 0),
+      metricValue:   totalCpql > 0 ? fmtRp(Math.round(totalCpql)) : '\u2014',
+      metricSub:     `Target ${fmtShortRp(cpqlTarget ?? (cpqlSeries.length > 0 ? Math.round(cpqlSeries.reduce((s, p) => s + p.value, 0) / cpqlSeries.length) : 0))}`,
+      statusLabel:   totalCpql > 0 ? (totalCpql <= (cpqlTarget ?? Infinity) ? 'On Target' : 'Off Target') : null,
+      statusGood:    totalCpql <= (cpqlTarget ?? Infinity),
+      divergencePct: totalCpql > 0 && cpqlTarget ? divPct(totalCpql, cpqlTarget) : 0,
+      fmt:      (v: number) => fmtRp(Math.round(v)),
+      fmtShort: (v: number) => mkRpFmt(v),
+      targetFontSize: 12,
+    }] : []),
     {
       key: `${sku}-cpa`, label: cpaLabel, color: '#f472b6',
       series: cpaIsVolume ? cpaVolumeSeries : cpaSeries,
