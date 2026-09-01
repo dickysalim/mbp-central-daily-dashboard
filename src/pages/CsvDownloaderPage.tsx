@@ -117,6 +117,19 @@ const safeDiv = (num: number, den: number) => den > 0 ? num / den : 0
 const rlAll = (r: AggRow) => r.rl_ccom + r.rl_d2or + r.rl_mpsh + r.rl_ofls
 const qlAll = (r: AggRow) => r.qual_ccom + r.ledi_d2or + r.ledi_mpsh
 
+// SKU → brand ownership: if a SKU is known to belong to brand X, it will be
+// excluded from brand Y's data.  Unknown SKUs pass through (not filtered).
+const SKU_BRAND: Record<string, string> = {
+  MTA: 'MNC', MSF: 'MNC', M3P: 'MNC', MNS: 'MNC',
+  GIN: 'GOL', SIX: 'GOL', SHO: 'GOL', PRM: 'GOL',
+  A1C: 'MCI', CEK: 'MCI', WCA: 'MCI',
+}
+/** Returns true when a SKU is known to belong to a DIFFERENT brand */
+const skuBelongsElsewhere = (sku: string, currentBrand: string) => {
+  const owner = SKU_BRAND[sku?.toUpperCase()]
+  return owner != null && owner !== currentBrand
+}
+
 // ── Column definitions (module-level) ────────────────────────────────────────
 type ColGroup = 'metrics' | 'ratios'
 type ColDef = { id: string; label: string; get: (r: AggRow) => number; fmt: (v: number) => string; brands: string[]; group: ColGroup }
@@ -151,6 +164,8 @@ const ALL_COLUMNS: ColDef[] = [
   { id: 'r_oclp',          label: 'OCLP',              get: r => safeDiv(r.lp_view, r.link_click),          fmt: fmtPct,  brands: ['MNC','GOL','MCI'], group: 'ratios' },
   { id: 'r_lpvo',          label: 'LPVO',              get: r => safeDiv(r.view_offer, r.lp_view),          fmt: fmtPct,  brands: ['MNC','GOL','MCI'], group: 'ratios' },
   { id: 'r_vo2l',          label: 'VO2L',              get: r => safeDiv(rlAll(r), r.view_offer),           fmt: fmtPct,  brands: ['MNC','GOL'],       group: 'ratios' },
+  { id: 'r_qual_rate_all', label: 'Quality Leads Rate', get: r => safeDiv(qlAll(r), r.rl_ccom + r.rl_d2or + r.rl_mpsh), fmt: fmtPct, brands: ['MNC','GOL'], group: 'ratios' },
+  { id: 'r_qual_rate_cc',  label: 'QUAL Rate CC',      get: r => safeDiv(r.qual_ccom, r.rl_ccom),           fmt: fmtPct,  brands: ['MNC','GOL'],       group: 'ratios' },
   { id: 'r_ledi_dp',       label: 'LEDI Rate DP',      get: r => safeDiv(r.ledi_d2or, r.rl_d2or),          fmt: fmtPct,  brands: ['MNC','GOL'],       group: 'ratios' },
   { id: 'r_ledi_mp',       label: 'LEDI Rate MP',      get: r => safeDiv(r.ledi_mpsh, r.rl_mpsh),          fmt: fmtPct,  brands: ['MNC','GOL'],       group: 'ratios' },
   { id: 'r_cvr_cc',        label: 'CVR CC',            get: r => safeDiv(r.purchase_ccom, r.rl_ccom),       fmt: fmtPct,  brands: ['MNC','GOL'],       group: 'ratios' },
@@ -231,10 +246,10 @@ export function CsvDownloaderPage() {
   const uniqueProducts = useMemo(() => {
     if (!data) return []
     const s = new Set<string>()
-    for (const p of data.performance) if (p.sku && !p.sku.toUpperCase().includes('B2B')) s.add(p.sku)
-    for (const g of (data.ga4 ?? [])) if (g.sku && !g.sku.toUpperCase().includes('B2B')) s.add(g.sku)
+    for (const p of data.performance) if (p.sku && !p.sku.toUpperCase().includes('B2B') && !skuBelongsElsewhere(p.sku, brand)) s.add(p.sku)
+    for (const g of (data.ga4 ?? [])) if (g.sku && !g.sku.toUpperCase().includes('B2B') && !skuBelongsElsewhere(g.sku, brand)) s.add(g.sku)
     return [...s].sort()
-  }, [data])
+  }, [data, brand])
 
   // Aggregate data
   const rows = useMemo((): AggRow[] => {
@@ -270,9 +285,10 @@ export function CsvDownloaderPage() {
     }
 
     const isB2B = (sku: string) => sku?.toUpperCase().includes('B2B')
+    const skipSku = (sku: string) => isB2B(sku) || skuBelongsElsewhere(sku, brand)
 
     for (const p of data.performance) {
-      if (isB2B(p.sku)) continue
+      if (skipSku(p.sku)) continue
       const r = ensure(p.date, p.traffic_source, p.sku)
       r.ad_spend += p.ad_spend ?? 0
       r.impressions += p.impressions ?? 0
@@ -280,7 +296,7 @@ export function CsvDownloaderPage() {
     }
 
     for (const g of (data.ga4 ?? [])) {
-      if (isB2B(g.sku)) continue
+      if (skipSku(g.sku)) continue
       const r = ensure(g.date, g.traffic_source, g.sku)
       r.first_visit += g.ga4_first_visit ?? 0
       r.lp_view += g.ga4_page_view ?? 0
@@ -288,7 +304,7 @@ export function CsvDownloaderPage() {
     }
 
     for (const c of (data.conversions ?? [])) {
-      if (isB2B(c.sku)) continue
+      if (skipSku(c.sku)) continue
       const r = ensure(c.date, c.traffic_source, c.sku)
       r.rl_ccom += c.mongo_real_lead_ccom ?? 0
       r.rl_d2or += c.mongo_real_lead_d2or ?? 0

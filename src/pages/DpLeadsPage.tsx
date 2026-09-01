@@ -59,12 +59,13 @@ interface AgentRow {
 interface MergedAgent {
   code: string; name: string; city: string; province: string; island: string
   isStarSeller: boolean; type: string; latLng: [number, number] | null
-  rl_total: number; ledi_total: number; agdi: number
+  rl_total: number; ledi_total: number; agdi: number; revenue: number
 }
 interface AggRow {
   key: string; label: string; count: number
-  rl_total: number; ledi_total: number; agdi: number
-  leadsPerAgent: number; pv: number
+  rl_total: number; ledi_total: number; agdi: number; revenue: number
+  leadsPerAgent: number; pv: number; revenuePerAgent: number
+  island?: string; province?: string; city?: string
 }
 
 // ── Styles ───────────────────────────────────────────────────────────────────
@@ -107,10 +108,18 @@ export function DpLeadsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [showMap, setShowMap] = useState(true)
   const [viewLevel, setViewLevel] = useState<ViewLevel>('island')
-  const [drillFilter, setDrillFilter] = useState<{ island?: string; province?: string; city?: string }>({})
+
+  // Multi-select filters per level (like Meta Ads Manager)
+  // Checked items on a level filter CHILD levels, not the current level.
+  const [checkedIslands, setCheckedIslands] = useState<Set<string>>(new Set())
+  const [checkedProvinces, setCheckedProvinces] = useState<Set<string>>(new Set())
+  const [checkedCities, setCheckedCities] = useState<Set<string>>(new Set())
+
+  const [tableHeight, setTableHeight] = useState(480)
+
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  type SortCol = 'label' | 'count' | 'pv' | 'rl_total' | 'leadsPerAgent' | 'ledi_total' | 'lediRate' | 'agdi' | 'agdiRate'
+  type SortCol = 'label' | 'count' | 'pv' | 'rl_total' | 'leadsPerAgent' | 'ledi_total' | 'lediRate' | 'agdi' | 'agdiRate' | 'revenue' | 'revenuePerAgent'
   const [sortCol, setSortCol] = useState<SortCol>('rl_total')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const toggleSort = (col: SortCol) => {
@@ -137,27 +146,29 @@ export function DpLeadsPage() {
     setDateTo(latest)
   }
 
-  // Drill-down handler: click a row to go deeper
-  const drillDown = useCallback((level: ViewLevel, key: string) => {
+  // Toggle: add/remove item from the checked set for that level
+  const toggleCheck = useCallback((level: ViewLevel, key: string) => {
+    const toggle = (prev: Set<string>) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    }
     if (level === 'island') {
-      setDrillFilter({ island: key })
-      setViewLevel('province')
+      setCheckedIslands(toggle)
+      // Clear child selections that are no longer valid
+      setCheckedProvinces(new Set())
+      setCheckedCities(new Set())
     } else if (level === 'province') {
-      setDrillFilter(prev => ({ ...prev, province: key }))
-      setViewLevel('city')
+      setCheckedProvinces(toggle)
+      setCheckedCities(new Set())
     } else if (level === 'city') {
-      setDrillFilter(prev => ({ ...prev, city: key }))
-      setViewLevel('agent')
+      setCheckedCities(toggle)
     }
   }, [])
 
-  // Tab click: reset drill filter when switching manually
+  // Tab click: just switch view — filters persist independently
   const switchTab = useCallback((tab: ViewLevel) => {
     setViewLevel(tab)
-    // Clear drill filters below the selected level
-    if (tab === 'island') setDrillFilter({})
-    else if (tab === 'province') setDrillFilter(prev => ({ island: prev.island }))
-    else if (tab === 'city') setDrillFilter(prev => ({ island: prev.island, province: prev.province }))
   }, [])
 
   // 1) Fetch CMS
@@ -198,6 +209,8 @@ export function DpLeadsPage() {
       return res.json() as Promise<{
         rows: AgentRow[]
         pageViews: { province: string; city: string; page_views: number }[]
+        revenue: { kode_agen: string; revenue: number }[]
+        revFrom: string
       }>
     },
     enabled: !!dateFrom && !!dateTo,
@@ -234,6 +247,16 @@ export function DpLeadsPage() {
     return m
   }, [leadsData])
 
+  // 3b) Index revenue by kode_agen (CMS names match exactly)
+  const revenueMap = useMemo(() => {
+    const m = new Map<string, number>()
+    if (!leadsData?.revenue) return m
+    for (const r of leadsData.revenue) {
+      m.set(r.kode_agen, (m.get(r.kode_agen) ?? 0) + r.revenue)
+    }
+    return m
+  }, [leadsData])
+
   // Paid vs DM Agen vs Organic breakdown (RL + LEDI) — pre-aggregated by worker
   const leadBreakdown = useMemo(() => {
     const r = { paid: 0, dmag: 0, organic: 0, paidLedi: 0, dmagLedi: 0, organicLedi: 0 }
@@ -246,29 +269,35 @@ export function DpLeadsPage() {
     return r
   }, [leadsData])
 
-  // 4) Merge CMS + leads by code+name composite key
+  // 4) Merge CMS + leads + revenue
   const agents = useMemo((): MergedAgent[] => {
     if (!cmsData) return []
     return cmsData.map(c => {
       const key = `${c.newAgentCode}|${c.name.trim()}`
       const leads = leadsMap.get(key)
+      const rev = revenueMap.get(c.newAgentCode) ?? 0
       return {
         code: c.newAgentCode, name: c.name, city: c.cityName, province: c.provinceName,
         island: getIsland(c.provinceName),
         isStarSeller: c.isStarSeller, type: c.type,
         latLng: parseLatLng(c.lat, c.lng, c.googleMapsUrl) ?? FALLBACK_COORDS[key] ?? null,
         rl_total: leads?.rl_total ?? 0, ledi_total: leads?.ledi_total ?? 0, agdi: leads?.agdi ?? 0,
+        revenue: rev,
       }
     }).sort((a, b) => b.rl_total - a.rl_total)
-  }, [cmsData, leadsMap])
+  }, [cmsData, leadsMap, revenueMap])
 
-  // Search + drill filter
+  // Filter agents by PARENT-level checked items (not current level)
+  // Island tab: all agents visible. Province tab: filtered by checkedIslands. etc.
   const filtered = useMemo(() => {
     let list = agents
-    // Apply drill filters
-    if (drillFilter.island) list = list.filter(a => a.island === drillFilter.island)
-    if (drillFilter.province) list = list.filter(a => a.province === drillFilter.province)
-    if (drillFilter.city) list = list.filter(a => a.city === drillFilter.city)
+    // Apply parent-level filters based on current viewLevel
+    if (viewLevel !== 'island' && checkedIslands.size > 0)
+      list = list.filter(a => checkedIslands.has(a.island))
+    if ((viewLevel === 'city' || viewLevel === 'agent') && checkedProvinces.size > 0)
+      list = list.filter(a => checkedProvinces.has(a.province))
+    if (viewLevel === 'agent' && checkedCities.size > 0)
+      list = list.filter(a => checkedCities.has(a.city))
     // Search
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase().trim()
@@ -279,7 +308,7 @@ export function DpLeadsPage() {
       )
     }
     return list
-  }, [agents, searchTerm, drillFilter])
+  }, [agents, searchTerm, viewLevel, checkedIslands, checkedProvinces, checkedCities])
 
   // Map markers
   const mapPoints = useMemo(() =>
@@ -294,32 +323,45 @@ export function DpLeadsPage() {
     return Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000) + 1)
   }, [dateFrom, dateTo])
 
+  // Revenue uses a wider date range (warm-up: at least 30 days)
+  const revDays = useMemo(() => {
+    const rf = leadsData?.revFrom ?? dateFrom
+    const from = new Date(rf + 'T00:00:00')
+    const to = new Date(dateTo + 'T00:00:00')
+    return Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000) + 1)
+  }, [leadsData?.revFrom, dateFrom, dateTo])
+
   // Aggregation for each view level
   const aggRows = useMemo((): AggRow[] => {
-    const map = new Map<string, { count: number; rl: number; ledi: number; agdi: number }>()
+    const map = new Map<string, { count: number; rl: number; ledi: number; agdi: number; rev: number; island: string; province: string; city: string }>()
     for (const a of filtered) {
       const key = viewLevel === 'island' ? a.island
         : viewLevel === 'province' ? a.province
         : viewLevel === 'city' ? a.city
         : a.code + '|' + a.name
       let g = map.get(key)
-      if (!g) { g = { count: 0, rl: 0, ledi: 0, agdi: 0 }; map.set(key, g) }
+      if (!g) { g = { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, island: a.island, province: a.province, city: a.city }; map.set(key, g) }
       g.count++
-      g.rl += a.rl_total; g.ledi += a.ledi_total; g.agdi += a.agdi
+      g.rl += a.rl_total; g.ledi += a.ledi_total; g.agdi += a.agdi; g.rev += a.revenue
     }
     const pvMap = viewLevel === 'island' ? pvByIsland : viewLevel === 'province' ? pvByProvince : pvByCity
-    // Include PV-only entries (provinces/islands with page views but no agents)
+    // Include PV-only entries, filtered by parent-level checked items
     if (pvMap && (viewLevel === 'island' || viewLevel === 'province')) {
       for (const key of pvMap.keys()) {
-        if (!map.has(key)) map.set(key, { count: 0, rl: 0, ledi: 0, agdi: 0 })
+        if (map.has(key)) continue
+        // Province tab: only include PV provinces within checked islands
+        if (viewLevel === 'province' && checkedIslands.size > 0 && !checkedIslands.has(getIsland(key))) continue
+        map.set(key, { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, island: viewLevel === 'province' ? getIsland(key) : key, province: viewLevel === 'province' ? key : '', city: '' })
       }
     }
     return Array.from(map.entries())
       .map(([key, g]) => ({
         key, label: viewLevel === 'agent' ? key.split('|')[1] || key : key,
-        count: g.count, rl_total: g.rl, ledi_total: g.ledi, agdi: g.agdi,
+        count: g.count, rl_total: g.rl, ledi_total: g.ledi, agdi: g.agdi, revenue: g.rev,
         leadsPerAgent: g.count > 0 ? g.rl / g.count / numDays : 0,
+        revenuePerAgent: g.count > 0 ? (g.rev / revDays) * 30 / g.count : 0,
         pv: viewLevel !== 'agent' ? (pvMap.get(key) ?? 0) : 0,
+        island: g.island, province: g.province, city: g.city,
       }))
       .sort((a, b) => {
         const lediRateA = a.rl_total > 0 ? a.ledi_total / a.rl_total : 0
@@ -337,37 +379,45 @@ export function DpLeadsPage() {
           case 'lediRate': cmp = lediRateA - lediRateB; break
           case 'agdi': cmp = a.agdi - b.agdi; break
           case 'agdiRate': cmp = agdiRateA - agdiRateB; break
+          case 'revenue': cmp = a.revenue - b.revenue; break
+          case 'revenuePerAgent': cmp = a.revenuePerAgent - b.revenuePerAgent; break
         }
         return sortDir === 'desc' ? -cmp : cmp
       })
-  }, [filtered, viewLevel, numDays, pvByIsland, pvByProvince, pvByCity, sortCol, sortDir])
+  }, [filtered, viewLevel, numDays, revDays, pvByIsland, pvByProvince, pvByCity, sortCol, sortDir, checkedIslands])
 
-  // Quick stats
+  // Global stats (unfiltered — for summary cards above the table)
+  const globalTotals = useMemo(() => {
+    const t = { total: 0, rl_total: 0, ledi_total: 0, agdi: 0, revenue: 0 }
+    for (const a of agents) { t.total++; t.rl_total += a.rl_total; t.ledi_total += a.ledi_total; t.agdi += a.agdi; t.revenue += a.revenue }
+    return t
+  }, [agents])
+
+  // Quick stats (filtered — for table footer)
   const totals = useMemo(() => {
-    const t = { total: 0, rl_total: 0, ledi_total: 0, agdi: 0 }
-    for (const a of filtered) { t.total++; t.rl_total += a.rl_total; t.ledi_total += a.ledi_total; t.agdi += a.agdi }
+    const t = { total: 0, rl_total: 0, ledi_total: 0, agdi: 0, revenue: 0 }
+    for (const a of filtered) { t.total++; t.rl_total += a.rl_total; t.ledi_total += a.ledi_total; t.agdi += a.agdi; t.revenue += a.revenue }
     return t
   }, [filtered])
 
   // Breadcrumb
-  const breadcrumb = useMemo(() => {
-    const parts: { label: string; onClick: () => void }[] = [
-      { label: 'All', onClick: () => { setDrillFilter({}); setViewLevel('island') } },
-    ]
-    if (drillFilter.island) parts.push({
-      label: drillFilter.island,
-      onClick: () => { setDrillFilter({ island: drillFilter.island }); setViewLevel('province') },
+  // Active filter chips for display
+  const activeFilters = useMemo(() => {
+    const chips: { label: string; key: string; onClear: () => void }[] = []
+    for (const isl of checkedIslands) chips.push({
+      label: `Island: ${isl}`, key: `i-${isl}`,
+      onClear: () => { setCheckedIslands(prev => { const n = new Set(prev); n.delete(isl); return n }); setCheckedProvinces(new Set()); setCheckedCities(new Set()) },
     })
-    if (drillFilter.province) parts.push({
-      label: drillFilter.province,
-      onClick: () => { setDrillFilter({ island: drillFilter.island, province: drillFilter.province }); setViewLevel('city') },
+    for (const prov of checkedProvinces) chips.push({
+      label: `Province: ${prov}`, key: `p-${prov}`,
+      onClear: () => { setCheckedProvinces(prev => { const n = new Set(prev); n.delete(prov); return n }); setCheckedCities(new Set()) },
     })
-    if (drillFilter.city) parts.push({
-      label: drillFilter.city,
-      onClick: () => { setDrillFilter(prev => prev); setViewLevel('agent') },
+    for (const city of checkedCities) chips.push({
+      label: `City: ${city}`, key: `c-${city}`,
+      onClear: () => setCheckedCities(prev => { const n = new Set(prev); n.delete(city); return n }),
     })
-    return parts
-  }, [drillFilter])
+    return chips
+  }, [checkedIslands, checkedProvinces, checkedCities])
 
   // Column label for first column
   const firstColLabel = viewLevel === 'island' ? 'Island' : viewLevel === 'province' ? 'Province' : viewLevel === 'city' ? 'City' : 'Agent'
@@ -498,12 +548,12 @@ export function DpLeadsPage() {
           <span style={{ fontSize: 11, fontWeight: 600 }}>{isRefreshing ? 'Refreshing…' : 'Refresh'}</span>
         </button>
         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
-          {leadsLoading ? 'Loading…' : `${totals.total} DPs`}
+          {leadsLoading ? 'Loading…' : `${globalTotals.total} DPs`}
         </div>
       </div>
 
       {/* ── Real Leads Breakdown Card + Stats ── */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', alignItems: 'stretch' }}>
 
         {/* RL Breakdown Card */}
         <div style={{
@@ -520,7 +570,7 @@ export function DpLeadsPage() {
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>Total Real Leads</div>
               <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                {fmtNum(totals.rl_total)}
+                {fmtNum(globalTotals.rl_total)}
               </div>
             </div>
 
@@ -528,7 +578,7 @@ export function DpLeadsPage() {
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>Lead Dispatch</div>
               <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                {fmtNum(totals.ledi_total)}
+                {fmtNum(globalTotals.ledi_total)}
               </div>
             </div>
 
@@ -536,7 +586,7 @@ export function DpLeadsPage() {
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>LEDI Rate</div>
               <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: 'rgba(255,255,255,0.72)', lineHeight: 1 }}>
-                {totals.rl_total > 0 ? (totals.ledi_total / totals.rl_total * 100).toFixed(1) + '%' : '-'}
+                {globalTotals.rl_total > 0 ? (globalTotals.ledi_total / globalTotals.rl_total * 100).toFixed(1) + '%' : '-'}
               </div>
             </div>
           </div>
@@ -549,7 +599,7 @@ export function DpLeadsPage() {
               { label: 'DM Agen', color: '#38bdf8', rl: leadBreakdown.dmag },
               { label: 'Organic', color: '#a78bfa', rl: leadBreakdown.organic },
             ].map(ch => {
-              const pct = totals.rl_total > 0 ? (ch.rl / totals.rl_total) * 100 : 0
+              const pct = globalTotals.rl_total > 0 ? (ch.rl / globalTotals.rl_total) * 100 : 0
               return (
                 <div key={ch.label}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
@@ -586,19 +636,19 @@ export function DpLeadsPage() {
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>Total Reseller</div>
               <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                {fmtNum(totals.total)}
+                {fmtNum(globalTotals.total)}
               </div>
             </div>
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>Agen Dispatch</div>
               <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>
-                {fmtNum(totals.agdi)}
+                {fmtNum(globalTotals.agdi)}
               </div>
             </div>
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>AGDI Rate</div>
               <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: 'rgba(255,255,255,0.72)', lineHeight: 1 }}>
-                {totals.rl_total > 0 ? (totals.agdi / totals.rl_total * 100).toFixed(1) + '%' : '-'}
+                {globalTotals.rl_total > 0 ? (globalTotals.agdi / globalTotals.rl_total * 100).toFixed(1) + '%' : '-'}
               </div>
             </div>
           </div>
@@ -607,7 +657,30 @@ export function DpLeadsPage() {
           <div style={{ flex: '1 1 auto', borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 24, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>Daily RL/Agen</div>
             <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.04em', color: '#34d399', lineHeight: 1 }}>
-              {totals.total > 0 ? (totals.rl_total / totals.total / numDays).toFixed(2) : '0'}
+              {globalTotals.total > 0 ? (globalTotals.rl_total / globalTotals.total / numDays).toFixed(2) : '0'}
+            </div>
+          </div>
+        </div>
+
+        {/* Revenue Card */}
+        <div style={{
+          flex: '1 1 auto', minWidth: 220,
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.09)',
+          borderRadius: 14, padding: '24px 28px',
+          fontFamily: 'Inter, system-ui, sans-serif',
+          display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12,
+        }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>Total Revenue</div>
+            <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.04em', color: '#34d399', lineHeight: 1 }}>
+              {globalTotals.revenue > 0 ? 'Rp ' + fmtNum(globalTotals.revenue) : '-'}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>Mo. Revenue / Agent</div>
+            <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: '#34d399', lineHeight: 1, opacity: 0.72 }}>
+              {globalTotals.total > 0 && globalTotals.revenue > 0 ? 'Rp ' + fmtNum(Math.round((globalTotals.revenue / revDays) * 30 / globalTotals.total)) : '-'}
             </div>
           </div>
         </div>
@@ -635,21 +708,30 @@ export function DpLeadsPage() {
         })}
       </div>
 
-      {/* Breadcrumb */}
-      {breadcrumb.length > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 0', fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-          {breadcrumb.map((b, i) => (
-            <React.Fragment key={i}>
-              {i > 0 && <span style={{ margin: '0 2px' }}>›</span>}
-              <span onClick={b.onClick} style={{ cursor: 'pointer', color: i === breadcrumb.length - 1 ? '#e0e2e6' : 'rgba(255,255,255,0.4)',
-                fontWeight: i === breadcrumb.length - 1 ? 700 : 500 }}>{b.label}</span>
-            </React.Fragment>
+      {/* Filter Chips */}
+      {activeFilters.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 0', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Filters:</span>
+          {activeFilters.map(f => (
+            <span key={f.key} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '3px 8px', fontSize: 10, fontWeight: 700, borderRadius: 6,
+              background: 'rgba(129,140,248,0.12)', color: '#818cf8',
+              border: '1px solid rgba(129,140,248,0.2)',
+            }}>
+              {f.label}
+              <span onClick={f.onClear} style={{ cursor: 'pointer', fontSize: 12, lineHeight: 1, opacity: 0.6 }}>×</span>
+            </span>
           ))}
+          <span onClick={() => { setCheckedIslands(new Set()); setCheckedProvinces(new Set()); setCheckedCities(new Set()) }}
+            style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.3)', cursor: 'pointer', textDecoration: 'underline' }}>
+            Clear all
+          </span>
         </div>
       )}
 
       {/* Table */}
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '0 0 10px 10px', overflow: 'auto', height: 480 }}>
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '0 0 10px 10px', overflow: 'auto', height: tableHeight }}>
         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 11 }}>
           <thead>
             <tr>
@@ -661,7 +743,12 @@ export function DpLeadsPage() {
                   </th>
                 )
                 return <>
-                  {sth('label', firstColLabel, 'left', { position: 'sticky', left: 0, zIndex: 3, background: '#111', minWidth: 220 })}
+                  {viewLevel !== 'agent' && <th style={{ ...thStyle, width: 28, padding: '6px 0', textAlign: 'center', position: 'sticky', left: 0, zIndex: 4, background: '#111' }}></th>}
+                  {sth('label', firstColLabel, 'left', { position: 'sticky', left: viewLevel !== 'agent' ? 28 : 0, zIndex: 3, background: '#111', minWidth: 220 })}
+                  {viewLevel === 'province' && <th style={{ ...thStyle, textAlign: 'left', color: 'rgba(255,255,255,0.4)' }}>Island</th>}
+                  {viewLevel === 'city' && <th style={{ ...thStyle, textAlign: 'left', color: 'rgba(255,255,255,0.4)' }}>Province</th>}
+                  {viewLevel === 'agent' && <th style={{ ...thStyle, textAlign: 'left', color: 'rgba(255,255,255,0.4)' }}>Province</th>}
+                  {viewLevel === 'agent' && <th style={{ ...thStyle, textAlign: 'left', color: 'rgba(255,255,255,0.4)' }}>City</th>}
                   {viewLevel !== 'agent' && sth('count', 'Resellers', 'right')}
                   {(viewLevel === 'island' || viewLevel === 'province') && sth('pv', 'Page Views', 'right')}
                   {sth('rl_total', 'RL Total', 'right')}
@@ -670,6 +757,8 @@ export function DpLeadsPage() {
                   {sth('lediRate', 'LEDI Rate', 'right')}
                   {sth('agdi', 'AGDI', 'right')}
                   {sth('agdiRate', 'AGDI Rate', 'right')}
+                  {sth('revenue', 'Revenue', 'right')}
+                  {viewLevel !== 'agent' && sth('revenuePerAgent', 'Mo. Rev/Agent', 'right')}
                 </>
               })()}
             </tr>
@@ -677,21 +766,28 @@ export function DpLeadsPage() {
           <tbody>
             {aggRows.map((row, i) => {
               const bg = i % 2 === 0 ? '#0d0e12' : '#111215'
-              const canDrill = viewLevel !== 'agent'
+              const canFilter = viewLevel !== 'agent'
+              const isChecked = viewLevel === 'island' ? checkedIslands.has(row.key)
+                : viewLevel === 'province' ? checkedProvinces.has(row.key)
+                : viewLevel === 'city' ? checkedCities.has(row.key) : false
               return (
-                <tr key={row.key} onClick={() => canDrill && drillDown(viewLevel, row.key)}
-                  style={{ cursor: canDrill ? 'pointer' : 'default' }}
-                  onMouseEnter={e => { if (canDrill) (e.currentTarget.style.background = 'rgba(129,140,248,0.06)') }}
-                  onMouseLeave={e => { e.currentTarget.style.background = '' }}>
-                  <td style={{ ...tdStyle, textAlign: 'left', position: 'sticky', left: 0, zIndex: 1, background: bg, minWidth: 220 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontWeight: 700, color: '#e0e2e6' }}>{row.label}</span>
-                      {canDrill && <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)' }}>›</span>}
-                    </div>
+                <tr key={row.key}>
+                  {canFilter && (
+                    <td style={{ ...tdStyle, width: 28, padding: '6px 0', textAlign: 'center', position: 'sticky', left: 0, zIndex: 2, background: bg }}>
+                      <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(viewLevel, row.key)}
+                        style={{ width: 13, height: 13, cursor: 'pointer', accentColor: '#818cf8' }} />
+                    </td>
+                  )}
+                  <td style={{ ...tdStyle, textAlign: 'left', position: 'sticky', left: canFilter ? 28 : 0, zIndex: 1, background: bg, minWidth: 220 }}>
+                    <span style={{ fontWeight: 700, color: '#e0e2e6' }}>{row.label}</span>
                     {viewLevel === 'agent' && (
                       <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{row.key.split('|')[0]}</div>
                     )}
                   </td>
+                  {viewLevel === 'province' && <td style={{ ...tdStyle, textAlign: 'left', color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{row.island}</td>}
+                  {viewLevel === 'city' && <td style={{ ...tdStyle, textAlign: 'left', color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{row.province}</td>}
+                  {viewLevel === 'agent' && <td style={{ ...tdStyle, textAlign: 'left', color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{row.province}</td>}
+                  {viewLevel === 'agent' && <td style={{ ...tdStyle, textAlign: 'left', color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{row.city}</td>}
                   {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', color: 'rgba(255,255,255,0.5)' }}>{fmtNum(row.count)}</td>}
                   {(viewLevel === 'island' || viewLevel === 'province') && <td style={{ ...tdStyle, textAlign: 'right', color: row.pv > 0 ? '#f59e0b' : 'rgba(255,255,255,0.15)' }}>{row.pv > 0 ? fmtNum(row.pv) : '-'}</td>}
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_total > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)', fontWeight: 800 }}>{fmtNum(row.rl_total)}</td>
@@ -700,6 +796,8 @@ export function DpLeadsPage() {
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_total > 0 ? '#34d399' : 'rgba(255,255,255,0.15)' }}>{row.rl_total > 0 ? (row.ledi_total / row.rl_total * 100).toFixed(1) + '%' : '-'}</td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.agdi > 0 ? '#e0e2e6' : 'rgba(255,255,255,0.15)' }}>{fmtNum(row.agdi)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_total > 0 ? '#fbbf24' : 'rgba(255,255,255,0.15)' }}>{row.rl_total > 0 ? (row.agdi / row.rl_total * 100).toFixed(1) + '%' : '-'}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right', color: row.revenue > 0 ? '#34d399' : 'rgba(255,255,255,0.15)', fontWeight: 700 }}>{row.revenue > 0 ? 'Rp ' + fmtNum(row.revenue) : '-'}</td>
+                  {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', color: row.revenuePerAgent > 0 ? '#34d399' : 'rgba(255,255,255,0.15)' }}>{row.revenuePerAgent > 0 ? 'Rp ' + fmtNum(Math.round(row.revenuePerAgent)) : '-'}</td>}
                 </tr>
               )
             })}
@@ -708,7 +806,12 @@ export function DpLeadsPage() {
           {aggRows.length > 1 && (
             <tfoot>
               <tr style={{ position: 'sticky', bottom: 0, zIndex: 2 }}>
-                <td style={{ ...tdStyle, textAlign: 'left', position: 'sticky', left: 0, zIndex: 3, background: '#111', fontWeight: 800, color: 'rgba(255,255,255,0.5)', fontSize: 9, borderTop: '1px solid rgba(255,255,255,0.1)' }}>TOTAL</td>
+                {viewLevel !== 'agent' && <td style={{ ...tdStyle, width: 28, background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)', position: 'sticky', left: 0, zIndex: 4 }}></td>}
+                <td style={{ ...tdStyle, textAlign: 'left', position: 'sticky', left: viewLevel !== 'agent' ? 28 : 0, zIndex: 3, background: '#111', fontWeight: 800, color: 'rgba(255,255,255,0.5)', fontSize: 9, borderTop: '1px solid rgba(255,255,255,0.1)' }}>TOTAL</td>
+                {viewLevel === 'province' && <td style={{ ...tdStyle, background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}></td>}
+                {viewLevel === 'city' && <td style={{ ...tdStyle, background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}></td>}
+                {viewLevel === 'agent' && <td style={{ ...tdStyle, background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}></td>}
+                {viewLevel === 'agent' && <td style={{ ...tdStyle, background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}></td>}
                 {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: 'rgba(255,255,255,0.5)', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.total)}</td>}
                 {(viewLevel === 'island' || viewLevel === 'province') && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#f59e0b', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(aggRows.reduce((s, r) => s + r.pv, 0))}</td>}
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#818cf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.rl_total)}</td>
@@ -717,10 +820,34 @@ export function DpLeadsPage() {
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.rl_total > 0 ? (totals.ledi_total / totals.rl_total * 100).toFixed(1) + '%' : '-'}</td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#e0e2e6', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.agdi)}</td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#fbbf24', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.rl_total > 0 ? (totals.agdi / totals.rl_total * 100).toFixed(1) + '%' : '-'}</td>
+                <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.revenue > 0 ? 'Rp ' + fmtNum(totals.revenue) : '-'}</td>
+                {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.total > 0 && totals.revenue > 0 ? 'Rp ' + fmtNum(Math.round((totals.revenue / revDays) * 30 / totals.total)) : '-'}</td>}
               </tr>
             </tfoot>
           )}
         </table>
+      </div>
+
+      {/* Resize handle */}
+      <div
+        style={{
+          height: 8, cursor: 'row-resize', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(255,255,255,0.02)', borderRadius: '0 0 8px 8px',
+        }}
+        onMouseDown={e => {
+          e.preventDefault()
+          const startY = e.clientY
+          const startH = tableHeight
+          const onMove = (ev: MouseEvent) => {
+            const newH = Math.max(200, Math.min(1200, startH + ev.clientY - startY))
+            setTableHeight(newH)
+          }
+          const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+          document.addEventListener('mousemove', onMove)
+          document.addEventListener('mouseup', onUp)
+        }}
+      >
+        <div style={{ width: 40, height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.15)' }} />
       </div>
     </div>
   )
