@@ -13,6 +13,7 @@ export interface MapAgent {
   rl_total: number
   ledi_total: number
   agdi: number
+  revenue: number
   isStarSeller: boolean
   city: string
   province: string
@@ -27,9 +28,9 @@ export interface IndonesiaMapProps {
 // ── Dot helpers ────────────────────────────────────────────────────────────
 const DOT_R = 1.5
 
-/** Red(0) → Yellow(mid) → Green(40+) continuous gradient, capped at 40 RL */
-function dotColor(rl: number): string {
-  const t = Math.min(rl / 40, 1) // 0..1, capped at 40 RL
+/** Red(0) → Yellow(mid) → Green(25M+) continuous gradient based on revenue */
+function dotColor(rev: number): string {
+  const t = Math.min(rev / 25_000_000, 1) // 0..1, capped at 25M
   // 0.0 = red(220,50,50)  →  0.5 = yellow(240,180,40)  →  1.0 = green(52,211,153)
   let r: number, g: number, b: number
   if (t < 0.5) {
@@ -78,7 +79,7 @@ export function IndonesiaMap({ agents, heatData, height = 420 }: IndonesiaMapPro
   } | null>(null)
   const [zoomIdx, setZoomIdx] = useState(0)
   const [showDots, setShowDots] = useState(true)
-  const [showHeat, setShowHeat] = useState(true)
+  const [showHeat, setShowHeat] = useState(false)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null)
@@ -139,7 +140,7 @@ export function IndonesiaMap({ agents, heatData, height = 420 }: IndonesiaMapPro
     agents.map(a => {
       const [x, y] = projectToSvg(a.latLng[1], a.latLng[0])
       return { ...a, x, y }
-    }).sort((a, b) => a.rl_total - b.rl_total),
+    }).sort((a, b) => a.revenue - b.revenue),
     [agents]
   )
 
@@ -202,9 +203,9 @@ export function IndonesiaMap({ agents, heatData, height = 420 }: IndonesiaMapPro
         })}
 
         {showDots && <>
-        {/* Glow — starts at 40+ RL, grows with leads */}
-        {projected.filter(a => a.rl_total >= 40).map((a, i) => {
-          const excess = Math.min((a.rl_total - 40) / 80, 1)
+        {/* Glow — starts at 10M+ revenue, grows with revenue */}
+        {projected.filter(a => a.revenue >= 10_000_000).map((a, i) => {
+          const excess = Math.min((a.revenue - 10_000_000) / 90_000_000, 1)
           const glowR = DOT_R * (2 + excess * 4)
           const glowO = 0.06 + excess * 0.2
           return (
@@ -219,7 +220,7 @@ export function IndonesiaMap({ agents, heatData, height = 420 }: IndonesiaMapPro
             key={`d-${i}`}
             cx={a.x} cy={a.y}
             r={DOT_R}
-            fill={dotColor(a.rl_total)}
+            fill={dotColor(a.revenue)}
             opacity={1}
             style={{ cursor: 'pointer' }}
             onMouseEnter={(e) => {
@@ -232,8 +233,9 @@ export function IndonesiaMap({ agents, heatData, height = 420 }: IndonesiaMapPro
                     <strong>{a.name}</strong>{a.isStarSeller && <span style={{ color: '#fbbf24' }}> ⭐</span>}<br />
                     <span style={{ color: '#888' }}>{a.code}</span><br />
                     {a.city}, {a.province}<br />
-                    <span style={{ color: '#34d399' }}>RL: {fmtNum(a.rl_total)}</span>{' · '}
-                    <span style={{ color: '#818cf8' }}>LEDI: {fmtNum(a.ledi_total)}</span>
+                    <span style={{ color: '#34d399' }}>Rev: Rp {fmtNum(a.revenue)}</span><br />
+                    <span style={{ color: '#818cf8' }}>RL: {fmtNum(a.rl_total)}</span>{' · '}
+                    <span style={{ color: '#a78bfa' }}>LEDI: {fmtNum(a.ledi_total)}</span>
                   </div>
                 ),
               })
@@ -305,12 +307,12 @@ export function IndonesiaMap({ agents, heatData, height = 420 }: IndonesiaMapPro
         position: 'absolute', bottom: 8, right: 12, display: 'flex', alignItems: 'center', gap: 6,
         fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter, sans-serif',
       }}>
-        <span>0 RL</span>
+        <span>Rp 0</span>
         <span style={{
           width: 60, height: 6, borderRadius: 3, display: 'inline-block',
           background: 'linear-gradient(to right, rgb(220,50,50), rgb(240,180,40), rgb(52,211,153))',
         }} />
-        <span>40+ RL</span>
+        <span>Rp 25M+</span>
       </div>
     </div>
   )
