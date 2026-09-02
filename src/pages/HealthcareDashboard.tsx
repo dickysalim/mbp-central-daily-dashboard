@@ -586,6 +586,11 @@ export function HealthcareDashboard() {
     return Math.max(1, Math.round((d2.getTime() - d1.getTime()) / 86400000) + 1)
   }, [activeFrom, activeTo])
 
+  const latestGa4Date = useMemo(() => {
+    const dates = (cgData?.ga4 ?? []).map(r => r.date)
+    return dates.length > 0 ? dates.sort().pop()! : undefined
+  }, [cgData])
+
   // ── Per-SKU data for SkuPerformanceCards ──
   const MCI_SKU_LIST = ['CEK', 'A1C', 'WCA']
   const allSkuData = useMemo(() => {
@@ -1218,6 +1223,7 @@ export function HealthcareDashboard() {
                 hideRoas
                 changelog={filteredChangelog}
                 campaignBreakdown={campaignBreakdownBySku[sku] ?? []}
+                forecastFromDate={latestGa4Date}
               />
             )
           })}

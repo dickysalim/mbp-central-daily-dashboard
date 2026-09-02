@@ -62,10 +62,11 @@ function movingAvg(data: number[], window: number): number[] {
 interface ChartPoint { date: string; value: number }
 interface AdsMarker { date: string; titles: string[] }
 
-function FullChart({ data, color, fixedTarget, higherIsBetter, fmt, fmtShort, chartKey, adsMarkers = [] }: {
+function FullChart({ data, color, fixedTarget, higherIsBetter, fmt, fmtShort, chartKey, adsMarkers = [], forecastFromDate }: {
   data: ChartPoint[]; color: string; fixedTarget?: number; higherIsBetter: boolean
   fmt: (v: number) => string; fmtShort: (v: number) => string; chartKey: string
   adsMarkers?: AdsMarker[]
+  forecastFromDate?: string
 }) {
   const ref = useRef<SVGSVGElement>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; p: ChartPoint } | null>(null)
@@ -123,6 +124,12 @@ function FullChart({ data, color, fixedTarget, higherIsBetter, fmt, fmtShort, ch
   const belowColor = higherIsBetter ? '#f87171' : '#34d399'
 
   const pts = data.map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ')
+
+  // Forecast split: solid line up to forecastFromDate, dashed after
+  const fcIdx = forecastFromDate ? data.findIndex(d => d.date > forecastFromDate) : -1
+  const solidPts = fcIdx > 0 ? data.slice(0, fcIdx).map((d, i) => `${xs(i)},${ys(d.value)}`).join(' ') : pts
+  const dashPts = fcIdx > 0 ? data.slice(fcIdx - 1).map((d, i) => `${xs(i + fcIdx - 1)},${ys(d.value)}`).join(' ') : ''
+
   const sd = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
   // Ads-added markers: match marker dates to data indices
@@ -149,7 +156,14 @@ function FullChart({ data, color, fixedTarget, higherIsBetter, fmt, fmtShort, ch
           <line x1={PAD.left} y1={tY} x2={VW - PAD.right} y2={tY} stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="2" strokeDasharray="4,3" />
           <text x={VW - PAD.right + 3} y={tY + 5} fontSize="12" fill="#94a3b8" fontWeight="700">{fmtShort(target)}</text>
           <line x1={xs(0)} y1={cl(ys(ic))} x2={xs(n - 1)} y2={cl(ys(slope * (n - 1) + ic))} stroke={tc} strokeOpacity="0.65" strokeWidth="3.5" strokeDasharray="4,3" />
-          <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+          {/* Main line — split solid/dashed at forecast boundary */}
+          <polyline points={solidPts} fill="none" stroke={lineColor} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+          {dashPts && <>
+            <polyline points={dashPts} fill="none" stroke={lineColor} strokeWidth="2" strokeOpacity="0.6"
+              strokeLinejoin="round" strokeLinecap="round" strokeDasharray="4,3" />
+            <circle cx={xs(fcIdx - 1)} cy={ys(data[fcIdx - 1].value)} r="3.5"
+              fill={lineColor} stroke="#0d0e12" strokeWidth="1.5" />
+          </>}
 
           {/* Ads-added markers */}
           {markers.map(m => (
@@ -199,13 +213,14 @@ function FullChart({ data, color, fixedTarget, higherIsBetter, fmt, fmtShort, ch
 }
 
 // ── Metric Card with full chart ──
-function MetricCard({ label, value, sub, color, series, fixedTarget, higherIsBetter, fmt: fmtFn, fmtShort: fmtShortFn, adsMarkers, rawSeries, maLabel }: {
+function MetricCard({ label, value, sub, color, series, fixedTarget, higherIsBetter, fmt: fmtFn, fmtShort: fmtShortFn, adsMarkers, rawSeries, maLabel, forecastFromDate }: {
   label: string; value: string; sub?: string; color: string; series: ChartPoint[]
   fixedTarget?: number; higherIsBetter: boolean
   fmt: (v: number) => string; fmtShort: (v: number) => string
   adsMarkers?: AdsMarker[]
   rawSeries?: ChartPoint[]
   maLabel?: string
+  forecastFromDate?: string
 }) {
   const [showMA, setShowMA] = useState(true)
   const hasToggle = !!rawSeries && rawSeries.length >= 2
@@ -257,7 +272,7 @@ function MetricCard({ label, value, sub, color, series, fixedTarget, higherIsBet
           }}>Daily</button>
         </div>
       )}
-      <FullChart data={activeSeries} color={color} fixedTarget={fixedTarget} higherIsBetter={higherIsBetter} fmt={fmtFn} fmtShort={fmtShortFn} chartKey={label} adsMarkers={adsMarkers} />
+      <FullChart data={activeSeries} color={color} fixedTarget={fixedTarget} higherIsBetter={higherIsBetter} fmt={fmtFn} fmtShort={fmtShortFn} chartKey={label} adsMarkers={adsMarkers} forecastFromDate={forecastFromDate} />
     </div>
   )
 }
@@ -565,6 +580,21 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     const dailyPageView = dates.map(d => ga4Map.get(d)?.ga4_page_view ?? 0)
     const dailyViewOffer = dates.map(d => ga4Map.get(d)?.ga4_view_offer ?? 0)
 
+    // Detect latest GA4 date and backfill predicted values for missing dates
+    const latestGa4 = dg.length > 0 ? dg.map(r => r.date).sort().pop()! : undefined
+    if (latestGa4) {
+      const avg7 = (arr: number[], endIdx: number) => {
+        const start = Math.max(0, endIdx - 6)
+        const slice = arr.slice(start, endIdx + 1).filter(v => v > 0)
+        return slice.length > 0 ? Math.round(slice.reduce((s, v) => s + v, 0) / slice.length) : 0
+      }
+      for (let i = 0; i < dates.length; i++) {
+        if (dates[i] <= latestGa4) continue
+        dailyPageView[i] = avg7(dailyPageView, i - 1)
+        dailyViewOffer[i] = avg7(dailyViewOffer, i - 1)
+      }
+    }
+
     // CPRL = MA14(spend) / MA14(leads) — 14D window avoids 0-purchase gaps in per-campaign data
     const spendMA = movingAvg(dailySpend, 14)
     const leadsMA = movingAvg(dailyLeads, 14)
@@ -618,6 +648,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
       lpvoSeries,
       vo2l: totalViewOffer > 0 ? totalLeads / totalViewOffer : 0,
       vo2lSeries,
+      forecastFromDate: latestGa4,
     }
   }, [adData, dateFrom])
 
@@ -810,9 +841,9 @@ function CampaignPage({ config }: { config: BrandConfig }) {
               fmt={(v) => fmtRp(Math.round(v))} fmtShort={(v) => fmtRpShort(v)} adsMarkers={adsMarkers}
               rawSeries={campaignCharts.cpaDailySeries} maLabel="14d MA" />
             <MetricCard label="LPVO" value={fmtPct(campaignCharts.lpvo)} color="#fbbf24" series={campaignCharts.lpvoSeries}
-              higherIsBetter={true} fmt={(v) => fmtPct(v)} fmtShort={(v) => fmtPctShort(v)} adsMarkers={adsMarkers} />
+              higherIsBetter={true} fmt={(v) => fmtPct(v)} fmtShort={(v) => fmtPctShort(v)} adsMarkers={adsMarkers} forecastFromDate={campaignCharts.forecastFromDate} />
             <MetricCard label="VO2L" value={fmtPct(campaignCharts.vo2l)} color="#f87171" series={campaignCharts.vo2lSeries}
-              higherIsBetter={true} fmt={(v) => fmtPct(v)} fmtShort={(v) => fmtPctShort(v)} adsMarkers={adsMarkers} />
+              higherIsBetter={true} fmt={(v) => fmtPct(v)} fmtShort={(v) => fmtPctShort(v)} adsMarkers={adsMarkers} forecastFromDate={campaignCharts.forecastFromDate} />
           </div>
         </div>
       )}

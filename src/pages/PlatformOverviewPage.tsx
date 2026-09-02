@@ -223,6 +223,11 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date))
   }, [cgData])
 
+  const latestGa4Date = useMemo(() => {
+    const dates = (cgData?.ga4 ?? []).map(r => r.date)
+    return dates.length > 0 ? dates.sort().pop()! : undefined
+  }, [cgData])
+
   const filteredChangelog = useMemo(() => cgData?.changelog ?? [], [cgData])
 
   // ── Per-platform computed metrics (same shape as allSkuData in ConsumerGoodsDashboard) ──
@@ -521,6 +526,7 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
                 roasTarget={activeBrand === 'MCI' ? undefined : 6.59}
                 roasLabel={activeBrand === 'MCI' ? 'Visit Rate' : 'CC RoAS'}
                 roasIsPercentage={activeBrand === 'MCI'}
+                forecastFromDate={latestGa4Date}
               />
             )
           })}

@@ -54,17 +54,18 @@ interface AgentRow {
   rl_total: number; ledi_total: number; agdi: number
   rl_paid: number; ledi_paid: number
   rl_dmag: number; ledi_dmag: number
-  rl_organic: number; ledi_organic: number
 }
 interface MergedAgent {
   code: string; name: string; city: string; province: string; island: string
   isStarSeller: boolean; type: string; latLng: [number, number] | null
   rl_total: number; ledi_total: number; agdi: number; revenue: number
+  rl_paid: number; rl_dmag: number; rl_organic: number
 }
 interface AggRow {
   key: string; label: string; count: number
   rl_total: number; ledi_total: number; agdi: number; revenue: number
   leadsPerAgent: number; pv: number; revenuePerAgent: number
+  rl_paid: number; rl_dmag: number; rl_organic: number
   island?: string; province?: string; city?: string
 }
 
@@ -116,10 +117,11 @@ export function DpLeadsPage() {
   const [checkedCities, setCheckedCities] = useState<Set<string>>(new Set())
 
   const [tableHeight, setTableHeight] = useState(480)
+  const [showRlBreakdown, setShowRlBreakdown] = useState(false)
 
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  type SortCol = 'label' | 'count' | 'pv' | 'rl_total' | 'leadsPerAgent' | 'ledi_total' | 'lediRate' | 'agdi' | 'agdiRate' | 'revenue' | 'revenuePerAgent'
+  type SortCol = 'label' | 'count' | 'pv' | 'rl_total' | 'rl_paid' | 'rl_dmag' | 'rl_organic' | 'leadsPerAgent' | 'ledi_total' | 'lediRate' | 'agdi' | 'agdiRate' | 'revenue' | 'revenuePerAgent'
   const [sortCol, setSortCol] = useState<SortCol>('rl_total')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const toggleSort = (col: SortCol) => {
@@ -238,11 +240,12 @@ export function DpLeadsPage() {
 
   // 3) Index leads by agent code + name (composite key) — already aggregated by worker
   const leadsMap = useMemo(() => {
-    const m = new Map<string, { rl_total: number; ledi_total: number; agdi: number }>()
+    const m = new Map<string, { rl_total: number; ledi_total: number; agdi: number; rl_paid: number; rl_dmag: number; rl_organic: number }>()
     if (!leadsData?.rows) return m
     for (const r of leadsData.rows) {
       const key = `${r.kode_agen}|${r.nama_agen.trim()}`
-      m.set(key, { rl_total: r.rl_total, ledi_total: r.ledi_total, agdi: r.agdi })
+      const rl_organic = Math.max(0, r.rl_total - r.rl_paid - r.rl_dmag)
+      m.set(key, { rl_total: r.rl_total, ledi_total: r.ledi_total, agdi: r.agdi, rl_paid: r.rl_paid, rl_dmag: r.rl_dmag, rl_organic })
     }
     return m
   }, [leadsData])
@@ -255,18 +258,6 @@ export function DpLeadsPage() {
       m.set(r.kode_agen, (m.get(r.kode_agen) ?? 0) + r.revenue)
     }
     return m
-  }, [leadsData])
-
-  // Paid vs DM Agen vs Organic breakdown (RL + LEDI) — pre-aggregated by worker
-  const leadBreakdown = useMemo(() => {
-    const r = { paid: 0, dmag: 0, organic: 0, paidLedi: 0, dmagLedi: 0, organicLedi: 0 }
-    if (!leadsData?.rows) return r
-    for (const row of leadsData.rows) {
-      r.paid += row.rl_paid; r.paidLedi += row.ledi_paid
-      r.dmag += row.rl_dmag; r.dmagLedi += row.ledi_dmag
-      r.organic += row.rl_organic; r.organicLedi += row.ledi_organic
-    }
-    return r
   }, [leadsData])
 
   // 4) Merge CMS + leads + revenue
@@ -283,9 +274,21 @@ export function DpLeadsPage() {
         latLng: parseLatLng(c.lat, c.lng, c.googleMapsUrl) ?? FALLBACK_COORDS[key] ?? null,
         rl_total: leads?.rl_total ?? 0, ledi_total: leads?.ledi_total ?? 0, agdi: leads?.agdi ?? 0,
         revenue: rev,
+        rl_paid: leads?.rl_paid ?? 0, rl_dmag: leads?.rl_dmag ?? 0, rl_organic: leads?.rl_organic ?? 0,
       }
     }).sort((a, b) => b.rl_total - a.rl_total)
   }, [cmsData, leadsMap, revenueMap])
+
+  // Paid vs DM Agen vs Organic breakdown (RL + LEDI) — from CMS-joined agents so totals match
+  const leadBreakdown = useMemo(() => {
+    const r = { paid: 0, dmag: 0, organic: 0, paidLedi: 0, dmagLedi: 0, organicLedi: 0 }
+    for (const a of agents) {
+      r.paid += a.rl_paid
+      r.dmag += a.rl_dmag
+      r.organic += a.rl_organic
+    }
+    return r
+  }, [agents])
 
   // Filter agents by PARENT-level checked items (not current level)
   // Island tab: all agents visible. Province tab: filtered by checkedIslands. etc.
@@ -333,16 +336,17 @@ export function DpLeadsPage() {
 
   // Aggregation for each view level
   const aggRows = useMemo((): AggRow[] => {
-    const map = new Map<string, { count: number; rl: number; ledi: number; agdi: number; rev: number; island: string; province: string; city: string }>()
+    const map = new Map<string, { count: number; rl: number; ledi: number; agdi: number; rev: number; rl_paid: number; rl_dmag: number; rl_organic: number; island: string; province: string; city: string }>()
     for (const a of filtered) {
       const key = viewLevel === 'island' ? a.island
         : viewLevel === 'province' ? a.province
         : viewLevel === 'city' ? a.city
         : a.code + '|' + a.name
       let g = map.get(key)
-      if (!g) { g = { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, island: a.island, province: a.province, city: a.city }; map.set(key, g) }
+      if (!g) { g = { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, rl_paid: 0, rl_dmag: 0, rl_organic: 0, island: a.island, province: a.province, city: a.city }; map.set(key, g) }
       g.count++
       g.rl += a.rl_total; g.ledi += a.ledi_total; g.agdi += a.agdi; g.rev += a.revenue
+      g.rl_paid += a.rl_paid; g.rl_dmag += a.rl_dmag; g.rl_organic += a.rl_organic
     }
     const pvMap = viewLevel === 'island' ? pvByIsland : viewLevel === 'province' ? pvByProvince : pvByCity
     // Include PV-only entries, filtered by parent-level checked items
@@ -351,13 +355,14 @@ export function DpLeadsPage() {
         if (map.has(key)) continue
         // Province tab: only include PV provinces within checked islands
         if (viewLevel === 'province' && checkedIslands.size > 0 && !checkedIslands.has(getIsland(key))) continue
-        map.set(key, { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, island: viewLevel === 'province' ? getIsland(key) : key, province: viewLevel === 'province' ? key : '', city: '' })
+        map.set(key, { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, rl_paid: 0, rl_dmag: 0, rl_organic: 0, island: viewLevel === 'province' ? getIsland(key) : key, province: viewLevel === 'province' ? key : '', city: '' })
       }
     }
     return Array.from(map.entries())
       .map(([key, g]) => ({
         key, label: viewLevel === 'agent' ? key.split('|')[1] || key : key,
         count: g.count, rl_total: g.rl, ledi_total: g.ledi, agdi: g.agdi, revenue: g.rev,
+        rl_paid: g.rl_paid, rl_dmag: g.rl_dmag, rl_organic: g.rl_organic,
         leadsPerAgent: g.count > 0 ? g.rl / g.count / numDays : 0,
         revenuePerAgent: g.count > 0 ? (g.rev / revDays) * 30 / g.count : 0,
         pv: viewLevel !== 'agent' ? (pvMap.get(key) ?? 0) : 0,
@@ -374,6 +379,9 @@ export function DpLeadsPage() {
           case 'count': cmp = a.count - b.count; break
           case 'pv': cmp = a.pv - b.pv; break
           case 'rl_total': cmp = a.rl_total - b.rl_total; break
+          case 'rl_paid': cmp = a.rl_paid - b.rl_paid; break
+          case 'rl_dmag': cmp = a.rl_dmag - b.rl_dmag; break
+          case 'rl_organic': cmp = a.rl_organic - b.rl_organic; break
           case 'leadsPerAgent': cmp = a.leadsPerAgent - b.leadsPerAgent; break
           case 'ledi_total': cmp = a.ledi_total - b.ledi_total; break
           case 'lediRate': cmp = lediRateA - lediRateB; break
@@ -730,7 +738,20 @@ export function DpLeadsPage() {
         </div>
       )}
 
-      {/* Table */}
+      {/* RL Breakdown Toggle + Table */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+        <button onClick={() => setShowRlBreakdown(v => !v)} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          padding: '4px 10px', fontSize: 9, fontWeight: 700, borderRadius: 5,
+          border: `1px solid ${showRlBreakdown ? 'rgba(129,140,248,0.4)' : 'rgba(255,255,255,0.1)'}`,
+          background: showRlBreakdown ? 'rgba(129,140,248,0.15)' : 'rgba(255,255,255,0.04)',
+          color: showRlBreakdown ? '#818cf8' : 'rgba(255,255,255,0.45)',
+          cursor: 'pointer', letterSpacing: '0.03em',
+        }}>
+          <span style={{ fontSize: 10 }}>{showRlBreakdown ? '−' : '+'}</span>
+          RL Breakdown
+        </button>
+      </div>
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '0 0 10px 10px', overflow: 'auto', height: tableHeight }}>
         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 11 }}>
           <thead>
@@ -752,6 +773,11 @@ export function DpLeadsPage() {
                   {viewLevel !== 'agent' && sth('count', 'Resellers', 'right')}
                   {(viewLevel === 'island' || viewLevel === 'province') && sth('pv', 'Page Views', 'right')}
                   {sth('rl_total', 'RL Total', 'right')}
+                  {showRlBreakdown && <>
+                    {sth('rl_paid', 'Paid', 'right', { color: '#f59e0b', fontWeight: 600, fontSize: 9 })}
+                    {sth('rl_dmag', 'DM Agen', 'right', { color: '#38bdf8', fontWeight: 600, fontSize: 9 })}
+                    {sth('rl_organic', 'Organic', 'right', { color: '#a78bfa', fontWeight: 600, fontSize: 9 })}
+                  </>}
                   {sth('leadsPerAgent', 'Daily RL/Agent', 'right')}
                   {sth('ledi_total', 'LEDI Total', 'right')}
                   {sth('lediRate', 'LEDI Rate', 'right')}
@@ -791,6 +817,11 @@ export function DpLeadsPage() {
                   {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', color: 'rgba(255,255,255,0.5)' }}>{fmtNum(row.count)}</td>}
                   {(viewLevel === 'island' || viewLevel === 'province') && <td style={{ ...tdStyle, textAlign: 'right', color: row.pv > 0 ? '#f59e0b' : 'rgba(255,255,255,0.15)' }}>{row.pv > 0 ? fmtNum(row.pv) : '-'}</td>}
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_total > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)', fontWeight: 800 }}>{fmtNum(row.rl_total)}</td>
+                  {showRlBreakdown && <>
+                    <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_paid > 0 ? '#f59e0b' : 'rgba(255,255,255,0.12)', fontSize: 10 }}>{row.rl_paid > 0 ? fmtNum(row.rl_paid) : '-'}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_dmag > 0 ? '#38bdf8' : 'rgba(255,255,255,0.12)', fontSize: 10 }}>{row.rl_dmag > 0 ? fmtNum(row.rl_dmag) : '-'}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_organic > 0 ? '#a78bfa' : 'rgba(255,255,255,0.12)', fontSize: 10 }}>{row.rl_organic > 0 ? fmtNum(row.rl_organic) : '-'}</td>
+                  </>}
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.leadsPerAgent > 0 ? '#34d399' : 'rgba(255,255,255,0.15)' }}>{row.leadsPerAgent.toFixed(2)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.ledi_total > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)', fontWeight: 800 }}>{fmtNum(row.ledi_total)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: row.rl_total > 0 ? '#34d399' : 'rgba(255,255,255,0.15)' }}>{row.rl_total > 0 ? (row.ledi_total / row.rl_total * 100).toFixed(1) + '%' : '-'}</td>
@@ -815,6 +846,11 @@ export function DpLeadsPage() {
                 {viewLevel !== 'agent' && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: 'rgba(255,255,255,0.5)', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.total)}</td>}
                 {(viewLevel === 'island' || viewLevel === 'province') && <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#f59e0b', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(aggRows.reduce((s, r) => s + r.pv, 0))}</td>}
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#818cf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.rl_total)}</td>
+                {showRlBreakdown && <>
+                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#f59e0b', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: 10 }}>{fmtNum(aggRows.reduce((s, r) => s + r.rl_paid, 0))}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#38bdf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: 10 }}>{fmtNum(aggRows.reduce((s, r) => s + r.rl_dmag, 0))}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#a78bfa', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: 10 }}>{fmtNum(aggRows.reduce((s, r) => s + r.rl_organic, 0))}</td>
+                </>}
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.total > 0 ? (totals.rl_total / totals.total / numDays).toFixed(2) : '0'}</td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#818cf8', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{fmtNum(totals.ledi_total)}</td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: '#34d399', background: '#111', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totals.rl_total > 0 ? (totals.ledi_total / totals.rl_total * 100).toFixed(1) + '%' : '-'}</td>
