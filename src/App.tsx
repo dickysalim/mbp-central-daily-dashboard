@@ -8,11 +8,12 @@ import { PlatformOverviewPage } from './pages/PlatformOverviewPage'
 import { HealthcareDashboard } from './pages/HealthcareDashboard'
 import { GeneralOverviewPage } from './pages/GeneralOverviewPage'
 import { SalesVelocityDashboard, GOLSalesVelocityDashboard } from './pages/SalesVelocityDashboard'
+import { CCSalesDashboard, GOLCCSalesDashboard } from './pages/CCSalesDashboard'
 import { PipelineStatusPage } from './pages/PipelineStatusPage'
 import { CampaignExplorerPage, GolCampaignExplorerPage, MciCampaignExplorerPage } from './pages/CampaignExplorerPage'
 import { CsvDownloaderPage } from './pages/CsvDownloaderPage'
 import { DpLeadsPage } from './pages/DpLeadsPage'
-import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO, IS_MNC, IS_MCI } from './config/domainConfig'
+import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO, IS_MNC, IS_MCI, IS_GOL_CC, IS_MNC_CC } from './config/domainConfig'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,8 +23,8 @@ const queryClient = new QueryClient({
   },
 })
 
-const brandLabel = IS_GOLO ? 'GOLO' : IS_MNC ? 'MNC' : IS_MCI ? 'MCI' : 'Dashboard'
-const platformBrand = IS_GOLO ? 'GOL' : IS_MNC ? 'MNC' : IS_MCI ? 'MCI' : undefined
+const brandLabel = IS_GOL_CC ? 'GOL CC' : IS_MNC_CC ? 'MNC CC' : IS_GOLO ? 'GOLO' : IS_MNC ? 'MNC' : IS_MCI ? 'MCI' : 'Dashboard'
+const platformBrand = IS_GOL_CC ? 'GOL' : IS_MNC_CC ? 'MNC' : IS_GOLO ? 'GOL' : IS_MNC ? 'MNC' : IS_MCI ? 'MCI' : undefined
 
 function App() {
   return (
@@ -33,10 +34,11 @@ function App() {
           <Route element={<PinGate pin={DOMAIN_PIN} brand={brandLabel}><AppLayout /></PinGate>}>
             <Route index element={<Navigate to={DEFAULT_ROUTE} replace />} />
 
-            {/* GOL routes — available on GOLO + main domain */}
-            {!IS_MNC && !IS_MCI && <>
+            {/* GOL routes — available on GOLO + GOL CC + main domain */}
+            {!IS_MNC && !IS_MCI && !IS_MNC_CC && <>
               <Route path="/gol" element={<ConsumerGoodsDashboard brand="GOL" />} />
               <Route path="/gol-sales-velocity" element={<GOLSalesVelocityDashboard />} />
+              <Route path="/gol-cc-sales" element={<GOLCCSalesDashboard />} />
               <Route path="/gol-campaigns" element={<GolCampaignExplorerPage />} />
             </>}
 
@@ -45,10 +47,11 @@ function App() {
             <Route path="/csv-downloader" element={<CsvDownloaderPage />} />
             <Route path="/dp-leads" element={<DpLeadsPage />} />
 
-            {/* MNC routes — available on MNC + main domain */}
-            {!IS_GOLO && !IS_MCI && <>
+            {/* MNC routes — available on MNC + MNC CC + main domain */}
+            {!IS_GOLO && !IS_MCI && !IS_GOL_CC && <>
               <Route path="/mnc" element={<ConsumerGoodsDashboard brand="MNC" />} />
               <Route path="/sales-velocity" element={<SalesVelocityDashboard />} />
+              <Route path="/cc-sales" element={<CCSalesDashboard />} />
               <Route path="/campaign-explorer" element={<CampaignExplorerPage />} />
             </>}
 
