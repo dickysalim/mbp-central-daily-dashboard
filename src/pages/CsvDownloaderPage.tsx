@@ -88,6 +88,7 @@ const tdStyle: React.CSSProperties = {
 
 interface PerfRow { date: string; traffic_source: string; sku: string; ad_spend: number; impressions: number; link_click: number }
 interface Ga4Row { date: string; traffic_source: string; sku: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }
+interface SalesRow { date: string; brand: string; sku: string; so_ccom_ca: number; so_ccom_crm: number; so_mpsh: number; so_d2or: number; so_ofls: number; rev_ccom_ca: number; rev_ccom_crm: number; rev_mpsh: number; rev_d2or: number; rev_ofls: number }
 interface ConvRow {
   date: string; traffic_source: string; sku: string
   mongo_real_lead_ccom: number; mongo_real_lead_d2or: number; mongo_real_lead_mpsh: number; mongo_real_lead_ofls: number
@@ -106,6 +107,8 @@ interface AggRow {
   ledi_d2or: number; ledi_mpsh: number; socr_ccom: number
   purchase_ccom: number; revenue_ccom: number
   form_submission: number; visit: number
+  sale_ca: number; sale_crm: number; sale_mpsh: number; sale_d2or: number; sale_ofls: number
+  roas_total_ma30: number
   ga4_predicted?: boolean
 }
 
@@ -155,7 +158,14 @@ const ALL_COLUMNS: ColDef[] = [
   { id: 'ledi_mpsh',       label: 'LEDI MPSH',         get: r => r.ledi_mpsh,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'socr_ccom',       label: 'SOCR CCOM',         get: r => r.socr_ccom,       fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'purchase_ccom',   label: 'Purchase CCOM',     get: r => r.purchase_ccom,   fmt: fmtNum, brands: ['MNC','GOL'],       group: 'metrics' },
-  { id: 'revenue_ccom',    label: 'Revenue CCOM',      get: r => r.revenue_ccom,    fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
+  { id: 'revenue_ccom',    label: 'Sales CCOM Ads',    get: r => r.revenue_ccom,    fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
+  { id: 'sale_cc',           label: 'Sales CC',           get: r => r.sale_ca + r.sale_crm, fmt: fmtRp, brands: ['MNC','GOL'], group: 'metrics' },
+  { id: 'sale_ca',          label: 'Sales CA',           get: r => r.sale_ca,         fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
+  { id: 'sale_crm',         label: 'Sales CLR',          get: r => r.sale_crm,        fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
+  { id: 'sale_mpsh',        label: 'Sales MPSH',         get: r => r.sale_mpsh,       fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
+  { id: 'sale_d2or',        label: 'Sales D2OR',         get: r => r.sale_d2or,       fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
+  { id: 'sale_ofls',        label: 'Sales OFLS',         get: r => r.sale_ofls,       fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
+  { id: 'sale_total',       label: 'Sales Total',        get: r => r.sale_ca + r.sale_crm + r.sale_mpsh + r.sale_d2or + r.sale_ofls, fmt: fmtRp, brands: ['MNC','GOL'], group: 'metrics' },
 
   // ── Ratios ──
   { id: 'r_cpm',           label: 'CPM',               get: r => safeDiv(r.ad_spend, r.impressions / 1000), fmt: fmtRpD,  brands: ['MNC','GOL','MCI'], group: 'ratios' },
@@ -174,11 +184,17 @@ const ALL_COLUMNS: ColDef[] = [
   { id: 'r_cprl_all',      label: 'CPRL (All)',        get: r => safeDiv(r.ad_spend, rlAll(r)),             fmt: fmtRpD,  brands: ['MNC','GOL'],       group: 'ratios' },
   { id: 'r_cpql_all',      label: 'CPQL (All)',        get: r => safeDiv(r.ad_spend, qlAll(r)),             fmt: fmtRpD,  brands: ['MNC','GOL'],       group: 'ratios' },
   { id: 'r_cpa_cc',        label: 'CPA CC',            get: r => safeDiv(r.ad_spend, r.purchase_ccom),      fmt: fmtRpD,  brands: ['MNC','GOL'],       group: 'ratios' },
-  { id: 'r_roas_cc',       label: 'RoAS CC',           get: r => safeDiv(r.revenue_ccom, r.ad_spend),       fmt: fmtX,    brands: ['MNC','GOL'],       group: 'ratios' },
+  { id: 'r_roas_cc',       label: 'RoAS CC Ads',       get: r => safeDiv(r.revenue_ccom, r.ad_spend),       fmt: fmtX,    brands: ['MNC','GOL'],       group: 'ratios' },
+  { id: 'r_roas_total',    label: 'RoAS Total',        get: r => safeDiv(r.sale_ca + r.sale_crm + r.sale_mpsh + r.sale_d2or + r.sale_ofls, r.ad_spend), fmt: fmtX, brands: ['MNC','GOL'], group: 'ratios' },
+  { id: 'r_roas_total_ma30', label: 'RoAS Total (30d MA)', get: r => r.roas_total_ma30, fmt: fmtX, brands: ['MNC','GOL'], group: 'ratios' },
 ]
 
 // Column IDs that depend on GA4 data (will be styled yellow italic when predicted)
 const GA4_COLS = new Set(['first_visit', 'lp_view', 'view_offer', 'r_fvr', 'r_oclp', 'r_lpvo', 'r_vo2l'])
+// Sales columns — cannot be broken down by traffic_source (data has no traffic dimension)
+const SALES_COLS = new Set(['sale_total', 'sale_cc', 'sale_ca', 'sale_crm', 'sale_mpsh', 'sale_d2or', 'sale_ofls', 'r_roas_total', 'r_roas_total_ma30'])
+// MA columns — only usable on daily breakdown
+const MA_COLS = new Set(['r_roas_total_ma30'])
 
 const defaultColumnsForBrand = (b: string) =>
   ALL_COLUMNS.filter(c => c.brands.includes(b) && c.group === 'metrics').map(c => c.id)
@@ -229,7 +245,7 @@ export function CsvDownloaderPage() {
     queryKey: ['csv-data', brand, dateFrom, dateTo],
     queryFn: async () => {
       const res = await fetch(`${D1_WORKER_URL}/v2/consumer-goods?brand=${brand}&from=${dateFrom}&to=${dateTo}`)
-      return res.json() as Promise<{ performance: PerfRow[]; ga4: Ga4Row[]; conversions: ConvRow[] }>
+      return res.json() as Promise<{ performance: PerfRow[]; ga4: Ga4Row[]; conversions: ConvRow[]; sales: SalesRow[] }>
     },
     enabled: !!dateFrom && !!dateTo,
   })
@@ -278,6 +294,8 @@ export function CsvDownloaderPage() {
           ledi_d2or: 0, ledi_mpsh: 0, socr_ccom: 0,
           purchase_ccom: 0, revenue_ccom: 0,
           form_submission: 0, visit: 0,
+          sale_ca: 0, sale_crm: 0, sale_mpsh: 0, sale_d2or: 0, sale_ofls: 0,
+          roas_total_ma30: 0,
         }
         map.set(k, r)
       }
@@ -320,6 +338,17 @@ export function CsvDownloaderPage() {
       r.visit += (c as any).mongo_form_conversion ?? 0
     }
 
+    // Sales — no traffic_source dimension, keyed by date + sku only
+    for (const s of (data.sales ?? [])) {
+      if (skipSku(s.sku)) continue
+      const r = ensure(s.date, 'ALL', s.sku)
+      r.sale_ca   += s.rev_ccom_ca ?? 0
+      r.sale_crm  += s.rev_ccom_crm ?? 0
+      r.sale_mpsh += s.rev_mpsh ?? 0
+      r.sale_d2or += s.rev_d2or ?? 0
+      r.sale_ofls += s.rev_ofls ?? 0
+    }
+
     // ── GA4 prediction for H-1 ──────────────────────────────────────────────
     // Find latest date with actual GA4 data
     const ga4Dates = new Set<string>()
@@ -353,6 +382,37 @@ export function CsvDownloaderPage() {
           row.lp_view = Math.round(avg(t.lp))
           row.view_offer = Math.round(avg(t.vo))
           row.ga4_predicted = true
+        }
+      }
+    }
+
+    // ── 30-day trailing RoAS MA (daily only) ────────────────────────────────
+    if (dateBreakdown === 'daily') {
+      // Group rows by dimension key (traffic_source + product)
+      const groups = new Map<string, AggRow[]>()
+      for (const [, row] of map) {
+        const gk = `${row.traffic_source}|${row.product}`
+        let arr = groups.get(gk)
+        if (!arr) { arr = []; groups.set(gk, arr) }
+        arr.push(row)
+      }
+      for (const [, rows] of groups) {
+        // Sort by date ascending
+        rows.sort((a, b) => a.period.localeCompare(b.period))
+        for (let i = 0; i < rows.length; i++) {
+          const cur = rows[i]
+          const curDate = new Date(cur.period + 'T00:00:00')
+          let sumSales = 0, sumSpend = 0
+          // Walk backwards to collect trailing 30 days
+          for (let j = i; j >= 0; j--) {
+            const d = new Date(rows[j].period + 'T00:00:00')
+            const diffDays = (curDate.getTime() - d.getTime()) / 86400000
+            if (diffDays >= 30) break
+            const rj = rows[j]
+            sumSales += rj.sale_ca + rj.sale_crm + rj.sale_mpsh + rj.sale_d2or + rj.sale_ofls
+            sumSpend += rj.ad_spend
+          }
+          cur.roas_total_ma30 = sumSpend > 0 ? sumSales / sumSpend : 0
         }
       }
     }
@@ -416,6 +476,20 @@ export function CsvDownloaderPage() {
   React.useEffect(() => {
     saveConfig(brand, { selectedColumns, dimensions, dimSortBy, dimSortDir, dateBreakdown, dateSortDir })
   }, [brand, selectedColumns, dimensions, dimSortBy, dimSortDir, dateBreakdown, dateSortDir, saveConfig])
+
+  // Auto-disable traffic source dimension when sales columns are selected
+  React.useEffect(() => {
+    if (dimensions.trafficSource && selectedColumns.some(id => SALES_COLS.has(id))) {
+      setDimensions(prev => ({ ...prev, trafficSource: false }))
+    }
+  }, [selectedColumns, dimensions.trafficSource])
+
+  // Auto-deselect MA columns when switching away from daily breakdown
+  React.useEffect(() => {
+    if (dateBreakdown !== 'daily' && selectedColumns.some(id => MA_COLS.has(id))) {
+      setSelectedColumns(prev => prev.filter(id => !MA_COLS.has(id)))
+    }
+  }, [dateBreakdown, selectedColumns])
 
   const activeColumns = useMemo(() =>
     selectedColumns.map(id => availableColumns.find(c => c.id === id)).filter((c): c is ColDef => c != null),
@@ -597,23 +671,27 @@ export function CsvDownloaderPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {([{ key: 'trafficSource' as const, label: 'Traffic Source' }, { key: 'product' as const, label: 'Product' }]).map(d => {
                 const isOn = dimensions[d.key]
+                const hasSalesCol = d.key === 'trafficSource' && selectedColumns.some(id => SALES_COLS.has(id))
+                const disabled = hasSalesCol
                 return (
-                  <button key={d.key} onClick={() => toggleDim(d.key)} style={{
+                  <button key={d.key} onClick={() => { if (!disabled) toggleDim(d.key) }} title={disabled ? "Can't use this dimension with sales data" : undefined} style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     padding: '3px 7px', fontSize: 10, fontWeight: 600, borderRadius: 4,
-                    border: 'none', cursor: 'pointer', textAlign: 'left',
-                    background: isOn ? 'rgba(52,211,153,0.12)' : 'rgba(255,255,255,0.03)',
-                    color: isOn ? '#34d399' : 'rgba(255,255,255,0.45)',
+                    border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left',
+                    background: disabled ? 'rgba(255,255,255,0.02)' : isOn ? 'rgba(52,211,153,0.12)' : 'rgba(255,255,255,0.03)',
+                    color: disabled ? 'rgba(255,255,255,0.2)' : isOn ? '#34d399' : 'rgba(255,255,255,0.45)',
                     transition: 'all 0.15s',
+                    opacity: disabled ? 0.5 : 1,
                   }}>
                     <span style={{
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                       width: 12, height: 12, borderRadius: 3,
-                      border: isOn ? '2px solid #34d399' : '2px solid rgba(255,255,255,0.15)',
-                      background: isOn ? '#34d399' : 'transparent',
+                      border: disabled ? '2px solid rgba(255,255,255,0.08)' : isOn ? '2px solid #34d399' : '2px solid rgba(255,255,255,0.15)',
+                      background: disabled ? 'transparent' : isOn ? '#34d399' : 'transparent',
                       fontSize: 8, color: '#111', fontWeight: 900,
-                    }}>{isOn ? '✓' : ''}</span>
+                    }}>{!disabled && isOn ? '✓' : ''}</span>
                     {d.label}
+                    {disabled && <span style={{ fontSize: 7, color: 'rgba(245,158,11,0.7)', marginLeft: 2 }}>⚠ Can't use with sales data</span>}
                   </button>
                 )
               })}
@@ -747,23 +825,26 @@ export function CsvDownloaderPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {grp.cols.map(c => {
                     const isOn = selectedColumns.includes(c.id)
+                    const maDisabled = MA_COLS.has(c.id) && dateBreakdown !== 'daily'
                     return (
-                      <button key={c.id} onClick={() => toggleColumn(c.id)} style={{
+                      <button key={c.id} onClick={() => { if (!maDisabled) toggleColumn(c.id) }} title={maDisabled ? 'Only usable on Daily breakdown' : undefined} style={{
                         display: 'flex', alignItems: 'center', gap: 6,
                         padding: '3px 7px', fontSize: 10, fontWeight: 600, borderRadius: 4,
-                        border: 'none', cursor: 'pointer', textAlign: 'left',
-                        background: isOn ? 'rgba(52,211,153,0.12)' : 'rgba(255,255,255,0.03)',
-                        color: isOn ? '#34d399' : 'rgba(255,255,255,0.45)',
+                        border: 'none', cursor: maDisabled ? 'not-allowed' : 'pointer', textAlign: 'left',
+                        background: maDisabled ? 'rgba(255,255,255,0.02)' : isOn ? 'rgba(52,211,153,0.12)' : 'rgba(255,255,255,0.03)',
+                        color: maDisabled ? 'rgba(255,255,255,0.2)' : isOn ? '#34d399' : 'rgba(255,255,255,0.45)',
                         transition: 'all 0.15s',
+                        opacity: maDisabled ? 0.5 : 1,
                       }}>
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                           width: 12, height: 12, borderRadius: 3,
-                          border: isOn ? '2px solid #34d399' : '2px solid rgba(255,255,255,0.15)',
-                          background: isOn ? '#34d399' : 'transparent',
+                          border: maDisabled ? '2px solid rgba(255,255,255,0.08)' : isOn ? '2px solid #34d399' : '2px solid rgba(255,255,255,0.15)',
+                          background: maDisabled ? 'transparent' : isOn ? '#34d399' : 'transparent',
                           fontSize: 8, color: '#111', fontWeight: 900,
-                        }}>{isOn ? '✓' : ''}</span>
+                        }}>{!maDisabled && isOn ? '✓' : ''}</span>
                         {c.label}
+                        {maDisabled && <span style={{ fontSize: 7, color: 'rgba(245,158,11,0.7)', marginLeft: 2 }}>⚠ Only usable on Daily breakdown</span>}
                       </button>
                     )
                   })}
