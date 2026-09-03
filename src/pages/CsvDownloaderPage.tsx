@@ -641,7 +641,7 @@ export function CsvDownloaderPage() {
         }}>⊞ Columns ({activeColumns.length})</button>
 
         {/* Refresh button */}
-        <button onClick={() => queryClient.invalidateQueries({ queryKey: ['csv-data', brand, dateFrom, dateTo] })} style={{
+        <button onClick={() => queryClient.refetchQueries({ queryKey: ['csv-data', brand, dateFrom, dateTo] })} style={{
           padding: '8px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer',
           fontWeight: 700, fontSize: 12, letterSpacing: '0.03em',
           background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)',
