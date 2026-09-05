@@ -30,21 +30,27 @@ interface HealthRow {
   wib_hour: number; checked_at: string
 }
 
-// Which event types each brand should show
-const BRAND_EVENTS: Record<string, string[]> = {
-  GOL: ['leadEvent', 'REAL', 'QUAL', 'SOCR', 'SALE', 'LEDI'],
-  MNC: ['leadEvent', 'REAL', 'QUAL', 'SOCR', 'SALE', 'LEDI'],
-  MCI: ['formSubmission', 'REAL', 'CRMV'],
-  MDC: ['formSubmission', 'REAL', 'CRMV'],
+// Merged columns: each column maps to a per-brand event_type
+// leadEvent+formSubmission → "Lead Event", SALE+CRMV → "Purchase/Visit"
+const COLUMNS = ['lead', 'REAL', 'QUAL', 'SOCR', 'purchase', 'LEDI'] as const
+const COL_LABELS: Record<string, string> = {
+  lead: 'Lead Event', REAL: 'Real Lead', QUAL: 'QUAL', SOCR: 'SO Created',
+  purchase: 'Purchase/Visit', LEDI: 'LEDI',
 }
-const ALL_EVENTS = ['leadEvent', 'REAL', 'QUAL', 'SOCR', 'SALE', 'LEDI', 'formSubmission', 'CRMV']
-const EVENT_LABELS: Record<string, string> = {
-  leadEvent: 'Lead Event', REAL: 'Real Lead', QUAL: 'QUAL', SOCR: 'SO Created', SALE: 'Purchase',
-  LEDI: 'LEDI', formSubmission: 'Form Sub', CRMV: 'Form Conv',
+// Which actual event_type to look up per brand for merged columns
+const COL_EVENT: Record<string, Record<string, string>> = {
+  lead: { GOL: 'leadEvent', MNC: 'leadEvent', MCI: 'formSubmission', MDC: 'formSubmission' },
+  REAL: { GOL: 'REAL', MNC: 'REAL', MCI: 'REAL', MDC: 'REAL' },
+  QUAL: { GOL: 'QUAL', MNC: 'QUAL' },
+  SOCR: { GOL: 'SOCR', MNC: 'SOCR' },
+  purchase: { GOL: 'SALE', MNC: 'SALE', MCI: 'CRMV', MDC: 'CRMV' },
+  LEDI: { GOL: 'LEDI', MNC: 'LEDI' },
 }
 
 const STATUS_COLOR: Record<string, string> = { OK: '#34d399', WARN: '#fbbf24', CRIT: '#f87171' }
 const STATUS_ICON: Record<string, string> = { OK: '●', WARN: '●', CRIT: '●' }
+// Only these events show red — others cap at yellow (could be slow day)
+const CRIT_EVENTS = new Set(['leadEvent', 'REAL', 'QUAL', 'LEDI'])
 
 function EventHealthCard() {
   const { data, isFetching } = useQuery({
@@ -81,8 +87,8 @@ function EventHealthCard() {
   const brands = ['GOL', 'MNC', 'MCI']
   const displayed = latest.filter(r => brands.includes(r.brand))
 
-  const hasCrit = displayed.some(r => r.status === 'CRIT')
-  const hasWarn = displayed.some(r => r.status === 'WARN')
+  const hasCrit = displayed.some(r => r.status === 'CRIT' && CRIT_EVENTS.has(r.event_type))
+  const hasWarn = displayed.some(r => r.status !== 'OK')
   const eventStatus = hasCrit ? 'CRIT' : hasWarn ? 'WARN' : 'OK'
   // If monitor is dead/stale, that's the worst status regardless of events
   const overall = isDead ? 'CRIT' : isStale ? 'WARN' : eventStatus
@@ -167,49 +173,49 @@ function EventHealthCard() {
                 <th style={{ textAlign: 'left', padding: '4px 10px 6px 0', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.08em', width: 60 }}>
                   Brand
                 </th>
-                {ALL_EVENTS.map(ev => (
-                  <th key={ev} style={{ textAlign: 'center', padding: '4px 6px 6px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
-                    {EVENT_LABELS[ev] ?? ev}
+                {COLUMNS.map(col => (
+                  <th key={col} style={{ textAlign: 'center', padding: '4px 6px 6px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+                    {COL_LABELS[col] ?? col}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {brands.map(brand => {
-                const monitoredEvents = BRAND_EVENTS[brand] ?? []
                 return (
                   <tr key={brand} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                     <td style={{ padding: '6px 10px 6px 0', fontWeight: 700, fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
                       {brand}
                     </td>
-                    {ALL_EVENTS.map(ev => {
-                      const isMonitored = monitoredEvents.includes(ev)
-                      if (!isMonitored) {
+                    {COLUMNS.map(col => {
+                      const eventType = COL_EVENT[col]?.[brand]
+                      if (!eventType) {
                         return (
-                          <td key={ev} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.08)' }}>
+                          <td key={col} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.08)' }}>
                             —
                           </td>
                         )
                       }
-                      const row = lookup.get(`${brand}|${ev}`)
+                      const row = lookup.get(`${brand}|${eventType}`)
                       if (!row) {
                         return (
-                          <td key={ev} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.12)' }}>
+                          <td key={col} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.12)' }}>
                             —
                           </td>
                         )
                       }
                       if (row.status === 'OK') {
                         return (
-                          <td key={ev} style={{ textAlign: 'center', padding: '6px' }}>
+                          <td key={col} style={{ textAlign: 'center', padding: '6px' }}>
                             <span style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>✓</span>
                           </td>
                         )
                       }
-                      // WARN or CRIT
-                      const sc = STATUS_COLOR[row.status] ?? '#f87171'
+                      // WARN or CRIT — cap at yellow for non-critical events
+                      const effectiveStatus = (row.status === 'CRIT' && !CRIT_EVENTS.has(eventType)) ? 'WARN' : row.status
+                      const sc = STATUS_COLOR[effectiveStatus] ?? '#f87171'
                       return (
-                        <td key={ev} style={{ textAlign: 'center', padding: '6px' }}>
+                        <td key={col} style={{ textAlign: 'center', padding: '6px' }}>
                           <span style={{ fontSize: 13, fontWeight: 700, color: sc }}>✗</span>
                           <div style={{ fontSize: 8, color: sc, marginTop: 1, fontWeight: 600 }}>
                             {row.event_count}/{row.threshold}
