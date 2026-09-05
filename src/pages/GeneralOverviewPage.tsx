@@ -60,16 +60,35 @@ function EventHealthCard() {
 
   const latest = data?.latest ?? []
 
-  // Overall status
-  const hasCrit = latest.some(r => r.status === 'CRIT')
-  const hasWarn = latest.some(r => r.status === 'WARN')
-  const overall = hasCrit ? 'CRIT' : hasWarn ? 'WARN' : 'OK'
-  const overallColor = STATUS_COLOR[overall]
-  const overallLabel = hasCrit ? 'Critical Alert' : hasWarn ? 'Warning' : 'All Systems Healthy'
-
-  // Last checked time
+  // Staleness detection — pipeline runs hourly, so >90min = stale, >2h = dead
   const lastChecked = latest.length > 0 ? latest[0].checked_at : null
   const lastWIB = latest.length > 0 ? latest[0].wib_hour : null
+  const ageMs = lastChecked ? Date.now() - new Date(lastChecked).getTime() : Infinity
+  const ageMin = Math.round(ageMs / 60_000)
+  const isStale = ageMin > 90
+  const isDead = ageMin > 120
+
+  // Overall status — staleness overrides event status
+  const hasCrit = latest.some(r => r.status === 'CRIT')
+  const hasWarn = latest.some(r => r.status === 'WARN')
+  const eventStatus = hasCrit ? 'CRIT' : hasWarn ? 'WARN' : 'OK'
+  // If monitor is dead/stale, that's the worst status regardless of events
+  const overall = isDead ? 'CRIT' : isStale ? 'WARN' : eventStatus
+  const overallColor = STATUS_COLOR[overall]
+
+  // Label reflects both staleness and event status
+  const overallLabel = isDead
+    ? '⚠ Monitor Pipeline Dead'
+    : isStale
+    ? '⚠ Monitor Pipeline Stale'
+    : hasCrit ? 'Critical Alert' : hasWarn ? 'Warning' : 'All Systems Healthy'
+
+  // Human-readable age
+  const ageStr = lastChecked
+    ? ageMin < 60
+      ? `${ageMin}m ago`
+      : `${Math.floor(ageMin / 60)}h ${ageMin % 60}m ago`
+    : '—'
   const lastCheckedStr = lastChecked
     ? `${String(lastWIB ?? 0).padStart(2, '0')}:00 WIB`
     : '—'
@@ -98,7 +117,7 @@ function EventHealthCard() {
           <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-0.02em', color: overallColor }}>
             {STATUS_ICON[overall]} {overallLabel}
           </span>
-          {alertCount > 0 && (
+          {alertCount > 0 && !isStale && !isDead && (
             <span style={{
               fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99,
               background: `${overallColor}20`, color: overallColor, letterSpacing: '0.05em',
@@ -115,9 +134,17 @@ function EventHealthCard() {
             Event Pipeline Health
           </span>
           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>·</span>
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
-            Last check: {lastCheckedStr}
+          <span style={{ fontSize: 10, color: isStale || isDead ? overallColor : 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+            {lastCheckedStr} ({ageStr})
           </span>
+          {(isStale || isDead) && (
+            <span style={{
+              fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 99,
+              background: `${overallColor}20`, color: overallColor, letterSpacing: '0.05em',
+            }}>
+              {isDead ? 'PIPELINE DOWN' : 'STALE'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -720,6 +747,9 @@ export function GeneralOverviewPage() {
         </button>
       </div>
 
+      {/* ── Event Pipeline Health Card ── */}
+      <EventHealthCard />
+
       {/* ── Content ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 40, width: '100%' }}>
 
@@ -814,9 +844,6 @@ export function GeneralOverviewPage() {
             }))}
           />
         )}
-
-        {/* ── Event Pipeline Health ── */}
-        <EventHealthCard />
 
       </div>
     </div>
