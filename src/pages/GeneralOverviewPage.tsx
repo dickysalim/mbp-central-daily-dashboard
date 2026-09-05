@@ -32,15 +32,15 @@ interface HealthRow {
 
 // Which event types each brand should show
 const BRAND_EVENTS: Record<string, string[]> = {
-  GOL: ['leadEvent', 'REAL', 'SOCR', 'SALE', 'LEDI'],
-  MNC: ['leadEvent', 'REAL', 'SOCR', 'SALE', 'LEDI'],
+  GOL: ['leadEvent', 'REAL', 'QUAL', 'SOCR', 'SALE', 'LEDI'],
+  MNC: ['leadEvent', 'REAL', 'QUAL', 'SOCR', 'SALE', 'LEDI'],
   MCI: ['formSubmission', 'REAL', 'CRMV'],
   MDC: ['formSubmission', 'REAL', 'CRMV'],
 }
-const ALL_EVENTS = ['leadEvent', 'REAL', 'SOCR', 'SALE', 'LEDI', 'formSubmission', 'CRMV']
+const ALL_EVENTS = ['leadEvent', 'REAL', 'QUAL', 'SOCR', 'SALE', 'LEDI', 'formSubmission', 'CRMV']
 const EVENT_LABELS: Record<string, string> = {
-  leadEvent: 'Lead Event', REAL: 'Real Lead', SOCR: 'SO Created', SALE: 'Purchase',
-  LEDI: 'Lead Ingested', formSubmission: 'Form Sub', CRMV: 'Form Conv',
+  leadEvent: 'Lead Event', REAL: 'Real Lead', QUAL: 'QUAL', SOCR: 'SO Created', SALE: 'Purchase',
+  LEDI: 'LEDI', formSubmission: 'Form Sub', CRMV: 'Form Conv',
 }
 
 const STATUS_COLOR: Record<string, string> = { OK: '#34d399', WARN: '#fbbf24', CRIT: '#f87171' }
@@ -60,17 +60,29 @@ function EventHealthCard() {
 
   const latest = data?.latest ?? []
 
-  // Staleness detection — pipeline runs hourly, so >90min = stale, >2h = dead
-  const lastChecked = latest.length > 0 ? latest[0].checked_at : null
-  const lastWIB = latest.length > 0 ? latest[0].wib_hour : null
-  const ageMs = lastChecked ? Date.now() - new Date(lastChecked).getTime() : Infinity
-  const ageMin = Math.round(ageMs / 60_000)
-  const isStale = ageMin > 90
-  const isDead = ageMin > 120
+  // Staleness detection — use the NEWEST checked_at for header display,
+  // but the OLDEST for overall staleness (if any event is stale, flag it)
+  const newestCheckedAt = latest.length > 0
+    ? latest.reduce((a, b) => a.checked_at > b.checked_at ? a : b).checked_at
+    : null
+  const oldestCheckedAt = latest.length > 0
+    ? latest.reduce((a, b) => a.checked_at < b.checked_at ? a : b).checked_at
+    : null
+  const newestWIB = latest.length > 0
+    ? latest.reduce((a, b) => a.checked_at > b.checked_at ? a : b).wib_hour
+    : null
+  const newestAgeMs = newestCheckedAt ? Date.now() - new Date(newestCheckedAt).getTime() : Infinity
+  const newestAgeMin = Math.round(newestAgeMs / 60_000)
+  // Pipeline is stale if even the newest check is >90min old
+  const isStale = newestAgeMin > 90
+  const isDead = newestAgeMin > 120
 
-  // Overall status — staleness overrides event status
-  const hasCrit = latest.some(r => r.status === 'CRIT')
-  const hasWarn = latest.some(r => r.status === 'WARN')
+  // Only consider displayed brands for status
+  const brands = ['GOL', 'MNC', 'MCI']
+  const displayed = latest.filter(r => brands.includes(r.brand))
+
+  const hasCrit = displayed.some(r => r.status === 'CRIT')
+  const hasWarn = displayed.some(r => r.status === 'WARN')
   const eventStatus = hasCrit ? 'CRIT' : hasWarn ? 'WARN' : 'OK'
   // If monitor is dead/stale, that's the worst status regardless of events
   const overall = isDead ? 'CRIT' : isStale ? 'WARN' : eventStatus
@@ -84,23 +96,21 @@ function EventHealthCard() {
     : hasCrit ? 'Critical Alert' : hasWarn ? 'Warning' : 'All Systems Healthy'
 
   // Human-readable age
-  const ageStr = lastChecked
-    ? ageMin < 60
-      ? `${ageMin}m ago`
-      : `${Math.floor(ageMin / 60)}h ${ageMin % 60}m ago`
+  const ageStr = newestCheckedAt
+    ? newestAgeMin < 60
+      ? `${newestAgeMin}m ago`
+      : `${Math.floor(newestAgeMin / 60)}h ${newestAgeMin % 60}m ago`
     : '—'
-  const lastCheckedStr = lastChecked
-    ? `${String(lastWIB ?? 0).padStart(2, '0')}:00 WIB`
+  const lastCheckedStr = newestCheckedAt
+    ? `${String(newestWIB ?? 0).padStart(2, '0')}:00 WIB`
     : '—'
 
   // Build lookup: brand+event_type → HealthRow
   const lookup = new Map<string, HealthRow>()
   for (const r of latest) lookup.set(`${r.brand}|${r.event_type}`, r)
 
-  const brands = ['GOL', 'MNC', 'MCI', 'MDC']
-
-  // Count alerts
-  const alertCount = latest.filter(r => r.status !== 'OK').length
+  // Count alerts (displayed brands only)
+  const alertCount = displayed.filter(r => r.status !== 'OK').length
 
   return (
     <div style={{
@@ -176,37 +186,34 @@ function EventHealthCard() {
                       const isMonitored = monitoredEvents.includes(ev)
                       if (!isMonitored) {
                         return (
-                          <td key={ev} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.1)' }}>
+                          <td key={ev} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.08)' }}>
                             —
                           </td>
                         )
                       }
                       const row = lookup.get(`${brand}|${ev}`)
                       if (!row) {
-                        // Monitored but no data yet (Tier 3 may not have run)
                         return (
-                          <td key={ev} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.15)', fontSize: 9 }}>
-                            pending
+                          <td key={ev} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.12)' }}>
+                            —
                           </td>
                         )
                       }
-                      const sc = STATUS_COLOR[row.status] ?? '#666'
+                      if (row.status === 'OK') {
+                        return (
+                          <td key={ev} style={{ textAlign: 'center', padding: '6px' }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>✓</span>
+                          </td>
+                        )
+                      }
+                      // WARN or CRIT
+                      const sc = STATUS_COLOR[row.status] ?? '#f87171'
                       return (
                         <td key={ev} style={{ textAlign: 'center', padding: '6px' }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ color: sc, fontSize: 8 }}>●</span>
-                            <span style={{
-                              fontWeight: 700, fontSize: 11, letterSpacing: '-0.02em',
-                              color: row.status === 'OK' ? 'rgba(255,255,255,0.65)' : sc,
-                            }}>
-                              {row.event_count.toLocaleString('id-ID')}
-                            </span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: sc }}>✗</span>
+                          <div style={{ fontSize: 8, color: sc, marginTop: 1, fontWeight: 600 }}>
+                            {row.event_count}/{row.threshold}
                           </div>
-                          {row.status !== 'OK' && (
-                            <div style={{ fontSize: 8, color: sc, marginTop: 1, fontWeight: 600 }}>
-                              min {row.threshold}
-                            </div>
-                          )}
                         </td>
                       )
                     })}
