@@ -23,6 +23,181 @@ interface ConvRow { date: string; sku: string; mongo_real_lead_ccom?: number; mo
 interface SalesRow { date: string; rev_ccom_ca?: number; rev_ccom_crm?: number; rev_mpsh?: number; rev_d2or?: number; rev_ofls?: number }
 interface BrandData { performance: PerfRow[]; conversions: ConvRow[]; sales: SalesRow[]; [k: string]: unknown }
 
+// ── Types for Event Health ──
+interface HealthRow {
+  brand: string; event_type: string; source: string
+  event_count: number; threshold: number; status: string
+  wib_hour: number; checked_at: string
+}
+
+// Which event types each brand should show
+const BRAND_EVENTS: Record<string, string[]> = {
+  GOL: ['leadEvent', 'REAL', 'SOCR', 'SALE', 'LEDI'],
+  MNC: ['leadEvent', 'REAL', 'SOCR', 'SALE', 'LEDI'],
+  MCI: ['formSubmission', 'REAL', 'CRMV'],
+  MDC: ['formSubmission', 'REAL', 'CRMV'],
+}
+const ALL_EVENTS = ['leadEvent', 'REAL', 'SOCR', 'SALE', 'LEDI', 'formSubmission', 'CRMV']
+const EVENT_LABELS: Record<string, string> = {
+  leadEvent: 'Lead Event', REAL: 'Real Lead', SOCR: 'SO Created', SALE: 'Purchase',
+  LEDI: 'Lead Ingested', formSubmission: 'Form Sub', CRMV: 'Form Conv',
+}
+
+const STATUS_COLOR: Record<string, string> = { OK: '#34d399', WARN: '#fbbf24', CRIT: '#f87171' }
+const STATUS_ICON: Record<string, string> = { OK: '●', WARN: '●', CRIT: '●' }
+
+function EventHealthCard() {
+  const { data, isFetching } = useQuery({
+    queryKey: ['event-health'],
+    queryFn: async () => {
+      const res = await fetch(`${D1_WORKER_URL}/v2/event-health`)
+      if (!res.ok) throw new Error('fetch failed')
+      return res.json() as Promise<{ latest: HealthRow[]; history: HealthRow[] }>
+    },
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000, // auto-refresh every 5 min
+  })
+
+  const latest = data?.latest ?? []
+
+  // Overall status
+  const hasCrit = latest.some(r => r.status === 'CRIT')
+  const hasWarn = latest.some(r => r.status === 'WARN')
+  const overall = hasCrit ? 'CRIT' : hasWarn ? 'WARN' : 'OK'
+  const overallColor = STATUS_COLOR[overall]
+  const overallLabel = hasCrit ? 'Critical Alert' : hasWarn ? 'Warning' : 'All Systems Healthy'
+
+  // Last checked time
+  const lastChecked = latest.length > 0 ? latest[0].checked_at : null
+  const lastWIB = latest.length > 0 ? latest[0].wib_hour : null
+  const lastCheckedStr = lastChecked
+    ? `${String(lastWIB ?? 0).padStart(2, '0')}:00 WIB`
+    : '—'
+
+  // Build lookup: brand+event_type → HealthRow
+  const lookup = new Map<string, HealthRow>()
+  for (const r of latest) lookup.set(`${r.brand}|${r.event_type}`, r)
+
+  const brands = ['GOL', 'MNC', 'MCI', 'MDC']
+
+  // Count alerts
+  const alertCount = latest.filter(r => r.status !== 'OK').length
+
+  return (
+    <div style={{
+      width: '100%', marginBottom: 24,
+      background: overall === 'OK' ? 'rgba(52,211,153,0.04)' : overall === 'WARN' ? 'rgba(251,191,36,0.06)' : 'rgba(248,113,113,0.06)',
+      border: `1px solid ${overall === 'OK' ? 'rgba(52,211,153,0.15)' : overall === 'WARN' ? 'rgba(251,191,36,0.2)' : 'rgba(248,113,113,0.25)'}`,
+      borderRadius: 12, padding: '14px 20px',
+      fontFamily: 'Inter, system-ui, sans-serif',
+    }}>
+
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-0.02em', color: overallColor }}>
+            {STATUS_ICON[overall]} {overallLabel}
+          </span>
+          {alertCount > 0 && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99,
+              background: `${overallColor}20`, color: overallColor, letterSpacing: '0.05em',
+            }}>
+              {alertCount} ALERT{alertCount > 1 ? 'S' : ''}
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {isFetching && (
+            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>checking…</span>
+          )}
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>
+            Event Pipeline Health
+          </span>
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>·</span>
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+            Last check: {lastCheckedStr}
+          </span>
+        </div>
+      </div>
+
+      {/* Grid */}
+      {latest.length > 0 ? (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 650 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '4px 10px 6px 0', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.08em', width: 60 }}>
+                  Brand
+                </th>
+                {ALL_EVENTS.map(ev => (
+                  <th key={ev} style={{ textAlign: 'center', padding: '4px 6px 6px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+                    {EVENT_LABELS[ev] ?? ev}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {brands.map(brand => {
+                const monitoredEvents = BRAND_EVENTS[brand] ?? []
+                return (
+                  <tr key={brand} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    <td style={{ padding: '6px 10px 6px 0', fontWeight: 700, fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
+                      {brand}
+                    </td>
+                    {ALL_EVENTS.map(ev => {
+                      const isMonitored = monitoredEvents.includes(ev)
+                      if (!isMonitored) {
+                        return (
+                          <td key={ev} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.1)' }}>
+                            —
+                          </td>
+                        )
+                      }
+                      const row = lookup.get(`${brand}|${ev}`)
+                      if (!row) {
+                        // Monitored but no data yet (Tier 3 may not have run)
+                        return (
+                          <td key={ev} style={{ textAlign: 'center', padding: '6px', color: 'rgba(255,255,255,0.15)', fontSize: 9 }}>
+                            pending
+                          </td>
+                        )
+                      }
+                      const sc = STATUS_COLOR[row.status] ?? '#666'
+                      return (
+                        <td key={ev} style={{ textAlign: 'center', padding: '6px' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ color: sc, fontSize: 8 }}>●</span>
+                            <span style={{
+                              fontWeight: 700, fontSize: 11, letterSpacing: '-0.02em',
+                              color: row.status === 'OK' ? 'rgba(255,255,255,0.65)' : sc,
+                            }}>
+                              {row.event_count.toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                          {row.status !== 'OK' && (
+                            <div style={{ fontSize: 8, color: sc, marginTop: 1, fontWeight: 600 }}>
+                              min {row.threshold}
+                            </div>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', textAlign: 'center', padding: 8 }}>
+          {isFetching ? 'Loading health data…' : 'No health check data available'}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function GeneralOverviewPage() {
   // ── Date bounds ──
   const { data: brandBounds } = useQuery({
@@ -639,6 +814,9 @@ export function GeneralOverviewPage() {
             }))}
           />
         )}
+
+        {/* ── Event Pipeline Health ── */}
+        <EventHealthCard />
 
       </div>
     </div>
