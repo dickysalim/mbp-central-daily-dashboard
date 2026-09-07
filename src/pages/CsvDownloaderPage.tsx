@@ -187,12 +187,13 @@ const ALL_COLUMNS: ColDef[] = [
   { id: 'r_roas_cc',       label: 'RoAS CC Ads',       get: r => safeDiv(r.revenue_ccom, r.ad_spend),       fmt: fmtX,    brands: ['MNC','GOL'],       group: 'ratios' },
   { id: 'r_roas_total',    label: 'RoAS Total',        get: r => safeDiv(r.sale_ca + r.sale_crm + r.sale_mpsh + r.sale_d2or + r.sale_ofls, r.ad_spend), fmt: fmtX, brands: ['MNC','GOL'], group: 'ratios' },
   { id: 'r_roas_total_ma30', label: 'RoAS Total (30d MA)', get: r => r.roas_total_ma30, fmt: fmtX, brands: ['MNC','GOL'], group: 'ratios' },
+  { id: 'r_mcr',             label: 'Marketing Cost Ratio', get: r => safeDiv(r.ad_spend, r.sale_ca + r.sale_crm + r.sale_mpsh + r.sale_d2or + r.sale_ofls), fmt: fmtPct, brands: ['MNC','GOL'], group: 'ratios' },
 ]
 
 // Column IDs that depend on GA4 data (will be styled yellow italic when predicted)
 const GA4_COLS = new Set(['first_visit', 'lp_view', 'view_offer', 'r_fvr', 'r_oclp', 'r_lpvo', 'r_vo2l'])
 // Sales columns — cannot be broken down by traffic_source (data has no traffic dimension)
-const SALES_COLS = new Set(['sale_total', 'sale_cc', 'sale_ca', 'sale_crm', 'sale_mpsh', 'sale_d2or', 'sale_ofls', 'r_roas_total', 'r_roas_total_ma30'])
+const SALES_COLS = new Set(['sale_total', 'sale_cc', 'sale_ca', 'sale_crm', 'sale_mpsh', 'sale_d2or', 'sale_ofls', 'r_roas_total', 'r_roas_total_ma30', 'r_mcr'])
 // MA columns — only usable on daily breakdown
 const MA_COLS = new Set(['r_roas_total_ma30'])
 
