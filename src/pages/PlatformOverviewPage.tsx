@@ -24,11 +24,12 @@ interface ConvRow      { date: string; traffic_source: string; sku: string; ads_
 interface BrandBounds  { brand: string; earliest: string; latest: string; skus: string[] }
 interface CampaignBudgetRow { date: string; traffic_source: string; campaign_name: string; sku: string; daily_budget: number }
 interface TargetRow { date: string; sku: string; daily_ad_spend: number }
+interface SalesRow { date: string; brand: string; sku: string; rev_ccom_ca: number; rev_ccom_crm: number; rev_mpsh: number; rev_d2or: number; rev_ofls: number }
 interface ConsumerGoodsData {
   performance: AdPerfRow[]; campaign_budgets: CampaignBudgetRow[]; targets: TargetRow[]
   ga4: Ga4Row[]; conversions: ConvRow[]
   changelog: { date: string; brand: string; sku: string; platform: string; title: string; changelist: string | null }[]
-  campaign_dimension: CampaignDimRow[]; sales: unknown[]
+  campaign_dimension: CampaignDimRow[]; sales: SalesRow[]
 }
 interface CampaignDimRow { campaign_id: string; traffic_source: string; sku: string; funnel: string; campaign_name: string }
 
@@ -652,6 +653,8 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
             const dailyBudget = budgetByName.get(name) ?? 0
             return { ts: v.ts, name, funnel, cprl, cpaCC, dailyBudget, spend: v.spend }
           })
+          // Campaigns with no daily budget have stopped — exclude from calculations
+          .filter(r => r.dailyBudget > 0)
           .sort((a, b) => a.name.localeCompare(b.name))
 
         // Map funnel codes to labels
@@ -804,6 +807,72 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
                           )}
                           {budgetDate && <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.30)', marginTop: 4 }}>as of {budgetDate}</div>}
                         </div>
+
+                        {/* Divider */}
+                        <div style={{ width: 1, background: 'rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
+
+                        {/* Block 3: Current Sales Velocity */}
+                        {(() => {
+                          const ROAS_TARGET = 6.59
+                          const MA_WINDOW = 30
+                          const sales = (cgData.sales ?? []) as SalesRow[]
+                          const skuSales = isMCI ? sales : sales.filter(r => r.sku === selectedSku)
+
+                          // Build daily total revenue
+                          const revByDate = new Map<string, number>()
+                          for (const r of skuSales) {
+                            const tot = (r.rev_ccom_ca ?? 0) + (r.rev_ccom_crm ?? 0) + (r.rev_mpsh ?? 0) + (r.rev_d2or ?? 0) + (r.rev_ofls ?? 0)
+                            revByDate.set(r.date, (revByDate.get(r.date) ?? 0) + tot)
+                          }
+
+                          // Sort dates and compute 30d MA
+                          const allDates = Array.from(revByDate.keys()).sort()
+                          const maSeries = allDates.map((d, i) => {
+                            const start = Math.max(0, i - MA_WINDOW + 1)
+                            const slice = allDates.slice(start, i + 1)
+                            return { date: d, value: slice.reduce((s, dd) => s + (revByDate.get(dd) ?? 0), 0) / slice.length }
+                          })
+
+                          // Latest velocity (up to activeTo)
+                          const latest = maSeries.filter(p => p.date <= activeTo).at(-1)
+                          const velocity = latest?.value ?? 0
+
+                          // Target = daily budget × RoAS target
+                          const velTarget = skuDailyBudget > 0 ? skuDailyBudget * ROAS_TARGET : 0
+                          const velPct = velTarget > 0 ? velocity / velTarget : 0
+                          const velDev = velTarget > 0 ? Math.abs((velocity - velTarget) / velTarget) * 100 : 0
+                          const velColor = velTarget === 0 ? '#818cf8'
+                            : velPct >= 1 ? '#34d399'
+                            : velDev <= 5 ? '#34d399'
+                            : velDev <= 20 ? '#fbbf24'
+                            : '#f87171'
+                          const velLabel = velTarget === 0 ? 'No Target'
+                            : velPct >= 1.05 ? '▲ Over Target'
+                            : velDev <= 5 ? '● On Target'
+                            : velDev <= 20 ? '▼ Slightly Below'
+                            : '▼ Below Target'
+
+                          return (
+                            <div style={{ flex: '1 1 260px', minWidth: 240 }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', marginBottom: 6 }}>Sales Velocity (30d MA)</div>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+                                <span style={{ fontSize: 24, fontWeight: 800, color: '#fff', letterSpacing: '-0.04em' }}>{fmtRpM(velocity)}</span>
+                                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.30)', fontWeight: 600 }}>/day</span>
+                              </div>
+                              {velTarget > 0 && (
+                                <>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.40)', marginBottom: 4 }}>Target {fmtRpM(velTarget)}/day</div>
+                                  <div style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    fontSize: 12, fontWeight: 700, color: velColor, marginTop: 2,
+                                  }}>
+                                    {velLabel} ({(velPct * 100).toFixed(1)}%)
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                     )
                   })()}
