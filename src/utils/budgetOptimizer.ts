@@ -82,6 +82,7 @@ function coreAllocate(
   campaigns: CampaignInput[],
   newTotal: number,
   metric: 'cprl' | 'cpaCC',
+  platformWeights?: Record<string, number>,
 ): Alloc[] {
   const currentTotal = sum(campaigns, c => c.dailyBudget)
   if (currentTotal <= 0) return campaigns.map(c => ({
@@ -112,7 +113,8 @@ function coreAllocate(
   let allocs: Alloc[] = campaigns.map(c => {
     const rawM = metric === 'cprl' ? c.cprl : c.cpaCC
     const effectiveMetric = rawM > 0 ? rawM : penaltyMetric
-    const score = 1 / effectiveMetric  // always > 0 now
+    const weight = platformWeights?.[c.ts.toUpperCase()] ?? 1
+    const score = weight > 0 ? (1 / effectiveMetric) * weight : 0
     return { ...c, effectiveMetric, score, suggestedBudget: 0 }
   })
 
@@ -121,9 +123,11 @@ function coreAllocate(
   // Step 3 — Iterative refinement with decay (5 rounds)
   for (let iter = 0; iter < 5; iter++) {
     for (const a of allocs) {
+      const weight = platformWeights?.[a.ts.toUpperCase()] ?? 1
+      if (weight <= 0) { a.score = 0; continue }
       const bud = iter === 0 ? a.dailyBudget : Math.max(a.suggestedBudget, 1)
       const predicted = predictMetric(a.effectiveMetric, a.dailyBudget || bud, bud)
-      a.score = predicted > 0 ? 1 / predicted : 0
+      a.score = predicted > 0 ? (1 / predicted) * weight : 0
     }
 
     const totalScore = sum(allocs, a => a.score)
@@ -135,21 +139,26 @@ function coreAllocate(
   }
 
   // Step 4 — Enforce minimum share (no campaign drops below MIN_SHARE of total)
+  // Skip killed platforms (weight 0) — they get exactly 0
   const minBudget = newTotal * MIN_SHARE
   for (const a of allocs) {
-    if (a.suggestedBudget < minBudget && a.dailyBudget > 0) {
+    const weight = platformWeights?.[a.ts.toUpperCase()] ?? 1
+    if (weight <= 0) {
+      a.suggestedBudget = 0
+    } else if (a.suggestedBudget < minBudget && a.dailyBudget > 0) {
       a.suggestedBudget = minBudget
     }
   }
-  // Re-normalise
-  const allocSum = sum(allocs, a => a.suggestedBudget)
+  // Re-normalise (only among non-killed campaigns)
+  const aliveAllocs = allocs.filter(a => (platformWeights?.[a.ts.toUpperCase()] ?? 1) > 0)
+  const allocSum = sum(aliveAllocs, a => a.suggestedBudget)
   if (allocSum > 0 && Math.abs(allocSum - newTotal) > 1) {
     const factor = newTotal / allocSum
-    for (const a of allocs) a.suggestedBudget *= factor
+    for (const a of aliveAllocs) a.suggestedBudget *= factor
   }
 
   // Step 5 — Enforce funnel hierarchy
-  enforceFunnelHierarchy(allocs, newTotal)
+  enforceFunnelHierarchy(allocs, newTotal, platformWeights)
 
   return allocs
 }
@@ -193,22 +202,25 @@ function enforceFunnelHierarchyForGroup(allocs: Alloc[]): void {
   }
 }
 
-function enforceFunnelHierarchy(allocs: Alloc[], newTotal: number): void {
+function enforceFunnelHierarchy(allocs: Alloc[], newTotal: number, platformWeights?: Record<string, number>): void {
+  // Only apply to alive campaigns
+  const alive = allocs.filter(a => (platformWeights?.[a.ts.toUpperCase()] ?? 1) > 0)
+
   // Step A — enforce per-platform first (prevents inverted funnels within one platform)
-  const platforms = [...new Set(allocs.map(a => a.ts.toUpperCase()))]
+  const platforms = [...new Set(alive.map(a => a.ts.toUpperCase()))]
   for (const plat of platforms) {
-    const platAllocs = allocs.filter(a => a.ts.toUpperCase() === plat)
+    const platAllocs = alive.filter(a => a.ts.toUpperCase() === plat)
     enforceFunnelHierarchyForGroup(platAllocs)
   }
 
   // Step B — enforce globally (across all platforms combined)
-  enforceFunnelHierarchyForGroup(allocs)
+  enforceFunnelHierarchyForGroup(alive)
 
-  // Final normalisation
-  const allocSum = sum(allocs, a => a.suggestedBudget)
+  // Final normalisation (only alive)
+  const allocSum = sum(alive, a => a.suggestedBudget)
   if (allocSum > 0) {
     const factor = newTotal / allocSum
-    for (const a of allocs) a.suggestedBudget *= factor
+    for (const a of alive) a.suggestedBudget *= factor
   }
 }
 
@@ -230,6 +242,7 @@ export function optimizeBudget(
   newTotalBudget: number,
   optimizeFor: 'cprl' | 'cpaCC',
   strength: number = 1,  // 0 = proportional, 1 = fully optimized
+  platformWeights?: Record<string, number>,  // e.g. { META: 2, DGEN: 1, SRCH: 0 }
 ): OptResult[] {
   if (campaigns.length === 0 || newTotalBudget <= 0) return []
 
@@ -240,7 +253,7 @@ export function optimizeBudget(
   console.log(`  Total campaigns: ${campaigns.length}, current budget: ${Math.round(currentTotal)}, new budget: ${Math.round(newTotalBudget)}`)
 
   // Run core allocation
-  let allocs = coreAllocate(campaigns, newTotalBudget, optimizeFor)
+  let allocs = coreAllocate(campaigns, newTotalBudget, optimizeFor, platformWeights)
 
   // Log per-platform allocation
   const platforms = [...new Set(allocs.map(a => a.ts.toUpperCase()))]
@@ -258,7 +271,7 @@ export function optimizeBudget(
 
     if (predictedCprl > CPRL_TARGET) {
       // Get a CPRL-optimised allocation as the "safe" baseline
-      const cprlAllocs = coreAllocate(campaigns, newTotalBudget, 'cprl')
+      const cprlAllocs = coreAllocate(campaigns, newTotalBudget, 'cprl', platformWeights)
 
       // Binary-search for blend factor
       let lo = 0
@@ -282,7 +295,7 @@ export function optimizeBudget(
           allocs[i].suggestedBudget * (1 - blend) +
           cprlAllocs[i].suggestedBudget * blend
       }
-      enforceFunnelHierarchy(allocs, newTotalBudget)
+      enforceFunnelHierarchy(allocs, newTotalBudget, platformWeights)
 
       console.log(`  CPRL guard applied: blend=${(blend * 100).toFixed(1)}% toward CPRL-optimised`)
     }
@@ -291,16 +304,20 @@ export function optimizeBudget(
   // Blend between proportional distribution (gentle) and full optimization (aggressive)
   const s = Math.max(0, Math.min(1, strength))
   if (s < 1) {
-    const proportional = campaigns.map(c => c.dailyBudget * (newTotalBudget / currentTotal))
+    const proportional = campaigns.map(c => {
+      const w = platformWeights?.[c.ts.toUpperCase()] ?? 1
+      return w > 0 ? c.dailyBudget * (newTotalBudget / currentTotal) : 0
+    })
     for (let i = 0; i < allocs.length; i++) {
       allocs[i].suggestedBudget =
         proportional[i] * (1 - s) + allocs[i].suggestedBudget * s
     }
-    // Re-normalise after blending
-    const blendSum = sum(allocs, a => a.suggestedBudget)
+    // Re-normalise after blending (only alive campaigns)
+    const alive = allocs.filter(a => (platformWeights?.[a.ts.toUpperCase()] ?? 1) > 0)
+    const blendSum = sum(alive, a => a.suggestedBudget)
     if (blendSum > 0) {
       const factor = newTotalBudget / blendSum
-      for (const a of allocs) a.suggestedBudget *= factor
+      for (const a of alive) a.suggestedBudget *= factor
     }
     console.log(`  Strength: ${(s * 100).toFixed(0)}% — blended with proportional`)
   }

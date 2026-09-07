@@ -93,6 +93,8 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
   const [optNewBudget, setOptNewBudget] = useState<number | null>(null)
   const [optBaseBudget, setOptBaseBudget] = useState<number | null>(null)
   const [optResults, setOptResults] = useState<{ name: string; ts: string; funnel: string; suggestedBudget: number; predictedCprl: number; predictedCpaCC: number }[] | null>(null)
+  // Platform preference: 0 = Kill, 1 = Normal, 2 = Boost
+  const [platWeights, setPlatWeights] = useState<Record<string, number>>({ META: 1, DGEN: 1, SRCH: 1 })
 
   // Sync base budget when SKU changes
   const syncBaseBudget = (base: number) => {
@@ -1026,6 +1028,48 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
                           </div>
                         </div>
 
+                        {/* Divider */}
+                        <div style={{ width: 1, height: 48, background: 'rgba(255,255,255,0.08)' }} />
+
+                        {/* Platform Preference */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase' }}>Platform</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {PLATFORMS.map(p => {
+                              const w = platWeights[p.id] ?? 1
+                              const opts = [
+                                { label: 'Kill', value: 0, color: '#f87171' },
+                                { label: 'Normal', value: 1, color: 'rgba(255,255,255,0.5)' },
+                                { label: 'Boost', value: 2, color: '#34d399' },
+                              ] as const
+                              return (
+                                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 10, fontWeight: 700, color: p.color, width: 38, letterSpacing: '0.02em' }}>{p.id}</span>
+                                  <div style={{ display: 'flex', gap: 2 }}>
+                                    {opts.map(o => {
+                                      const active = w === o.value
+                                      return (
+                                        <button
+                                          key={o.value}
+                                          onClick={() => setPlatWeights(prev => ({ ...prev, [p.id]: o.value }))}
+                                          style={{
+                                            padding: '2px 8px', fontSize: 9, fontWeight: active ? 700 : 500,
+                                            borderRadius: 4, cursor: 'pointer',
+                                            border: `1px solid ${active ? o.color : 'rgba(255,255,255,0.08)'}`,
+                                            background: active ? `${o.color}18` : 'transparent',
+                                            color: active ? o.color : 'rgba(255,255,255,0.25)',
+                                            transition: 'all 0.12s',
+                                          }}
+                                        >{o.label}</button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+
                         {/* Optimize Button */}
                         <button
                           onClick={() => {
@@ -1044,7 +1088,7 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
                             console.log('=== OPTIMIZER INPUT ===')
                             console.table(inputs.map(r => ({ name: r.name.slice(0, 40), ts: r.ts, funnel: r.funnel, cprl: Math.round(r.cprl), cpaCC: Math.round(r.cpaCC), budget: Math.round(r.dailyBudget) })))
                             console.log('New total:', newTotal, 'Target:', optTarget)
-                            const results = optimizeBudget(inputs, newTotal, optTarget, optStrength / 100)
+                            const results = optimizeBudget(inputs, newTotal, optTarget, optStrength / 100, platWeights)
                             console.log('=== OPTIMIZER OUTPUT ===')
                             console.table(results.map(r => ({ name: r.name.slice(0, 40), ts: r.ts, suggested: Math.round(r.suggestedBudget), pCprl: Math.round(r.predictedCprl), pCpaCC: Math.round(r.predictedCpaCC) })))
                             setOptResults(results)
@@ -1169,6 +1213,11 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
                               {/* Opt columns for platform summary */}
                               {(() => {
                                 if (!optResults) return <><td style={{ padding: '10px 10px' }} /><td style={{ padding: '10px 10px' }} /><td style={{ padding: '10px 10px' }} /><td style={{ padding: '10px 10px' }} /><td style={{ padding: '10px 10px' }} /></>
+                                const isKilled = (platWeights[ts] ?? 1) === 0
+                                if (isKilled) {
+                                  const killedStyle = { padding: '10px 10px', textAlign: 'right' as const, fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.15)', whiteSpace: 'nowrap' as const }
+                                  return <><td style={killedStyle}>—</td><td style={killedStyle}>—</td><td style={killedStyle}>—</td><td style={killedStyle}>—</td><td style={killedStyle}>—</td></>
+                                }
                                 const platOpt = optResults.filter(r => r.ts.toUpperCase() === ts)
                                 const newPlat = platOpt.reduce((s, r) => s + r.suggestedBudget, 0)
                                 const change = newPlat - platBudget
@@ -1221,8 +1270,12 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
                                   color: row.dailyBudget > 0 ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)',
                                   whiteSpace: 'nowrap',
                                 }}>{row.dailyBudget > 0 ? fmtRp(Math.round(row.dailyBudget)) : '—'}</td>
-                                {/* Opt columns for campaign row */}
                                 {(() => {
+                                  const isKilled = (platWeights[row.ts.toUpperCase()] ?? 1) === 0
+                                  if (isKilled && optResults) {
+                                    const ks = { padding: '7px 10px', textAlign: 'right' as const, fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.15)', whiteSpace: 'nowrap' as const }
+                                    return <><td style={ks}>—</td><td style={ks}>—</td><td style={ks}>—</td><td style={ks}>—</td><td style={ks}>—</td></>
+                                  }
                                   const match = optResults?.find(r => r.name === row.name && r.ts === row.ts)
                                   if (!match) return <><td style={{ padding: '7px 10px' }} /><td style={{ padding: '7px 10px' }} /><td style={{ padding: '7px 10px' }} /><td style={{ padding: '7px 10px' }} /><td style={{ padding: '7px 10px' }} /></>
                                   const change = match.suggestedBudget - row.dailyBudget
