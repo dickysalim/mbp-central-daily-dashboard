@@ -1,7 +1,7 @@
 /**
  * CampaignExplorerPage — MNC Campaign & Ad-level performance explorer
  */
-import React, { useState, useMemo, useRef } from 'react'
+import React, { useState, useMemo, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import { fmtRp } from '../utils/format'
@@ -15,15 +15,17 @@ interface BrandBounds { brand: string; earliest: string; latest: string; skus: s
 interface CampaignRow {
   campaign_id: string; campaign_name: string | null; sku: string | null
   funnel: string | null; traffic_source: string
-  ad_spend: number; impressions: number; link_click: number
+  ad_spend: number; impressions: number; video_views: number; video_view_50pct: number; link_click: number
 }
 interface ConvRow {
   campaign_id?: string; ad_id?: string; sku?: string
   real_lead_ccom: number; real_lead_d2or: number; real_lead_mpsh: number; real_lead_ofls: number
+  qualified_lead_ccom: number
   purchase_ccom: number; purchase_revenue: number
   form_submission?: number; form_conversion?: number
 }
-interface AdPerfRow { ad_id: string; ad_spend: number; impressions: number; link_click: number }
+interface Ga4SummaryRow { campaign_id?: string; ad_id?: string; sku?: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }
+interface AdPerfRow { ad_id: string; ad_spend: number; impressions: number; video_views: number; video_view_50pct: number; link_click: number }
 interface AdDimRow { ad_id: string; ad_title: string | null; internal_ad_id: string | null; sku: string | null; funnel: string | null; publish_date: string | null; grade_ads_quality: string | null }
 interface DailyPerfRow { date: string; ad_spend: number; impressions: number; link_click: number }
 interface DailyConvRow { date: string; real_lead_ccom: number; real_lead_d2or: number; real_lead_mpsh: number; real_lead_ofls: number; purchase_ccom: number; purchase_revenue: number; form_submission?: number; form_conversion?: number }
@@ -32,8 +34,10 @@ interface DailyGa4Row { date: string; ga4_page_view: number; ga4_view_offer: num
 interface ApiResponse {
   campaigns: CampaignRow[]
   campaign_conversions: ConvRow[]
+  campaign_ga4: Ga4SummaryRow[]
   ads: AdPerfRow[]
   ad_conversions: ConvRow[]
+  ad_ga4: Ga4SummaryRow[]
   ad_dimension: AdDimRow[]
   daily_perf: DailyPerfRow[]
   daily_conv: DailyConvRow[]
@@ -47,7 +51,49 @@ const fmtRpShort = (n: number) => 'Rp ' + fmtK(n)
 const fmtPct = (n: number) => (n * 100).toFixed(1) + '%'
 const fmtPctShort = (n: number) => (n * 100).toFixed(1) + '%'
 const fmtNum = (n: number) => Math.round(n).toLocaleString('id-ID')
+const fmtX = (n: number) => n.toFixed(2) + '×'
+const safeDiv = (a: number, b: number) => b > 0 ? a / b : 0
 const stripAdPrefix = (title: string) => { const idx = title.indexOf('ADS'); return idx >= 0 ? title.slice(idx) : title }
+
+// ── Campaign column config ─────────────────────────────────────────────────
+type CampMetrics = {
+  spend: number; impressions: number; video_views: number; video_view_50pct: number; link_click: number
+  ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number
+  leads: number; rl_ccom: number; ql_ccom: number; purchases: number; revenue: number
+}
+
+interface ColDef {
+  id: string; label: string; get: (r: CampMetrics) => number; fmt: (n: number) => string; isRatio?: boolean
+}
+
+const CAMP_COLS: ColDef[] = [
+  { id: 'spend',       label: 'Ad Spend',         get: r => r.spend,                                     fmt: fmtRpShort },
+  { id: 'impressions', label: 'Impressions',       get: r => r.impressions,                               fmt: fmtNum },
+  { id: 'cpm',         label: 'CPM',               get: r => safeDiv(r.spend, r.impressions) * 1000,      fmt: fmtRpShort, isRatio: true },
+  { id: 'link_click',  label: 'Link Click',        get: r => r.link_click,                                fmt: fmtNum },
+  { id: 'ctr',         label: 'CTR',               get: r => safeDiv(r.link_click, r.impressions),        fmt: fmtPct, isRatio: true },
+  { id: 'video_3s',    label: '3s Video View',     get: r => r.video_views,                               fmt: fmtNum },
+  { id: 'hook_rate',   label: 'Hook Rate',         get: r => safeDiv(r.video_views, r.impressions),       fmt: fmtPct, isRatio: true },
+  { id: 'video_50',    label: '50% Video View',    get: r => r.video_view_50pct,                          fmt: fmtNum },
+  { id: 'content_q',   label: 'Content Quality',   get: r => safeDiv(r.video_view_50pct, r.video_views),  fmt: fmtPct, isRatio: true },
+  { id: 'first_visit', label: 'First Visit',       get: r => r.ga4_first_visit,                           fmt: fmtNum },
+  { id: 'lp_view',     label: 'LP View',           get: r => r.ga4_page_view,                             fmt: fmtNum },
+  { id: 'view_offer',  label: 'View Offer',        get: r => r.ga4_view_offer,                            fmt: fmtNum },
+  { id: 'fvr',         label: 'First Visit Rate',  get: r => safeDiv(r.ga4_first_visit, r.ga4_page_view), fmt: fmtPct, isRatio: true },
+  { id: 'lpvo',        label: 'LPVO',              get: r => safeDiv(r.ga4_view_offer, r.ga4_page_view),  fmt: fmtPct, isRatio: true },
+  { id: 'leads',       label: 'Real Leads',        get: r => r.leads,                                     fmt: fmtNum },
+  { id: 'vo2l',        label: 'VO2L',              get: r => safeDiv(r.ga4_view_offer, r.leads),          fmt: (n) => n.toFixed(1), isRatio: true },
+  { id: 'cprl',        label: 'CPRL',              get: r => safeDiv(r.spend, r.leads),                   fmt: (n) => fmtRp(Math.round(n)), isRatio: true },
+  { id: 'qual_leads',  label: 'Quality Leads',     get: r => r.ql_ccom,                                   fmt: fmtNum },
+  { id: 'ql_rate',     label: 'QL Rate',           get: r => safeDiv(r.ql_ccom, r.rl_ccom),               fmt: fmtPct, isRatio: true },
+  { id: 'cpql',        label: 'CPQL',              get: r => safeDiv(r.spend, r.ql_ccom),                 fmt: (n) => fmtRp(Math.round(n)), isRatio: true },
+  { id: 'purchases',   label: 'Purchase',          get: r => r.purchases,                                 fmt: fmtNum },
+  { id: 'cvr',         label: 'CVR',               get: r => safeDiv(r.purchases, r.rl_ccom),             fmt: fmtPct, isRatio: true },
+  { id: 'cpa',         label: 'CPA CC',            get: r => safeDiv(r.spend, r.purchases),               fmt: (n) => fmtRp(Math.round(n)), isRatio: true },
+  { id: 'roas',        label: 'RoAS CC',           get: r => safeDiv(r.revenue, r.spend),                 fmt: fmtX, isRatio: true },
+]
+
+const DEFAULT_VISIBLE_COLS = ['spend', 'leads', 'cprl', 'purchases', 'cpa', 'roas']
 
 // ── Moving average helper ──
 function movingAvg(data: number[], window: number): number[] {
@@ -277,7 +323,7 @@ function MetricCard({ label, value, sub, color, series, fixedTarget, higherIsBet
   )
 }
 
-type SortKey = 'name' | 'funnel' | 'spend' | 'leads' | 'purchases' | 'revenue' | 'cprl' | 'cpa' | 'roas' | 'ads_added' | 'title' | 'publish_date' | 'status'
+type SortKey = string
 type SortDir = 'asc' | 'desc'
 
 interface BrandConfig {
@@ -291,6 +337,7 @@ interface BrandConfig {
   cprlLabel?: string           // 'CPRL' (default) or 'CPR'
   cpaLabel?: string            // 'CPA CC' (default) or 'CPV'
   hideRoas?: boolean           // hide RoAS column in campaign table
+  colLabels?: Record<string, string>  // override column labels per brand
 }
 
 const MNC_CONFIG: BrandConfig = {
@@ -328,6 +375,16 @@ const MCI_CONFIG: BrandConfig = {
   cprlLabel: 'CPR',
   cpaLabel: 'CPV',
   hideRoas: true,
+  colLabels: {
+    leads: 'Form Submissions',
+    cprl: 'CPR',
+    qual_leads: 'Quality Forms',
+    ql_rate: 'QF Rate',
+    cpql: 'CPQF',
+    purchases: 'Visit',
+    cvr: 'Visit Rate',
+    cpa: 'CPV',
+  },
 }
 
 export function CampaignExplorerPage() { return <CampaignPage config={MNC_CONFIG} /> }
@@ -335,7 +392,7 @@ export function GolCampaignExplorerPage() { return <CampaignPage config={GOL_CON
 export function MciCampaignExplorerPage() { return <CampaignPage config={MCI_CONFIG} /> }
 
 function CampaignPage({ config }: { config: BrandConfig }) {
-  const { brand, title: pageTitle, badgeColor, skuOrder, skuMeta: SKU_META, showGrade, useFormConversions, cprlLabel: cfgCprlLabel, cpaLabel: cfgCpaLabel, hideRoas } = config
+  const { brand, title: pageTitle, badgeColor, skuOrder, skuMeta: SKU_META, showGrade, useFormConversions, cprlLabel: cfgCprlLabel, cpaLabel: cfgCpaLabel, hideRoas, colLabels } = config
   // ── Date bounds ──
   const { data: brandBounds } = useQuery({
     queryKey: ['date-bounds'],
@@ -372,6 +429,62 @@ function CampaignPage({ config }: { config: BrandConfig }) {
 
   const [adSearchTerm, setAdSearchTerm] = useState('')
   const [expandedSkus, setExpandedSkus] = useState<Set<string>>(new Set())
+  const [showColPicker, setShowColPicker] = useState(false)
+
+  // Column visibility + ordering — persisted across brands
+  const colStorageKey = 'camp-cols'
+  const [colOrder, setColOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(colStorageKey)
+      if (saved) {
+        const arr = JSON.parse(saved) as string[]
+        if (Array.isArray(arr) && arr.length > 0) return arr
+      }
+    } catch {}
+    return [...DEFAULT_VISIBLE_COLS]
+  })
+  const saveColOrder = (next: string[]) => { setColOrder(next); localStorage.setItem(colStorageKey, JSON.stringify(next)) }
+  const toggleCol = (id: string) => {
+    if (colOrder.includes(id)) saveColOrder(colOrder.filter(c => c !== id))
+    else saveColOrder([...colOrder, id])
+  }
+  const moveColumn = useCallback((id: string, dir: -1 | 1) => {
+    setColOrder(prev => {
+      const idx = prev.indexOf(id)
+      if (idx < 0) return prev
+      const newIdx = idx + dir
+      if (newIdx < 0 || newIdx >= prev.length) return prev
+      const next = [...prev]
+      ;[next[idx], next[newIdx]] = [next[newIdx], next[idx]]
+      localStorage.setItem(colStorageKey, JSON.stringify(next))
+      return next
+    })
+  }, [colStorageKey])
+
+  // Drag-and-drop reorder
+  const dragItemRef = React.useRef<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const handleDragStart = useCallback((id: string) => { dragItemRef.current = id }, [])
+  const handleDragOver = useCallback((e: React.DragEvent, id: string) => { e.preventDefault(); setDragOverId(id) }, [])
+  const handleDragLeave = useCallback(() => { setDragOverId(null) }, [])
+  const handleDrop = useCallback((targetId: string) => {
+    const srcId = dragItemRef.current
+    if (!srcId || srcId === targetId) { setDragOverId(null); return }
+    setColOrder(prev => {
+      const next = prev.filter(id => id !== srcId)
+      const targetIdx = next.indexOf(targetId)
+      if (targetIdx < 0) return prev
+      next.splice(targetIdx, 0, srcId)
+      localStorage.setItem(colStorageKey, JSON.stringify(next))
+      return next
+    })
+    dragItemRef.current = null
+    setDragOverId(null)
+  }, [colStorageKey])
+  const handleDragEnd = useCallback(() => { dragItemRef.current = null; setDragOverId(null) }, [])
+
+  const activeCols = colOrder.map(id => CAMP_COLS.find(c => c.id === id)!).filter(Boolean)
+    .map(c => colLabels?.[c.id] ? { ...c, label: colLabels[c.id] } : c)
 
   const applyPreset = (days: number) => {
     if (!activeBounds) return
@@ -412,22 +525,35 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     enabled: !!selectedCampaign,
   })
 
-  // ── Merged campaign data (perf + conversions) ──
+  // ── Merged campaign data (perf + conversions + GA4) ──
   const campaigns = useMemo(() => {
     if (!campData) return []
-    // Conv rows now keyed by campaign_id|sku (since worker groups by both)
+    // Conv rows keyed by campaign_id|sku
     const convMap = new Map<string, ConvRow>()
     for (const c of campData.campaign_conversions) convMap.set(`${c.campaign_id}|${c.sku ?? ''}`, c)
+    // GA4 rows keyed by campaign_id|sku
+    const ga4Map = new Map<string, Ga4SummaryRow>()
+    for (const g of (campData.campaign_ga4 ?? [])) ga4Map.set(`${g.campaign_id}|${g.sku ?? ''}`, g)
     const adsAddedMap = new Map<string, number>()
     for (const a of (campData.ads_added ?? [])) adsAddedMap.set(`${a.campaign_id}|${a.sku ?? ''}`, a.ads_added)
 
     return campData.campaigns.filter(c => c.campaign_name?.includes('[META]')).map(c => {
       const cv = convMap.get(`${c.campaign_id}|${c.sku ?? ''}`)
+      const ga = ga4Map.get(`${c.campaign_id}|${c.sku ?? ''}`)
       const leads = cv ? (useFormConversions ? (cv.form_submission ?? 0) : (cv.real_lead_ccom + cv.real_lead_d2or + cv.real_lead_mpsh + cv.real_lead_ofls)) : 0
+      const rl_ccom = cv?.real_lead_ccom ?? 0
+      const ql_ccom = cv?.qualified_lead_ccom ?? 0
       const purchases = cv ? (useFormConversions ? (cv.form_conversion ?? 0) : (cv.purchase_ccom ?? 0)) : 0
       const revenue = useFormConversions ? 0 : (cv?.purchase_revenue ?? 0)
       const adsAdded = adsAddedMap.get(`${c.campaign_id}|${c.sku ?? ''}`) ?? 0
-      return { ...c, leads, purchases, revenue, cprl: leads > 0 ? c.ad_spend / leads : 0, cpa: purchases > 0 ? c.ad_spend / purchases : 0, roas: c.ad_spend > 0 ? revenue / c.ad_spend : 0, adsAdded }
+      const m: CampMetrics = {
+        spend: c.ad_spend, impressions: c.impressions,
+        video_views: c.video_views ?? 0, video_view_50pct: c.video_view_50pct ?? 0,
+        link_click: c.link_click,
+        ga4_first_visit: ga?.ga4_first_visit ?? 0, ga4_page_view: ga?.ga4_page_view ?? 0, ga4_view_offer: ga?.ga4_view_offer ?? 0,
+        leads, rl_ccom, ql_ccom, purchases, revenue,
+      }
+      return { ...c, ...m, adsAdded, cprl: safeDiv(m.spend, leads), cpa: safeDiv(m.spend, purchases), roas: safeDiv(revenue, m.spend) }
     })
   }, [campData])
 
@@ -442,9 +568,17 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     // Sort campaigns within each SKU
     const mult = sortDir === 'desc' ? -1 : 1
     for (const s of Object.keys(grouped)) {
+      const colDef = CAMP_COLS.find(c => c.id === sortKey)
       grouped[s].sort((a, b) => {
-        const av = sortKey === 'name' ? (a.campaign_name ?? '') : sortKey === 'funnel' ? (a.funnel ?? '99') : sortKey === 'leads' ? a.leads : sortKey === 'purchases' ? a.purchases : sortKey === 'revenue' ? a.revenue : sortKey === 'cprl' ? a.cprl : sortKey === 'cpa' ? a.cpa : sortKey === 'roas' ? a.roas : a.ad_spend
-        const bv = sortKey === 'name' ? (b.campaign_name ?? '') : sortKey === 'funnel' ? (b.funnel ?? '99') : sortKey === 'leads' ? b.leads : sortKey === 'purchases' ? b.purchases : sortKey === 'revenue' ? b.revenue : sortKey === 'cprl' ? b.cprl : sortKey === 'cpa' ? b.cpa : sortKey === 'roas' ? b.roas : b.ad_spend
+        const getSortVal = (row: typeof a): string | number => {
+          if (sortKey === 'name') return row.campaign_name ?? ''
+          if (sortKey === 'funnel') return row.funnel ?? '99'
+          if (sortKey === 'adsAdded') return row.adsAdded
+          if (colDef) return colDef.get(row)
+          return row.spend
+        }
+        const av = getSortVal(a)
+        const bv = getSortVal(b)
         return typeof av === 'string' ? mult * av.localeCompare(bv as string) : mult * ((av as number) - (bv as number))
       })
     }
@@ -460,10 +594,17 @@ function CampaignPage({ config }: { config: BrandConfig }) {
 
   // ── Per-SKU totals ──
   const skuTotals = useMemo(() => {
-    const out: Record<string, { spend: number; leads: number; purchases: number; revenue: number; adsAdded: number; cprl: number; cpa: number; roas: number }> = {}
+    const out: Record<string, CampMetrics & { adsAdded: number; cprl: number; cpa: number; roas: number }> = {}
     for (const [sku, rows] of Object.entries(campaignsBySku)) {
-      const s = rows.reduce((a, c) => ({ spend: a.spend + c.ad_spend, leads: a.leads + c.leads, purchases: a.purchases + c.purchases, revenue: a.revenue + c.revenue, adsAdded: a.adsAdded + c.adsAdded }), { spend: 0, leads: 0, purchases: 0, revenue: 0, adsAdded: 0 })
-      out[sku] = { ...s, cprl: s.leads > 0 ? s.spend / s.leads : 0, cpa: s.purchases > 0 ? s.spend / s.purchases : 0, roas: s.spend > 0 ? s.revenue / s.spend : 0 }
+      const s = rows.reduce((a, c) => ({
+        spend: a.spend + c.spend, impressions: a.impressions + c.impressions,
+        video_views: a.video_views + c.video_views, video_view_50pct: a.video_view_50pct + c.video_view_50pct,
+        link_click: a.link_click + c.link_click,
+        ga4_first_visit: a.ga4_first_visit + c.ga4_first_visit, ga4_page_view: a.ga4_page_view + c.ga4_page_view, ga4_view_offer: a.ga4_view_offer + c.ga4_view_offer,
+        leads: a.leads + c.leads, rl_ccom: a.rl_ccom + c.rl_ccom, ql_ccom: a.ql_ccom + c.ql_ccom,
+        purchases: a.purchases + c.purchases, revenue: a.revenue + c.revenue, adsAdded: a.adsAdded + c.adsAdded,
+      }), { spend: 0, impressions: 0, video_views: 0, video_view_50pct: 0, link_click: 0, ga4_first_visit: 0, ga4_page_view: 0, ga4_view_offer: 0, leads: 0, rl_ccom: 0, ql_ccom: 0, purchases: 0, revenue: 0, adsAdded: 0 })
+      out[sku] = { ...s, cprl: safeDiv(s.spend, s.leads), cpa: safeDiv(s.spend, s.purchases), roas: safeDiv(s.revenue, s.spend) }
     }
     return out
   }, [campaignsBySku])
@@ -486,6 +627,8 @@ function CampaignPage({ config }: { config: BrandConfig }) {
     if (!adData) return []
     const convMap = new Map<string, ConvRow>()
     for (const c of adData.ad_conversions) convMap.set(c.ad_id!, c)
+    const ga4Map = new Map<string, Ga4SummaryRow>()
+    for (const g of (adData.ad_ga4 ?? [])) ga4Map.set(g.ad_id!, g)
     const dimMap = new Map<string, AdDimRow>()
     for (const d of adData.ad_dimension) dimMap.set(d.ad_id, d)
     const bridgeMap = new Map<string, { created_by: string | null; lp_url: string | null; notion_url: string | null }>()
@@ -495,9 +638,12 @@ function CampaignPage({ config }: { config: BrandConfig }) {
 
     return adData.ads.map(a => {
       const cv = convMap.get(a.ad_id)
+      const ga = ga4Map.get(a.ad_id)
       const dim = dimMap.get(a.ad_id)
       const bridge = dim?.internal_ad_id ? bridgeMap.get(dim.internal_ad_id) : null
       const leads = cv ? (useFormConversions ? (cv.form_submission ?? 0) : (cv.real_lead_ccom + cv.real_lead_d2or + cv.real_lead_mpsh + cv.real_lead_ofls)) : 0
+      const rl_ccom = cv?.real_lead_ccom ?? 0
+      const ql_ccom = cv?.qualified_lead_ccom ?? 0
       const purchases = cv ? (useFormConversions ? (cv.form_conversion ?? 0) : (cv.purchase_ccom ?? 0)) : 0
       const revenue = useFormConversions ? 0 : (cv?.purchase_revenue ?? 0)
       const publishDate = dim?.publish_date ?? null
@@ -505,11 +651,17 @@ function CampaignPage({ config }: { config: BrandConfig }) {
       const isLearning = daysSincePublish < 7
       const isBleeder = !isLearning && leads === 0 && purchases === 0 && revenue === 0
       const status: 'Learning' | 'Running' | 'Bleeder' = isLearning ? 'Learning' : isBleeder ? 'Bleeder' : 'Running'
-      // Sort order: Learning=0, Running=1, Bleeder=2
       const statusOrder = isLearning ? 0 : isBleeder ? 2 : 1
       const grade = isLearning ? null : (dim?.grade_ads_quality ?? null)
+      const m: CampMetrics = {
+        spend: a.ad_spend, impressions: a.impressions,
+        video_views: a.video_views ?? 0, video_view_50pct: a.video_view_50pct ?? 0,
+        link_click: a.link_click,
+        ga4_first_visit: ga?.ga4_first_visit ?? 0, ga4_page_view: ga?.ga4_page_view ?? 0, ga4_view_offer: ga?.ga4_view_offer ?? 0,
+        leads, rl_ccom, ql_ccom, purchases, revenue,
+      }
       return {
-        ...a, leads, purchases, revenue,
+        ...a, ...m,
         ad_title: dim?.ad_title ?? null,
         internal_ad_id: dim?.internal_ad_id ?? null,
         sku: dim?.sku ?? null,
@@ -518,9 +670,9 @@ function CampaignPage({ config }: { config: BrandConfig }) {
         lp_url: bridge?.lp_url ?? null,
         notion_url: bridge?.notion_url ?? null,
         status, statusOrder, grade,
-        cprl: leads > 0 ? a.ad_spend / leads : 0,
-        cpa: purchases > 0 ? a.ad_spend / purchases : 0,
-        roas: a.ad_spend > 0 ? revenue / a.ad_spend : 0,
+        cprl: safeDiv(m.spend, leads),
+        cpa: safeDiv(m.spend, purchases),
+        roas: safeDiv(revenue, m.spend),
       }
     })
     .filter(a => a.ad_title !== null && !a.ad_title.toLowerCase().includes('(deleted ad)'))
@@ -535,8 +687,16 @@ function CampaignPage({ config }: { config: BrandConfig }) {
         const diff = mult * (a.statusOrder - b.statusOrder)
         return diff !== 0 ? diff : b.ad_spend - a.ad_spend // secondary: spend desc
       }
-      const av = adSortKey === 'title' ? (a.ad_title ?? '') : adSortKey === 'publish_date' ? (a.publish_date ?? '') : adSortKey === 'name' ? (a.internal_ad_id ?? '') : adSortKey === 'leads' ? a.leads : adSortKey === 'purchases' ? a.purchases : adSortKey === 'revenue' ? a.revenue : adSortKey === 'cprl' ? a.cprl : adSortKey === 'cpa' ? a.cpa : adSortKey === 'roas' ? a.roas : a.ad_spend
-      const bv = adSortKey === 'title' ? (b.ad_title ?? '') : adSortKey === 'publish_date' ? (b.publish_date ?? '') : adSortKey === 'name' ? (b.internal_ad_id ?? '') : adSortKey === 'leads' ? b.leads : adSortKey === 'purchases' ? b.purchases : adSortKey === 'revenue' ? b.revenue : adSortKey === 'cprl' ? b.cprl : adSortKey === 'cpa' ? b.cpa : adSortKey === 'roas' ? b.roas : b.ad_spend
+      const colDef = CAMP_COLS.find(c => c.id === adSortKey)
+      const getSortVal = (row: typeof a): string | number => {
+        if (adSortKey === 'title') return row.ad_title ?? ''
+        if (adSortKey === 'publish_date') return row.publish_date ?? ''
+        if (adSortKey === 'name') return row.internal_ad_id ?? ''
+        if (colDef) return colDef.get(row)
+        return row.spend
+      }
+      const av = getSortVal(a)
+      const bv = getSortVal(b)
       return typeof av === 'string' ? mult * av.localeCompare(bv as string) : mult * ((av as number) - (bv as number))
     })
   }, [ads, adSortKey, adSortDir])
@@ -683,8 +843,15 @@ function CampaignPage({ config }: { config: BrandConfig }) {
 
   // ── Totals row ──
   const totals = useMemo(() => {
-    const s = campaigns.reduce((a, c) => ({ spend: a.spend + c.ad_spend, leads: a.leads + c.leads, purchases: a.purchases + c.purchases, revenue: a.revenue + c.revenue, adsAdded: a.adsAdded + c.adsAdded }), { spend: 0, leads: 0, purchases: 0, revenue: 0, adsAdded: 0 })
-    return { ...s, cprl: s.leads > 0 ? s.spend / s.leads : 0, cpa: s.purchases > 0 ? s.spend / s.purchases : 0, roas: s.spend > 0 ? s.revenue / s.spend : 0 }
+    const s = campaigns.reduce((a, c) => ({
+      spend: a.spend + c.spend, impressions: a.impressions + c.impressions,
+      video_views: a.video_views + c.video_views, video_view_50pct: a.video_view_50pct + c.video_view_50pct,
+      link_click: a.link_click + c.link_click,
+      ga4_first_visit: a.ga4_first_visit + c.ga4_first_visit, ga4_page_view: a.ga4_page_view + c.ga4_page_view, ga4_view_offer: a.ga4_view_offer + c.ga4_view_offer,
+      leads: a.leads + c.leads, rl_ccom: a.rl_ccom + c.rl_ccom, ql_ccom: a.ql_ccom + c.ql_ccom,
+      purchases: a.purchases + c.purchases, revenue: a.revenue + c.revenue, adsAdded: a.adsAdded + c.adsAdded,
+    }), { spend: 0, impressions: 0, video_views: 0, video_view_50pct: 0, link_click: 0, ga4_first_visit: 0, ga4_page_view: 0, ga4_view_offer: 0, leads: 0, rl_ccom: 0, ql_ccom: 0, purchases: 0, revenue: 0, adsAdded: 0 })
+    return { ...s, cprl: safeDiv(s.spend, s.leads), cpa: safeDiv(s.spend, s.purchases), roas: safeDiv(s.revenue, s.spend) }
   }, [campaigns])
 
   return (
@@ -696,8 +863,12 @@ function CampaignPage({ config }: { config: BrandConfig }) {
         <div style={{ fontSize: 10, fontWeight: 600, padding: '3px 10px', borderRadius: 6, background: `${badgeColor}1f`, border: `1px solid ${badgeColor}40`, color: badgeColor }}>{brand}</div>
       </div>
 
-      {/* Date picker */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+      {/* Controls row — sticky */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 30,
+        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap',
+        padding: '10px 0', background: 'rgba(13,14,18,0.97)', backdropFilter: 'blur(8px)',
+      }}>
         {PRESETS.map(p => (
           <button key={p.label} onClick={() => applyPreset(p.days)}
             style={{ padding: '5px 12px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: '1px solid', cursor: 'pointer', background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
@@ -711,29 +882,120 @@ function CampaignPage({ config }: { config: BrandConfig }) {
           <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setSelectedCampaign(null) }}
             style={{ padding: '4px 8px', fontSize: 10, borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff' }} />
         </div>
+
+        {/* Column picker */}
+        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+          <button onClick={() => setShowColPicker(!showColPicker)} style={{
+            padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer',
+            fontWeight: 700, fontSize: 10, background: showColPicker ? 'rgba(129,140,248,0.15)' : 'rgba(255,255,255,0.06)', color: showColPicker ? '#818cf8' : 'rgba(255,255,255,0.6)',
+          }}>⊞ Columns ({activeCols.length})</button>
+          {showColPicker && (
+            <div style={{
+              position: 'absolute', right: 0, top: 32, zIndex: 50, background: '#1a1b20', border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 10, padding: '12px 14px', width: 320, maxHeight: 520, overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+            }}>
+              {/* Available columns — two columns: Metrics | Ratios */}
+              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>METRICS</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {CAMP_COLS.filter(c => !c.isRatio).map(col => {
+                      const isOn = colOrder.includes(col.id)
+                      return (
+                        <button key={col.id} onClick={() => toggleCol(col.id)} style={{
+                          padding: '3px 8px', fontSize: 10, fontWeight: 600, borderRadius: 4, border: 'none', cursor: 'pointer', textAlign: 'left',
+                          background: isOn ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.06)',
+                          color: isOn ? '#34d399' : 'rgba(255,255,255,0.4)',
+                        }}>
+                          {colLabels?.[col.id] ?? col.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>RATIOS</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {CAMP_COLS.filter(c => c.isRatio).map(col => {
+                      const isOn = colOrder.includes(col.id)
+                      return (
+                        <button key={col.id} onClick={() => toggleCol(col.id)} style={{
+                          padding: '3px 8px', fontSize: 10, fontWeight: 600, borderRadius: 4, border: 'none', cursor: 'pointer', textAlign: 'left',
+                          background: isOn ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.06)',
+                          color: isOn ? '#60a5fa' : 'rgba(255,255,255,0.4)',
+                        }}>
+                          {colLabels?.[col.id] ?? col.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Column order */}
+              <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 }}>COLUMN ORDER</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {activeCols.map((col, idx) => (
+                  <div key={col.id}
+                    draggable
+                    onDragStart={() => handleDragStart(col.id)}
+                    onDragOver={(e) => handleDragOver(e, col.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={() => handleDrop(col.id)}
+                    onDragEnd={handleDragEnd}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '4px 8px', fontSize: 11, fontWeight: 600, borderRadius: 4,
+                      background: dragOverId === col.id ? 'rgba(129,140,248,0.15)' : 'rgba(255,255,255,0.04)',
+                      color: 'rgba(255,255,255,0.7)',
+                      cursor: 'grab',
+                      borderTop: dragOverId === col.id ? '2px solid #818cf8' : '2px solid transparent',
+                      transition: 'background 0.1s',
+                    }}
+                  >
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', cursor: 'grab', userSelect: 'none' }}>⠿</span>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontWeight: 700, width: 16, textAlign: 'center' }}>{idx + 1}</span>
+                    <span style={{ flex: 1 }}>{col.label}</span>
+                    <button onClick={() => moveColumn(col.id, -1)} disabled={idx === 0} style={{
+                      padding: '1px 4px', fontSize: 10, fontWeight: 700, borderRadius: 3,
+                      border: 'none', cursor: idx > 0 ? 'pointer' : 'default',
+                      background: 'rgba(255,255,255,0.06)', color: idx > 0 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.15)',
+                    }}>↑</button>
+                    <button onClick={() => moveColumn(col.id, 1)} disabled={idx === activeCols.length - 1} style={{
+                      padding: '1px 4px', fontSize: 10, fontWeight: 700, borderRadius: 3,
+                      border: 'none', cursor: idx < activeCols.length - 1 ? 'pointer' : 'default',
+                      background: 'rgba(255,255,255,0.06)', color: idx < activeCols.length - 1 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.15)',
+                    }}>↓</button>
+                    <button onClick={() => toggleCol(col.id)} style={{
+                      padding: '1px 4px', fontSize: 10, fontWeight: 700, borderRadius: 3,
+                      border: 'none', cursor: 'pointer',
+                      background: 'rgba(248,113,113,0.1)', color: '#f87171',
+                    }}>×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {campLoading && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 16 }}>Loading…</div>}
 
       {/* Hierarchical campaign table */}
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, overflow: 'hidden', marginBottom: 24 }}>
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, overflow: 'hidden' }}>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ fontSize: 12, fontWeight: 700 }}>Campaigns</div>
           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 'auto' }}>{campaigns.length} campaigns · {filteredSkus.length} products</div>
         </div>
-        <div style={{ maxHeight: selectedCampaign ? 350 : 600, overflowY: 'auto' }}>
+        <div style={{ maxHeight: selectedCampaign ? 350 : 600, overflowY: 'auto', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
             <thead>
               <tr style={{ position: 'sticky', top: 0, background: 'rgba(13,14,18,0.95)', zIndex: 1 }}>
                 <SortTh label="Product / Campaign" k="name" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <SortTh label="Funnel" k="funnel" current={sortKey} dir={sortDir} onClick={toggleSort} />
-                <SortTh label="Spend" k="spend" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label={useFormConversions ? 'Form Submissions' : 'Real Leads'} k="leads" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label={useFormConversions ? 'Visit' : 'Purchase'} k="purchases" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                {!hideRoas && <SortTh label="Revenue" k="revenue" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />}
-                <SortTh label={cfgCprlLabel ?? 'CPRL'} k="cprl" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label={cfgCpaLabel ?? 'CPA CC'} k="cpa" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                {!hideRoas && <SortTh label="RoAS CC" k="roas" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />}
+                {activeCols.map(col => (
+                  <SortTh key={col.id} label={col.label} k={col.id as SortKey} current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
+                ))}
                 <SortTh label="Ads Added" k="adsAdded" current={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
               </tr>
             </thead>
@@ -743,13 +1005,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                 <tr style={{ background: 'rgba(99,102,241,0.06)', borderBottom: '2px solid rgba(99,102,241,0.2)' }}>
                   <td style={{ padding: '7px 10px', fontWeight: 800, color: '#818cf8' }}>ALL PRODUCTS</td>
                   <td style={{ padding: '7px 10px' }}></td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.spend)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtNum(totals.leads)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtNum(totals.purchases)}</td>
-                  {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(totals.revenue)}</td>}
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRp(Math.round(totals.cprl))}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRp(Math.round(totals.cpa))}</td>
-                  {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.roas > 0 ? totals.roas.toFixed(2) + '×' : '-'}</td>}
+                  {activeCols.map(col => {
+                    const v = col.get(totals)
+                    return <td key={col.id} style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{v > 0 ? col.fmt(v) : '-'}</td>
+                  })}
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{totals.adsAdded || '-'}</td>
                 </tr>
               )}
@@ -777,13 +1036,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                         <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9, marginLeft: 6 }}>{skuCampaigns.length} campaigns</span>
                       </td>
                       <td style={{ padding: '8px 10px' }}></td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(t.spend)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtNum(t.leads)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtNum(t.purchases)}</td>
-                      {!hideRoas && <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{fmtRpShort(t.revenue)}</td>}
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.cprl > 0 ? fmtRp(Math.round(t.cprl)) : '-'}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.cpa > 0 ? fmtRp(Math.round(t.cpa)) : '-'}</td>
-                      {!hideRoas && <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{t.roas > 0 ? t.roas.toFixed(2) + '×' : '-'}</td>}
+                      {activeCols.map(col => {
+                        const v = col.get(t)
+                        return <td key={col.id} style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{v > 0 ? col.fmt(v) : '-'}</td>
+                      })}
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: t.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{t.adsAdded > 0 ? `+${t.adsAdded}` : '-'}</td>
                     </tr>
 
@@ -804,13 +1060,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                             {c.campaign_name ?? c.campaign_id}
                           </td>
                           <td style={{ padding: '7px 10px' }}><span style={{ fontSize: 9, fontWeight: 700, color: funnelColor, padding: '1px 5px', borderRadius: 3, background: `${funnelColor}18`, border: `1px solid ${funnelColor}30` }}>{funnelLabel}</span></td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(c.ad_spend)}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.leads ? fmtNum(c.leads) : '-'}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.purchases ? fmtNum(c.purchases) : '-'}</td>
-                          {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' }}>{c.revenue > 0 ? fmtRpShort(c.revenue) : '-'}</td>}
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cprl > 0 ? fmtRp(Math.round(c.cprl)) : '-'}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.cpa > 0 ? fmtRp(Math.round(c.cpa)) : '-'}</td>
-                          {!hideRoas && <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{c.roas > 0 ? c.roas.toFixed(2) + '×' : '-'}</td>}
+                          {activeCols.map(col => {
+                            const v = col.get(c)
+                            return <td key={col.id} style={{ padding: '7px 10px', textAlign: 'right', fontWeight: col.isRatio ? 700 : 600, color: col.isRatio ? '#fff' : 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{v > 0 ? col.fmt(v) : '-'}</td>
+                          })}
                           <td style={{ padding: '7px 10px', textAlign: 'right', color: c.adsAdded > 0 ? '#60a5fa' : 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>{c.adsAdded || '-'}</td>
                         </tr>
                       )
@@ -909,7 +1162,7 @@ function CampaignPage({ config }: { config: BrandConfig }) {
             )
           })()}
 
-          <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 500, overflowY: 'auto', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
               <thead>
                 <tr style={{ position: 'sticky', top: 0, background: 'rgba(13,14,18,0.95)', zIndex: 1 }}>
@@ -919,13 +1172,9 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                   <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Landing Page</th>
                   <SortTh label="Status" k="status" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} />
                   {showGrade && <th style={{ padding: '8px 10px', fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontSize: 10, textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', whiteSpace: 'nowrap' }}>Grade</th>}
-                  <SortTh label="Spend" k="spend" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  <SortTh label={useFormConversions ? 'Form Submissions' : 'Real Leads'} k="leads" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  <SortTh label={useFormConversions ? 'Visit' : 'Purchase'} k="purchases" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  {!hideRoas && <SortTh label="Revenue" k="revenue" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />}
-                  <SortTh label={cfgCprlLabel ?? 'CPRL'} k="cprl" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  <SortTh label={cfgCpaLabel ?? 'CPA CC'} k="cpa" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
-                  {!hideRoas && <SortTh label="RoAS CC" k="roas" current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />}
+                  {activeCols.map(col => (
+                    <SortTh key={col.id} label={col.label} k={col.id as SortKey} current={adSortKey} dir={adSortDir} onClick={toggleAdSort} align="right" />
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -972,13 +1221,10 @@ function CampaignPage({ config }: { config: BrandConfig }) {
                         return <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 4, background: g.bg, border: `1px solid ${g.bdr}`, color: g.color, fontSize: 9, fontWeight: 800, letterSpacing: '0.06em' }}>{a.grade}</span>
                       })()}
                     </td>}
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{fmtRpShort(a.ad_spend)}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.leads ? fmtNum(a.leads) : '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.purchases ? fmtNum(a.purchases) : '-'}</td>
-                    {!hideRoas && <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.revenue > 0 ? fmtRpShort(a.revenue) : '-'}</td>}
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.cprl > 0 ? fmtRp(Math.round(a.cprl)) : '-'}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.cpa > 0 ? fmtRp(Math.round(a.cpa)) : '-'}</td>
-                    {!hideRoas && <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{a.roas > 0 ? a.roas.toFixed(2) + '×' : '-'}</td>}
+                    {activeCols.map(col => {
+                      const v = col.get(a)
+                      return <td key={col.id} style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{v > 0 ? col.fmt(v) : '-'}</td>
+                    })}
                   </tr>
                   )
                 })}
