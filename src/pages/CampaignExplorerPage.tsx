@@ -387,6 +387,9 @@ const MCI_CONFIG: BrandConfig = {
   },
 }
 
+// MCI conversion data uses aliased SKU codes for policy compliance
+const MCI_SKU_ALIAS: Record<string, string> = { ABC: 'A1C', DEF: 'CEK', GHI: 'WCA' }
+
 export function CampaignExplorerPage() { return <CampaignPage config={MNC_CONFIG} /> }
 export function GolCampaignExplorerPage() { return <CampaignPage config={GOL_CONFIG} /> }
 export function MciCampaignExplorerPage() { return <CampaignPage config={MCI_CONFIG} /> }
@@ -528,9 +531,12 @@ function CampaignPage({ config }: { config: BrandConfig }) {
   // ── Merged campaign data (perf + conversions + GA4) ──
   const campaigns = useMemo(() => {
     if (!campData) return []
-    // Conv rows keyed by campaign_id|sku
+    // Conv rows keyed by campaign_id|sku (normalize MCI aliased SKUs)
     const convMap = new Map<string, ConvRow>()
-    for (const c of campData.campaign_conversions) convMap.set(`${c.campaign_id}|${c.sku ?? ''}`, c)
+    for (const c of campData.campaign_conversions) {
+      const normSku = MCI_SKU_ALIAS[c.sku ?? ''] ?? c.sku ?? ''
+      convMap.set(`${c.campaign_id}|${normSku}`, c)
+    }
     // GA4 rows keyed by campaign_id|sku
     const ga4Map = new Map<string, Ga4SummaryRow>()
     for (const g of (campData.campaign_ga4 ?? [])) ga4Map.set(`${g.campaign_id}|${g.sku ?? ''}`, g)

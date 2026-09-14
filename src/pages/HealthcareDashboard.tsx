@@ -377,6 +377,9 @@ export function HealthcareDashboard() {
   , [cgData, activeFrom, activeTo])
 
   const MCI_SKUS = new Set(['CEK', 'A1C', 'WCA'])
+  // Conversion data uses aliased SKU codes for policy compliance
+  const MCI_SKU_ALIAS: Record<string, string> = { ABC: 'A1C', DEF: 'CEK', GHI: 'WCA' }
+  const MCI_SKUS_ALL = new Set([...MCI_SKUS, ...Object.keys(MCI_SKU_ALIAS)])
 
   const skuSpend = useMemo(() => {
     const map = new Map<string, number>()
@@ -453,7 +456,7 @@ export function HealthcareDashboard() {
       byDate.set(r.date, { spend: prev.spend + (r.ad_spend ?? 0), submissions: prev.submissions })
     }
     for (const r of cgData?.conversions ?? []) {
-      if (!r.sku || r.sku === '-' || !MCI_SKUS.has(r.sku)) continue
+      if (!r.sku || r.sku === '-' || !MCI_SKUS_ALL.has(r.sku)) continue
       const prev = byDate.get(r.date) ?? { spend: 0, submissions: 0 }
       byDate.set(r.date, { ...prev, submissions: prev.submissions + (r.mongo_form_submission ?? 0) })
     }
@@ -476,7 +479,7 @@ export function HealthcareDashboard() {
       byDate.set(r.date, { spend: prev.spend + (r.ad_spend ?? 0), conversions: prev.conversions })
     }
     for (const r of cgData?.conversions ?? []) {
-      if (!r.sku || r.sku === '-' || !MCI_SKUS.has(r.sku)) continue
+      if (!r.sku || r.sku === '-' || !MCI_SKUS_ALL.has(r.sku)) continue
       const prev = byDate.get(r.date) ?? { spend: 0, conversions: 0 }
       byDate.set(r.date, { ...prev, conversions: prev.conversions + (r.mongo_form_conversion ?? 0) })
     }
@@ -494,7 +497,7 @@ export function HealthcareDashboard() {
   const cprVolumeSeries = useMemo(() => {
     const byDate = new Map<string, number>()
     for (const r of cgData?.conversions ?? []) {
-      if (!r.sku || r.sku === '-' || !MCI_SKUS.has(r.sku)) continue
+      if (!r.sku || r.sku === '-' || !MCI_SKUS_ALL.has(r.sku)) continue
       byDate.set(r.date, (byDate.get(r.date) ?? 0) + (r.mongo_form_submission ?? 0))
     }
     return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b))
@@ -505,7 +508,7 @@ export function HealthcareDashboard() {
   const cpvVolumeSeries = useMemo(() => {
     const byDate = new Map<string, number>()
     for (const r of cgData?.conversions ?? []) {
-      if (!r.sku || r.sku === '-' || !MCI_SKUS.has(r.sku)) continue
+      if (!r.sku || r.sku === '-' || !MCI_SKUS_ALL.has(r.sku)) continue
       byDate.set(r.date, (byDate.get(r.date) ?? 0) + (r.mongo_form_conversion ?? 0))
     }
     return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b))

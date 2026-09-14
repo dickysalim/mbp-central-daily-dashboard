@@ -579,11 +579,14 @@ export function GeneralOverviewPage() {
   const mci = useMemo(() => {
     if (!mciData) return null
     const MCI_SKUS = new Set(['CEK', 'A1C', 'WCA'])
+    // Conversion data uses aliased SKU codes for policy compliance
+    const MCI_SKU_ALIAS: Record<string, string> = { ABC: 'A1C', DEF: 'CEK', GHI: 'WCA' }
+    const MCI_SKUS_ALL = new Set([...MCI_SKUS, ...Object.keys(MCI_SKU_ALIAS)])
     const perf = mciData.performance ?? []
     const conv = mciData.conversions ?? []
     const ga4 = (mciData.ga4 ?? []) as { date: string; ga4_first_visit?: number; ga4_page_view?: number }[]
 
-    const totalSpend = perf.filter(r => r.date >= mciRange.from && r.date <= mciRange.to).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
+    const totalSpend = perf.filter(r => r.date >= mciRange.from && r.date <= mciRange.to && r.sku && MCI_SKUS.has(r.sku)).reduce((s, r) => s + (r.ad_spend ?? 0), 0)
     const totalFormSubs = conv.filter(r => r.date >= mciRange.from && r.date <= mciRange.to).reduce((s, r) => s + ((r as any).mongo_form_submission ?? 0), 0)
     const totalFormConv = conv.filter(r => r.date >= mciRange.from && r.date <= mciRange.to).reduce((s, r) => s + ((r as any).mongo_form_conversion ?? 0), 0)
     const totalVisits = ga4.filter(r => r.date >= mciRange.from && r.date <= mciRange.to).reduce((s, r) => s + (r.ga4_first_visit ?? 0), 0)
@@ -598,17 +601,15 @@ export function GeneralOverviewPage() {
       spendByDate.set(r.date, (spendByDate.get(r.date) ?? 0) + (r.ad_spend ?? 0))
     }
 
-    // Build form submissions by date (filtered by MCI_SKUS)
+    // Build form submissions by date (no SKU filter — conv data uses different SKU codes than perf)
     const subsByDate = new Map<string, number>()
     for (const r of conv) {
-      if (!(r as any).sku || (r as any).sku === '-' || !MCI_SKUS.has((r as any).sku)) continue
       subsByDate.set(r.date, (subsByDate.get(r.date) ?? 0) + ((r as any).mongo_form_submission ?? 0))
     }
 
-    // Build form conversions by date (filtered by MCI_SKUS)
+    // Build form conversions by date (no SKU filter — conv data uses different SKU codes than perf)
     const convByDate = new Map<string, number>()
     for (const r of conv) {
-      if (!(r as any).sku || (r as any).sku === '-' || !MCI_SKUS.has((r as any).sku)) continue
       convByDate.set(r.date, (convByDate.get(r.date) ?? 0) + ((r as any).mongo_form_conversion ?? 0))
     }
 
@@ -676,7 +677,6 @@ export function GeneralOverviewPage() {
         spendByD.set(r.date, (spendByD.get(r.date) ?? 0) + (r.ad_spend ?? 0))
       }
       for (const r of tsConv) {
-        if (!(r as any).sku || (r as any).sku === '-' || !MCI_SKUS.has((r as any).sku)) continue
         subsByD.set(r.date, (subsByD.get(r.date) ?? 0) + ((r as any).mongo_form_submission ?? 0))
         convByD2.set(r.date, (convByD2.get(r.date) ?? 0) + ((r as any).mongo_form_conversion ?? 0))
       }
