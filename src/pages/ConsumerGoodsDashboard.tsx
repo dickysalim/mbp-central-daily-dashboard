@@ -11,6 +11,9 @@ import { LeadsQualityCard, type SkuCpaCCRow } from '../components/cards/LeadsQua
 import { AtlPerformanceCard } from '../components/cards/AtlPerformanceCard'
 import { SkuPerformanceCard, type CampaignRow } from '../components/cards/SkuPerformanceCard'
 import { TotalRoasCard } from '../components/cards/TotalRoasCard'
+import { ChangelogTooltip } from '../components/ChangelogTooltip'
+import { ChangelogModal } from '../components/ChangelogModal'
+import type { ChangelogRow } from '../types/changelog'
 import superfoodImg  from '../assets/sku_images/Superfood.webp'
 import metafiberImg  from '../assets/sku_images/Metafiber.webp'
 import nightsureImg  from '../assets/sku_images/Nightsure.webp'
@@ -29,11 +32,13 @@ interface ConvRow      { date: string; traffic_source: string; sku: string; ads_
 interface BrandBounds  { brand: string; earliest: string; latest: string; skus: string[] }
 interface SalesRow   { date: string; brand: string; sku: string; so_ccom_ca: number; so_ccom_crm: number; so_mpsh: number; so_d2or: number; so_ofls: number; rev_ccom_ca: number; rev_ccom_crm: number; rev_mpsh: number; rev_d2or: number; rev_ofls: number }
 interface CampaignDimRow { campaign_id: string; traffic_source: string; sku: string; funnel: string; campaign_name: string }
+interface LeadsCategoryRow { date: string; category: string; real_leads: number; purchases: number; form_submissions: number; form_conversions: number }
 interface ConsumerGoodsData {
   performance: AdPerfRow[]; campaign_budgets: CampaignBudgetRow[]; targets: TargetRow[]
   ga4: Ga4Row[]; conversions: ConvRow[]
   changelog: { date: string; brand: string; sku: string; platform: string; title: string; changelist: string | null }[]
   campaign_dimension: CampaignDimRow[]; sales: SalesRow[]
+  total_leads_by_category?: LeadsCategoryRow[]
 }
 
 // Unified row merged from performance + ga4 + conversions (aggregated by date × sku)
@@ -47,6 +52,156 @@ interface AggRow {
   ga4_predicted?: boolean
 }
 export interface CprlPoint { date: string; value: number }
+
+// ── Stacked Area Chart (shared by Real Leads & Purchase) ─────────────────────
+export function RealLeadsStackedChart({ dailyData, avg, changelog = [] }: {
+  dailyData: { date: string; PAID: number; ORGANIC: number; DMAG: number }[]
+  avg: number; changelog?: ChangelogRow[]
+}) {
+  const VW = 320, VH = 120
+  const PAD = { top: 10, right: 36, bottom: 20, left: 6 }
+  const innerW = VW - PAD.left - PAD.right, innerH = VH - PAD.top - PAD.bottom
+  const n = dailyData.length
+  const allLayers = [
+    { key: 'DMAG' as const, color: '#fbbf24' },
+    { key: 'ORGANIC' as const, color: '#60a5fa' },
+    { key: 'PAID' as const, color: '#34d399' },
+  ]
+  const layers = allLayers.filter(l => dailyData.some(d => d[l.key] > 0))
+
+  const dailyTotals = dailyData.map(d => d.PAID + d.ORGANIC + d.DMAG)
+  const maxY = Math.max(1, ...dailyTotals) * 1.08
+  const xs = (i: number) => PAD.left + (i / (n - 1)) * innerW
+  const ys = (v: number) => PAD.top + innerH - (v / maxY) * innerH
+  const avgY = ys(avg)
+
+  // Cumulative stacks
+  const stacks = dailyData.map(d => {
+    let cum = 0
+    const s: Record<string, number> = {}
+    for (const l of layers) {
+      s[l.key + '_0'] = cum
+      cum += d[l.key]
+      s[l.key + '_1'] = cum
+    }
+    return s
+  })
+  const areaPath = (key: string) => {
+    const top = stacks.map((s, i) => `${xs(i)},${ys(s[key + '_1'])}`).join(' ')
+    const bot = [...stacks].reverse().map((s, i) => `${xs(n - 1 - i)},${ys(s[key + '_0'])}`).join(' ')
+    return `${top} ${bot}`
+  }
+
+  const markers = dailyData.map((d, i) => ({ i, entries: changelog.filter(c => c.date === d.date) })).filter(m => m.entries.length > 0)
+  const ref = useRef<SVGSVGElement>(null)
+  const [tooltip, setTooltip] = useState<{ idx: number; x: number } | null>(null)
+  const [clTooltip, setClTooltip] = useState<{ x: number; y: number; entries: ChangelogRow[] } | null>(null)
+  const [modalEntries, setModalEntries] = useState<ChangelogRow[] | null>(null)
+
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = ref.current; if (!svg) return
+    const ctm = svg.getScreenCTM(); if (!ctm) return
+    const pt = svg.createSVGPoint()
+    pt.x = e.clientX; pt.y = e.clientY
+    const { x: svgX } = pt.matrixTransform(ctm.inverse())
+    const idx = Math.max(0, Math.min(n - 1, Math.round(((svgX - PAD.left) / innerW) * (n - 1))))
+    setTooltip({ idx, x: xs(idx) })
+  }
+  const sd = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const fK = (v: number) => v >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, '') + 'K' : String(v)
+
+  return (
+    <>
+    <div style={{ position: 'relative' }}>
+      <svg ref={ref} viewBox={`0 0 ${VW} ${VH}`} width="100%"
+        style={{ display: 'block', overflow: 'visible', cursor: 'crosshair' }}
+        onMouseMove={onMove} onMouseLeave={() => setTooltip(null)}>
+
+        {/* Stacked area fills */}
+        {layers.map(l => (
+          <polygon key={l.key} points={areaPath(l.key)} fill={l.color} fillOpacity="0.18" />
+        ))}
+
+        {/* Average line */}
+        <line x1={PAD.left} y1={avgY} x2={VW - PAD.right} y2={avgY}
+          stroke="#94a3b8" strokeOpacity="0.75" strokeWidth="1.5" strokeDasharray="4,3" />
+        <text x={VW - PAD.right + 3} y={avgY + 4}
+          fontSize="10" fill="#94a3b8" opacity="1" fontWeight="700">{fK(Math.round(avg))}</text>
+
+        {/* Data lines */}
+        {layers.map(l => (
+          <polyline key={l.key + 'l'}
+            points={stacks.map((s, i) => `${xs(i)},${ys(s[l.key + '_1'])}`).join(' ')}
+            fill="none" stroke={l.color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+        ))}
+
+        {/* Changelog markers */}
+        {markers.map(m => (
+          <g key={m.i}
+            onMouseEnter={e => setClTooltip({ x: e.clientX, y: e.clientY, entries: m.entries })}
+            onMouseLeave={() => setClTooltip(null)}
+            onClick={() => { setClTooltip(null); setModalEntries(m.entries) }}
+            style={{ cursor: 'pointer' }}>
+            <rect x={xs(m.i) - 8} y={PAD.top - 12} width={16} height={16} fill="transparent" />
+            <line x1={xs(m.i)} y1={PAD.top} x2={xs(m.i)} y2={PAD.top + innerH}
+              stroke="#fbbf24" strokeOpacity="0.28" strokeWidth="1" strokeDasharray="2,2" />
+            <polygon points={`${xs(m.i)},${PAD.top - 1} ${xs(m.i) - 3.5},${PAD.top - 7} ${xs(m.i) + 3.5},${PAD.top - 7}`}
+              fill="#fbbf24" opacity="0.9" />
+          </g>
+        ))}
+
+        {/* Crosshair + dots */}
+        {tooltip && (
+          <g>
+            <line x1={tooltip.x} y1={PAD.top} x2={tooltip.x} y2={PAD.top + innerH}
+              stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
+            {layers.map(l => (
+              <circle key={l.key} cx={tooltip.x} cy={ys(stacks[tooltip.idx][l.key + '_1'])}
+                r="3.5" fill={l.color} stroke="#0d0e12" strokeWidth="1.5" />
+            ))}
+          </g>
+        )}
+
+        {/* Date labels */}
+        <text x={PAD.left} y={VH - 2} fontSize="10" fill="rgba(255,255,255,0.65)" textAnchor="start">{sd(dailyData[0].date)}</text>
+        <text x={VW - PAD.right} y={VH - 2} fontSize="10" fill="rgba(255,255,255,0.65)" textAnchor="end">{sd(dailyData[n - 1].date)}</text>
+      </svg>
+
+      {/* Tooltip */}
+      {tooltip && (() => {
+        const d = dailyData[tooltip.idx]
+        const t = d.PAID + d.ORGANIC + d.DMAG
+        return (
+          <div style={{
+            position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 99,
+            bottom: 24,
+            left: tooltip.idx > n * 0.6 ? undefined : tooltip.x,
+            right: tooltip.idx > n * 0.6 ? VW - tooltip.x : undefined,
+            background: 'rgba(13,14,18,0.95)', border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 7, padding: '6px 10px', backdropFilter: 'blur(8px)',
+          }}>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginBottom: 3 }}>{sd(d.date)}</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', marginBottom: 3 }}>{t.toLocaleString('id-ID')}</div>
+            {[
+              { label: 'Paid', value: d.PAID, color: '#34d399' },
+              { label: 'Organic', value: d.ORGANIC, color: '#60a5fa' },
+              { label: 'DM Agen', value: d.DMAG, color: '#fbbf24' },
+            ].filter(c => c.value > 0).map(c => (
+              <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: c.color }} />
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>{c.label}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: c.color, marginLeft: 'auto' }}>{c.value.toLocaleString('id-ID')}</span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+      {clTooltip && <ChangelogTooltip x={clTooltip.x} y={clTooltip.y} entries={clTooltip.entries} />}
+    </div>
+    {modalEntries && <ChangelogModal entries={modalEntries} onClose={() => setModalEntries(null)} />}
+    </>
+  )
+}
 
 export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string }) {
   // ── Brand + date state ──
@@ -901,6 +1056,111 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
 
       {/* ── Shared column ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%' }}>
+
+        {/* Real Leads + Purchase row */}
+        {(() => {
+          const rows = cgData?.total_leads_by_category ?? []
+
+          // Helper to build one card's data
+          const buildCard = (field: keyof LeadsCategoryRow & string, includeDmag = true) => {
+            const catTotals = { PAID: 0, ORGANIC: 0, DMAG: 0 }
+            for (const r of rows) {
+              if (r.category in catTotals) catTotals[r.category as keyof typeof catTotals] += (r as any)[field] ?? 0
+            }
+            if (!includeDmag) catTotals.DMAG = 0
+            const total = catTotals.PAID + catTotals.ORGANIC + catTotals.DMAG
+            const channels = [
+              { label: 'Paid Ads', value: catTotals.PAID, color: '#34d399' },
+              { label: 'Organic', value: catTotals.ORGANIC, color: '#60a5fa' },
+              { label: 'DM Agen', value: catTotals.DMAG, color: '#fbbf24' },
+            ].filter(c => c.value > 0)
+            const byDate = new Map<string, { PAID: number; ORGANIC: number; DMAG: number }>()
+            for (const r of rows) {
+              const d = byDate.get(r.date) ?? { PAID: 0, ORGANIC: 0, DMAG: 0 }
+              if (r.category in d) d[r.category as keyof typeof d] += (r as any)[field] ?? 0
+              byDate.set(r.date, d)
+            }
+            const dates = [...byDate.keys()].sort()
+            const dailyData = dates.map(d => {
+              const v = byDate.get(d)!
+              return { date: d, PAID: v.PAID, ORGANIC: v.ORGANIC, DMAG: includeDmag ? v.DMAG : 0 }
+            })
+            const n = dailyData.length
+            const dailyTotals = dailyData.map(d => d.PAID + d.ORGANIC + d.DMAG)
+            const avg = n > 0 ? dailyTotals.reduce((s, v) => s + v, 0) / n : 0
+            return { total, channels, dailyData, n, avg }
+          }
+
+          const renderCard = (title: string, data: ReturnType<typeof buildCard>) => (
+            <div key={title} style={{
+              flex: '1 1 380px', minWidth: 0,
+              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)',
+              borderRadius: 14, padding: '24px 28px',
+              display: 'flex', flexDirection: 'column', gap: 20,
+              fontFamily: 'Inter, system-ui, sans-serif', overflow: 'hidden',
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>{title}</div>
+              <div style={{ display: 'flex', flexDirection: 'row', gap: 24 }}>
+                <div style={{ flex: '0 0 140px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: 3 }}>Total</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>
+                      {data.total.toLocaleString('id-ID')}
+                    </div>
+                  </div>
+                  {data.total > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                      <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: -2 }}>By Source</div>
+                      {data.channels.map(ch => {
+                        const pct = (ch.value / data.total) * 100
+                        return (
+                          <div key={ch.label}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: ch.color, letterSpacing: '0.07em' }}>{ch.label}</span>
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{ch.value.toLocaleString('id-ID')}</span>
+                                <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>{pct.toFixed(1)}%</span>
+                              </div>
+                            </div>
+                            <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: ch.color, borderRadius: 2, transition: 'width 0.4s ease' }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                {data.n > 1 && (
+                  <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 20, display: 'flex', alignItems: 'center' }}>
+                    <div style={{ width: '100%' }}>
+                      <RealLeadsStackedChart dailyData={data.dailyData} avg={data.avg} changelog={filteredChangelog} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+
+          // Brand-specific card pairs
+          const cardPairs: [string, ReturnType<typeof buildCard>][] = fixedBrand === 'MCI'
+            ? [
+                ['Form Submissions', buildCard('form_submissions', false)],
+                ['Visit', buildCard('form_conversions', false)],
+              ]
+            : [
+                ['Real Leads Generated', buildCard('real_leads')],
+                ['Purchase Generated', buildCard('purchases', false)],
+              ]
+
+          return (
+            <div style={{ display: 'flex', gap: 28, alignItems: 'stretch', flexWrap: 'wrap' }}>
+              {cardPairs.map(([title, data]) => renderCard(title, data))}
+            </div>
+          )
+        })()}
+
+
 
         {/* Top row: Ad Spend Health + Total RoAS */}
         <div style={{ display: 'flex', gap: 28, alignItems: 'stretch', flexWrap: 'wrap' }}>

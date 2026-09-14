@@ -13,6 +13,7 @@ import { skuColor } from '../utils/skuColors'
 import { ChangelogModal } from '../components/ChangelogModal'
 import { ChangelogTooltip } from '../components/ChangelogTooltip'
 import { AtlPerformanceCard } from '../components/cards/AtlPerformanceCard'
+import { RealLeadsStackedChart } from './ConsumerGoodsDashboard'
 import { SkuPerformanceCard, type CampaignRow } from '../components/cards/SkuPerformanceCard'
 import type { ChangelogRow } from '../types/changelog'
 
@@ -30,6 +31,7 @@ interface ConsumerGoodsData {
   ga4: { date: string; traffic_source: string; sku: string; ads_platform_campaign_id: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }[]
   campaign_dimension: { traffic_source: string; campaign_id: string; campaign_name: string; sku: string; funnel: string }[]
   ads_added: { campaign_id: string; sku: string; ads_added: number }[]
+  total_leads_by_category?: { date: string; category: string; form_submissions: number; form_conversions: number }[]
 }
 
 // ── MCI SKU colors ──────────────────────────────────────────────────────────
@@ -886,6 +888,96 @@ export function HealthcareDashboard() {
       {/* ── Content ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%' }}>
 
+        {/* Form Submissions + Visit row */}
+        {(() => {
+          const rows = cgData?.total_leads_by_category ?? []
+          type CatRow = typeof rows[number]
+
+          const buildCard = (field: keyof CatRow & string) => {
+            const catTotals = { PAID: 0, ORGANIC: 0, DMAG: 0 }
+            for (const r of rows) {
+              if (r.category in catTotals) catTotals[r.category as keyof typeof catTotals] += ((r as any)[field] ?? 0) as number
+            }
+            catTotals.DMAG = 0  // MCI has no DM Agen
+            const total = catTotals.PAID + catTotals.ORGANIC
+            const channels = [
+              { label: 'Paid Ads', value: catTotals.PAID, color: '#34d399' },
+              { label: 'Organic', value: catTotals.ORGANIC, color: '#60a5fa' },
+            ].filter(c => c.value > 0)
+            const byDate = new Map<string, { PAID: number; ORGANIC: number; DMAG: number }>()
+            for (const r of rows) {
+              const d = byDate.get(r.date) ?? { PAID: 0, ORGANIC: 0, DMAG: 0 }
+              if (r.category === 'PAID') d.PAID += ((r as any)[field] ?? 0) as number
+              else if (r.category === 'ORGANIC') d.ORGANIC += ((r as any)[field] ?? 0) as number
+              byDate.set(r.date, d)
+            }
+            const dates = [...byDate.keys()].sort()
+            const dailyData = dates.map(d => ({ date: d, ...byDate.get(d)! }))
+            const n = dailyData.length
+            const dailyTotals = dailyData.map(d => d.PAID + d.ORGANIC)
+            const avg = n > 0 ? dailyTotals.reduce((s, v) => s + v, 0) / n : 0
+            return { total, channels, dailyData, n, avg }
+          }
+
+          const renderCard = (title: string, data: ReturnType<typeof buildCard>) => (
+            <div key={title} style={{
+              flex: '1 1 380px', minWidth: 0,
+              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)',
+              borderRadius: 14, padding: '24px 28px',
+              display: 'flex', flexDirection: 'column', gap: 20,
+              fontFamily: 'Inter, system-ui, sans-serif', overflow: 'hidden',
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>{title}</div>
+              <div style={{ display: 'flex', flexDirection: 'row', gap: 24 }}>
+                <div style={{ flex: '0 0 140px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: 3 }}>Total</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>
+                      {data.total.toLocaleString('id-ID')}
+                    </div>
+                  </div>
+                  {data.total > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                      <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: -2 }}>By Source</div>
+                      {data.channels.map(ch => {
+                        const pct = (ch.value / data.total) * 100
+                        return (
+                          <div key={ch.label}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: ch.color, letterSpacing: '0.07em' }}>{ch.label}</span>
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{ch.value.toLocaleString('id-ID')}</span>
+                                <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>{pct.toFixed(1)}%</span>
+                              </div>
+                            </div>
+                            <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: ch.color, borderRadius: 2, transition: 'width 0.4s ease' }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                {data.n > 1 && (
+                  <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 20, display: 'flex', alignItems: 'center' }}>
+                    <div style={{ width: '100%' }}>
+                      <RealLeadsStackedChart dailyData={data.dailyData} avg={data.avg} changelog={filteredChangelog} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+
+          return (
+            <div style={{ display: 'flex', gap: 28, alignItems: 'stretch', flexWrap: 'wrap' }}>
+              {renderCard('Form Submissions', buildCard('form_submissions'))}
+              {renderCard('Visit', buildCard('form_conversions'))}
+            </div>
+          )
+        })()}
+
         {/* ── Top row: Ad Spend Health + Leads Spread ── */}
         <div style={{ display: 'flex', gap: 28, alignItems: 'stretch', flexWrap: 'wrap' }}>
 
@@ -993,7 +1085,7 @@ export function HealthcareDashboard() {
               <div style={{ borderLeft: '1px solid rgba(255,255,255,0.06)', alignSelf: 'stretch' }} />
               <div style={{ flex: '1 1 0', minWidth: 0 }}>
                 <DonutPie
-                  title="Form Conversions"
+                  title="Visit"
                   slices={formByBranch.map(b => ({ label: b.branch, value: b.conversion, color: b.color }))}
                 />
               </div>
@@ -1123,7 +1215,7 @@ export function HealthcareDashboard() {
                   })()}
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 6 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.02em', color: 'rgba(255,255,255,0.72)' }}>{totalFormConversions.toLocaleString('id-ID')}</span>
-                    <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.76)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>form conversions</span>
+                    <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.76)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>visit</span>
                   </div>
                 </div>
               </div>
