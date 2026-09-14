@@ -480,6 +480,7 @@ export function ConsumerGoodsDashboard({ brand: fixedBrand }: { brand: string })
   const totalFirstVisit  = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + (r.ga4_first_visit ?? 0), 0), [rawData, activeFrom])
   const totalPageView    = useMemo(() => (rawData ?? []).filter(r => r.date >= activeFrom).reduce((s, r) => s + (r.ga4_page_view ?? 0), 0), [rawData, activeFrom])
 
+
   const cpmSeries = useMemo(() => {
     const byDate = new Map<string, { spend: number; impr: number }>()
     for (const r of (rawData ?? []).filter(r => r.date >= activeFrom)) {
