@@ -86,7 +86,7 @@ const tdStyle: React.CSSProperties = {
   whiteSpace: 'nowrap', borderBottom: '1px solid rgba(255,255,255,0.04)',
 }
 
-interface PerfRow { date: string; traffic_source: string; sku: string; ad_spend: number; impressions: number; link_click: number }
+interface PerfRow { date: string; traffic_source: string; sku: string; ad_spend: number; impressions: number; link_click: number; engagement_net_reaction: number; engagement_net_save: number; engagement_net_comment: number; engagement_share: number }
 interface Ga4Row { date: string; traffic_source: string; sku: string; ga4_first_visit: number; ga4_page_view: number; ga4_view_offer: number }
 interface SalesRow { date: string; brand: string; sku: string; so_ccom_ca: number; so_ccom_crm: number; so_mpsh: number; so_d2or: number; so_ofls: number; rev_ccom_ca: number; rev_ccom_crm: number; rev_mpsh: number; rev_d2or: number; rev_ofls: number }
 interface ConvRow {
@@ -107,6 +107,7 @@ interface AggRow {
   ledi_d2or: number; ledi_mpsh: number; socr_ccom: number
   purchase_ccom: number; revenue_ccom: number
   form_submission: number; visit: number
+  net_reaction: number; net_save: number; net_comment: number; net_share: number
   sale_ca: number; sale_crm: number; sale_mpsh: number; sale_d2or: number; sale_ofls: number
   roas_total_ma30: number
   ga4_predicted?: boolean
@@ -119,6 +120,7 @@ const fmtRpD = (v: number) => v > 0 ? fmtRp(Math.round(v)) : '—'
 const safeDiv = (num: number, den: number) => den > 0 ? num / den : 0
 const rlAll = (r: AggRow) => r.rl_ccom + r.rl_d2or + r.rl_mpsh + r.rl_ofls
 const qlAll = (r: AggRow) => r.qual_ccom + r.ledi_d2or + r.ledi_mpsh
+const engAll = (r: AggRow) => r.net_reaction + r.net_save + r.net_comment + r.net_share
 
 // SKU → brand ownership: if a SKU is known to belong to brand X, it will be
 // excluded from brand Y's data.  Unknown SKUs pass through (not filtered).
@@ -166,6 +168,11 @@ const ALL_COLUMNS: ColDef[] = [
   { id: 'sale_d2or',        label: 'Sales D2OR',         get: r => r.sale_d2or,       fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'sale_ofls',        label: 'Sales OFLS',         get: r => r.sale_ofls,       fmt: fmtRp,  brands: ['MNC','GOL'],       group: 'metrics' },
   { id: 'sale_total',       label: 'Sales Total',        get: r => r.sale_ca + r.sale_crm + r.sale_mpsh + r.sale_d2or + r.sale_ofls, fmt: fmtRp, brands: ['MNC','GOL'], group: 'metrics' },
+  { id: 'net_engagement',   label: 'Net Engagement',     get: engAll,                 fmt: fmtNum, brands: ['MNC','GOL','MCI'], group: 'metrics' },
+  { id: 'net_reaction',     label: 'Net Reaction',       get: r => r.net_reaction,    fmt: fmtNum, brands: ['MNC','GOL','MCI'], group: 'metrics' },
+  { id: 'net_save',         label: 'Net Save',           get: r => r.net_save,        fmt: fmtNum, brands: ['MNC','GOL','MCI'], group: 'metrics' },
+  { id: 'net_comment',      label: 'Net Comment',        get: r => r.net_comment,     fmt: fmtNum, brands: ['MNC','GOL','MCI'], group: 'metrics' },
+  { id: 'net_share',        label: 'Net Share',          get: r => r.net_share,       fmt: fmtNum, brands: ['MNC','GOL','MCI'], group: 'metrics' },
 
   // ── Ratios ──
   { id: 'r_cpm',           label: 'CPM',               get: r => safeDiv(r.ad_spend, r.impressions / 1000), fmt: fmtRpD,  brands: ['MNC','GOL','MCI'], group: 'ratios' },
@@ -248,7 +255,10 @@ export function CsvDownloaderPage() {
     queryKey: ['csv-data', brand, dateFrom, dateTo],
     queryFn: async () => {
       const res = await fetch(`${D1_WORKER_URL}/v2/consumer-goods?brand=${brand}&from=${dateFrom}&to=${dateTo}`)
-      return res.json() as Promise<{ performance: PerfRow[]; ga4: Ga4Row[]; conversions: ConvRow[]; sales: SalesRow[] }>
+      return res.json() as Promise<{
+        performance: PerfRow[]; ga4: Ga4Row[]; conversions: ConvRow[]; sales: SalesRow[]
+        organic_conversions?: { date: string; rl_ccom: number; rl_d2or: number; rl_mpsh: number; rl_ofls: number; qual_ccom: number; ledi_d2or: number; ledi_mpsh: number; socr_ccom: number; purchase_ccom: number; revenue_ccom: number; form_submission: number; form_conversion: number }[]
+      }>
     },
     enabled: !!dateFrom && !!dateTo,
   })
@@ -297,6 +307,7 @@ export function CsvDownloaderPage() {
           ledi_d2or: 0, ledi_mpsh: 0, socr_ccom: 0,
           purchase_ccom: 0, revenue_ccom: 0,
           form_submission: 0, visit: 0,
+          net_reaction: 0, net_save: 0, net_comment: 0, net_share: 0,
           sale_ca: 0, sale_crm: 0, sale_mpsh: 0, sale_d2or: 0, sale_ofls: 0,
           roas_total_ma30: 0,
         }
@@ -314,6 +325,10 @@ export function CsvDownloaderPage() {
       r.ad_spend += p.ad_spend ?? 0
       r.impressions += p.impressions ?? 0
       r.link_click += p.link_click ?? 0
+      r.net_reaction += p.engagement_net_reaction ?? 0
+      r.net_save += p.engagement_net_save ?? 0
+      r.net_comment += p.engagement_net_comment ?? 0
+      r.net_share += p.engagement_share ?? 0
     }
 
     for (const g of (data.ga4 ?? [])) {
@@ -350,6 +365,23 @@ export function CsvDownloaderPage() {
       r.sale_mpsh += s.rev_mpsh ?? 0
       r.sale_d2or += s.rev_d2or ?? 0
       r.sale_ofls += s.rev_ofls ?? 0
+    }
+
+    // Organic conversions — attributed to MBST / '-'
+    for (const o of (data.organic_conversions ?? [])) {
+      const r = ensure(o.date, 'MBST', '-')
+      r.rl_ccom += o.rl_ccom ?? 0
+      r.rl_d2or += o.rl_d2or ?? 0
+      r.rl_mpsh += o.rl_mpsh ?? 0
+      r.rl_ofls += o.rl_ofls ?? 0
+      r.qual_ccom += o.qual_ccom ?? 0
+      r.ledi_d2or += o.ledi_d2or ?? 0
+      r.ledi_mpsh += o.ledi_mpsh ?? 0
+      r.socr_ccom += o.socr_ccom ?? 0
+      r.purchase_ccom += o.purchase_ccom ?? 0
+      r.revenue_ccom += o.revenue_ccom ?? 0
+      r.form_submission += o.form_submission ?? 0
+      r.visit += o.form_conversion ?? 0
     }
 
     // ── GA4 prediction for H-1 ──────────────────────────────────────────────
@@ -825,7 +857,7 @@ export function CsvDownloaderPage() {
             ] as const).map(grp => (
               <div key={grp.label} style={{ minWidth: 170 }}>
                 <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 }}>{grp.label}</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{ columnCount: 2, columnGap: 12 }}>
                   {grp.cols.map(c => {
                     const isOn = selectedColumns.includes(c.id)
                     const maDisabled = MA_COLS.has(c.id) && dateBreakdown !== 'daily'
@@ -838,19 +870,21 @@ export function CsvDownloaderPage() {
                         color: maDisabled ? 'rgba(255,255,255,0.2)' : isOn ? '#34d399' : 'rgba(255,255,255,0.45)',
                         transition: 'all 0.15s',
                         opacity: maDisabled ? 0.5 : 1,
+                        width: '100%', breakInside: 'avoid' as const, marginBottom: 2,
                       }}>
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                           width: 12, height: 12, borderRadius: 3,
                           border: maDisabled ? '2px solid rgba(255,255,255,0.08)' : isOn ? '2px solid #34d399' : '2px solid rgba(255,255,255,0.15)',
                           background: maDisabled ? 'transparent' : isOn ? '#34d399' : 'transparent',
-                          fontSize: 8, color: '#111', fontWeight: 900,
+                          fontSize: 8, color: '#111', fontWeight: 900, flexShrink: 0,
                         }}>{!maDisabled && isOn ? '✓' : ''}</span>
                         {c.label}
-                        {maDisabled && <span style={{ fontSize: 7, color: 'rgba(245,158,11,0.7)', marginLeft: 2 }}>⚠ Only usable on Daily breakdown</span>}
+                        {maDisabled && <span style={{ fontSize: 7, color: 'rgba(245,158,11,0.7)', marginLeft: 2 }}>⚠ Daily only</span>}
                       </button>
                     )
                   })}
+                </div>
                   <div style={{ marginTop: 4, display: 'flex', gap: 3 }}>
                     <button onClick={() => setSelectedColumns(prev => {
                       const grpIds = grp.cols.map(c => c.id)
@@ -870,15 +904,14 @@ export function CsvDownloaderPage() {
                       background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)',
                     }}>None</button>
                   </div>
-                </div>
               </div>
             ))}
           </div>
 
           {/* Column order */}
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 140 }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Column Order</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 320, overflowY: 'auto' }}>
               {activeColumns.map((c, idx) => (
                 <div key={c.id}
                   draggable
