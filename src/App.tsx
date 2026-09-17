@@ -13,6 +13,7 @@ import { PipelineStatusPage } from './pages/PipelineStatusPage'
 import { CampaignExplorerPage, GolCampaignExplorerPage, MciCampaignExplorerPage } from './pages/CampaignExplorerPage'
 import { CsvDownloaderPage } from './pages/CsvDownloaderPage'
 import { DpLeadsPage } from './pages/DpLeadsPage'
+import { InsightReportPage } from './pages/InsightReportPage'
 import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO, IS_MNC, IS_MCI, IS_GOL_CC, IS_MNC_CC } from './config/domainConfig'
 
 const queryClient = new QueryClient({
@@ -65,6 +66,7 @@ function App() {
             {!IS_GOLO && !IS_MNC && !IS_MCI && <>
               <Route path="/overview" element={<GeneralOverviewPage />} />
               <Route path="/pipeline-status" element={<PipelineStatusPage />} />
+              <Route path="/insight-report" element={<InsightReportPage />} />
             </>}
           </Route>
         </Routes>

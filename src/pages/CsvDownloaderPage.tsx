@@ -45,6 +45,15 @@ function dateKey(date: string, breakdown: 'daily' | 'isoweek' | 'monthly'): stri
   return date
 }
 
+function displayPeriod(period: string): string {
+  // Convert YYYY-MM to "September 2026"
+  if (/^\d{4}-\d{2}$/.test(period)) {
+    const [y, m] = period.split('-')
+    return new Date(+y, +m - 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  }
+  return period
+}
+
 function fmtNum(n: number) { return Math.round(n).toLocaleString('id-ID') }
 function fmtRp(n: number) { return 'Rp ' + Math.round(n).toLocaleString('id-ID') }
 
@@ -601,7 +610,7 @@ export function CsvDownloaderPage() {
       if (dimensions.trafficSource) dims.push(r.traffic_source)
       if (dimensions.product) dims.push(r.product)
       const metrics = activeColumns.map(c => c.get(r))
-      return [r.period, ...dims, ...metrics]
+      return [displayPeriod(r.period), ...dims, ...metrics]
     })
     const csv = toCsv(allHeaders, csvRows)
     downloadCsv(`${brand}_data_${dateBreakdown}_${dateFrom}_${dateTo}.csv`, csv)
@@ -983,7 +992,7 @@ export function CsvDownloaderPage() {
                 const fz = (idx: number): React.CSSProperties => ({ position: 'sticky', left: frozen.lefts[idx], zIndex: 1, background: bg, minWidth: frozen.widths[idx], maxWidth: frozen.widths[idx], width: frozen.widths[idx] })
                 return (
                   <tr key={ri}>
-                    <td style={{ ...tdStyle, textAlign: 'left', color: '#fff', fontWeight: 700, ...fz(fi++) }}>{r.period}</td>
+                    <td style={{ ...tdStyle, textAlign: 'left', color: '#fff', fontWeight: 700, ...fz(fi++) }}>{displayPeriod(r.period)}</td>
                     {dimensions.trafficSource && <td style={{ ...tdStyle, textAlign: 'left', ...fz(fi++) }}>{r.traffic_source}</td>}
                     {dimensions.product && <td style={{ ...tdStyle, textAlign: 'left', ...fz(fi++) }}>{r.product}</td>}
                     {activeColumns.map(c => {
