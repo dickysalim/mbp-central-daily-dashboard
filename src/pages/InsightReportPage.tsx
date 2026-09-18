@@ -7,11 +7,14 @@
 import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
+import { REPORT_BRAND } from '../config/domainConfig'
 
 interface ReportMeta {
   slug: string
+  report_id: string
   title: string
   description: string
+  brand: string
   created_at: string
   updated_at: string
 }
@@ -40,7 +43,13 @@ export function InsightReportPage() {
     staleTime: 0,
   })
 
-  const reports = data ?? []
+  // Filter reports by domain brand:
+  // - Branded domains see own brand + GLOBAL
+  // - Main domain sees everything (MBP only visible here)
+  const reports = (data ?? []).filter(r => {
+    if (!REPORT_BRAND) return true // main domain sees all
+    return r.brand === REPORT_BRAND || r.brand === 'GLOBAL'
+  })
 
   // ── Viewing a report ─────────────────────────────────────────────────────
   if (activeSlug) {
@@ -134,41 +143,51 @@ export function InsightReportPage() {
           </p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-          {reports.map(r => (
-            <button
-              key={r.slug}
-              onClick={() => setActiveSlug(r.slug)}
-              style={{
-                display: 'flex', flexDirection: 'column', gap: 6,
-                padding: 16, borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                border: '1px solid rgba(255,255,255,0.09)',
-                background: 'rgba(255,255,255,0.03)',
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.09)' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
-                </svg>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#fff', lineHeight: 1.3 }}>
-                  {r.title}
-                </span>
-              </div>
-              {r.description && (
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0, lineHeight: 1.4 }}>
-                  {r.description}
-                </p>
-              )}
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', marginTop: 2 }}>
-                {new Date(r.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </div>
-            </button>
-          ))}
+        <div style={{ borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                <th style={{ padding: '8px 14px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textAlign: 'left', whiteSpace: 'nowrap' }}>Report ID</th>
+                <th style={{ padding: '8px 14px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textAlign: 'left', whiteSpace: 'nowrap' }}>Date Created</th>
+                <th style={{ padding: '8px 14px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textAlign: 'left', whiteSpace: 'nowrap' }}>Brand</th>
+                <th style={{ padding: '8px 14px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textAlign: 'left' }}>Report Title</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map(r => (
+                <tr
+                  key={r.slug}
+                  onClick={() => setActiveSlug(r.slug)}
+                  style={{
+                    cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)',
+                    transition: 'background 0.1s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                >
+                  <td style={{ padding: '10px 14px', fontSize: 11, fontWeight: 700, color: '#6366f1', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                    {r.report_id || '—'}
+                  </td>
+                  <td style={{ padding: '10px 14px', fontSize: 11, color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                    {new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </td>
+                  <td style={{ padding: '10px 14px', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                    {r.brand || '—'}
+                  </td>
+                  <td style={{ padding: '10px 14px', verticalAlign: 'top' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#fff', lineHeight: 1.3 }}>
+                      {r.title}
+                    </div>
+                    {r.description && (
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 2, lineHeight: 1.4 }}>
+                        {r.description}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
