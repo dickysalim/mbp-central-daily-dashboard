@@ -281,11 +281,14 @@ export function CsvDownloaderPage() {
     return [...s].sort()
   }, [data])
 
+
   const uniqueProducts = useMemo(() => {
     if (!data) return []
+    const alias: Record<string, string> = brand === 'MCI' ? { ABC: 'A1C', DEF: 'CEK', GHI: 'WCA' } : {}
+    const resolve = (sku: string) => alias[sku] ?? sku
     const s = new Set<string>()
-    for (const p of data.performance) if (p.sku && !p.sku.toUpperCase().includes('B2B') && !skuBelongsElsewhere(p.sku, brand)) s.add(p.sku)
-    for (const g of (data.ga4 ?? [])) if (g.sku && !g.sku.toUpperCase().includes('B2B') && !skuBelongsElsewhere(g.sku, brand)) s.add(g.sku)
+    for (const p of data.performance) if (p.sku && !p.sku.toUpperCase().includes('B2B') && !skuBelongsElsewhere(p.sku, brand)) s.add(resolve(p.sku))
+    for (const g of (data.ga4 ?? [])) if (g.sku && !g.sku.toUpperCase().includes('B2B') && !skuBelongsElsewhere(g.sku, brand)) s.add(resolve(g.sku))
     return [...s].sort()
   }, [data, brand])
 
@@ -326,11 +329,13 @@ export function CsvDownloaderPage() {
     }
 
     const isB2B = (sku: string) => sku?.toUpperCase().includes('B2B')
+    const MCI_SKU_ALIAS: Record<string, string> = { ABC: 'A1C', DEF: 'CEK', GHI: 'WCA' }
+    const resolveSku = (sku: string) => (brand === 'MCI' ? MCI_SKU_ALIAS[sku] ?? sku : sku)
     const skipSku = (sku: string) => isB2B(sku) || skuBelongsElsewhere(sku, brand)
 
     for (const p of data.performance) {
       if (skipSku(p.sku)) continue
-      const r = ensure(p.date, p.traffic_source, p.sku)
+      const r = ensure(p.date, p.traffic_source, resolveSku(p.sku))
       r.ad_spend += p.ad_spend ?? 0
       r.impressions += p.impressions ?? 0
       r.link_click += p.link_click ?? 0
@@ -342,7 +347,7 @@ export function CsvDownloaderPage() {
 
     for (const g of (data.ga4 ?? [])) {
       if (skipSku(g.sku)) continue
-      const r = ensure(g.date, g.traffic_source, g.sku)
+      const r = ensure(g.date, g.traffic_source, resolveSku(g.sku))
       r.first_visit += g.ga4_first_visit ?? 0
       r.lp_view += g.ga4_page_view ?? 0
       r.view_offer += g.ga4_view_offer ?? 0
@@ -350,7 +355,7 @@ export function CsvDownloaderPage() {
 
     for (const c of (data.conversions ?? [])) {
       if (skipSku(c.sku)) continue
-      const r = ensure(c.date, c.traffic_source, c.sku)
+      const r = ensure(c.date, c.traffic_source, resolveSku(c.sku))
       r.rl_ccom += c.mongo_real_lead_ccom ?? 0
       r.rl_d2or += c.mongo_real_lead_d2or ?? 0
       r.rl_mpsh += c.mongo_real_lead_mpsh ?? 0

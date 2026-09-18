@@ -160,6 +160,15 @@ const PAGES: NavItem[] = [
       </svg>
     ),
   },
+  {
+    to: '/ab-test',
+    label: 'A/B Test',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 2v6l-2 8h4l1 6" /><path d="M15 2v6l2 8h-4l-1 6" /><line x1="7" y1="8" x2="17" y2="8" />
+      </svg>
+    ),
+  },
 ]
 
 const VISIBLE_PAGES = PAGES.filter(p => ALLOWED_ROUTES.includes(p.to))

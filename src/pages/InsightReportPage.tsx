@@ -30,13 +30,14 @@ export function InsightReportPage() {
   })
 
   // Fetch report HTML when one is selected
-  const { data: reportHtml, isLoading: loadingReport, refetch: refetchReport } = useQuery({
+  const { data: reportHtml, isLoading: loadingReport, refetch: refetchReport, dataUpdatedAt } = useQuery({
     queryKey: ['insight-report', activeSlug],
     queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/insight-reports/${activeSlug}`)
+      const res = await fetch(`${D1_WORKER_URL}/v2/insight-reports/${activeSlug}?t=${Date.now()}`)
       return res.text()
     },
     enabled: !!activeSlug,
+    staleTime: 0,
   })
 
   const reports = data ?? []
@@ -90,6 +91,7 @@ export function InsightReportPage() {
           </div>
         ) : reportHtml ? (
           <iframe
+            key={dataUpdatedAt}
             srcDoc={reportHtml}
             sandbox="allow-scripts allow-same-origin"
             style={{
