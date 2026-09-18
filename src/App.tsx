@@ -48,6 +48,7 @@ function App() {
             <Route path="/platform-overview" element={<PlatformOverviewPage brand={platformBrand} />} />
             <Route path="/csv-downloader" element={<CsvDownloaderPage />} />
             <Route path="/dp-leads" element={<DpLeadsPage />} />
+            <Route path="/insight-report" element={<InsightReportPage />} />
 
             {/* MNC routes — available on MNC + MNC CC + main domain */}
             {!IS_GOLO && !IS_MCI && !IS_GOL_CC && <>
@@ -67,7 +68,6 @@ function App() {
             {!IS_GOLO && !IS_MNC && !IS_MCI && <>
               <Route path="/overview" element={<GeneralOverviewPage />} />
               <Route path="/pipeline-status" element={<PipelineStatusPage />} />
-              <Route path="/insight-report" element={<InsightReportPage />} />
               <Route path="/ab-test" element={<ABTestPage />} />
             </>}
           </Route>
