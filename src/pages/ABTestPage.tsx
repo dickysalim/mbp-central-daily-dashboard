@@ -125,13 +125,17 @@ const computeMetric = (id: string, r: AggRow): number => {
     case 'r_roas_cc': return safeDiv(r.revenue_ccom, r.ad_spend)
     case 'r_roas_total': return safeDiv(r.sale_ca + r.sale_crm + r.sale_mpsh + r.sale_d2or + r.sale_ofls, r.ad_spend)
     case 'r_mcr': return safeDiv(r.ad_spend, r.sale_ca + r.sale_crm + r.sale_mpsh + r.sale_d2or + r.sale_ofls)
+    case 'r_rl_share_cc': return safeDiv(r.rl_ccom, rlAll(r))
+    case 'r_rl_share_dp': return safeDiv(r.rl_d2or, rlAll(r))
+    case 'r_rl_share_mp': return safeDiv(r.rl_mpsh, rlAll(r))
+    case 'r_rl_share_os': return safeDiv(r.rl_ofls, rlAll(r))
     default: return 0
   }
 }
 
 /** Format a metric value based on its ID */
 const formatMetric = (id: string, v: number): string => {
-  if (id.startsWith('r_ctr') || id.startsWith('r_fvr') || id.startsWith('r_oclp') || id.startsWith('r_lpvo') || id.startsWith('r_vo2l') || id.startsWith('r_qual') || id.startsWith('r_ledi') || id.startsWith('r_cvr') || id.startsWith('r_mcr')) return fmtPct(v)
+  if (id.startsWith('r_ctr') || id.startsWith('r_fvr') || id.startsWith('r_oclp') || id.startsWith('r_lpvo') || id.startsWith('r_vo2l') || id.startsWith('r_qual') || id.startsWith('r_ledi') || id.startsWith('r_cvr') || id.startsWith('r_mcr') || id.startsWith('r_rl_share')) return fmtPct(v)
   if (id.startsWith('r_roas') || id === 'r_roas_total_ma30') return fmtX(v)
   if (id === 'r_cpm' || id === 'r_cpc' || id === 'r_cpr' || id === 'r_cpv' || id === 'r_cprl_all' || id === 'r_cpql_all' || id === 'r_cpa_cc' || id === 'r_aov_cc') return fmtRpD(v)
   if (id === 'ad_spend' || id === 'revenue_ccom' || id.startsWith('sale_')) return fmtRp(Math.round(v))
@@ -230,6 +234,10 @@ const ALL_METRICS: MetricDef[] = [
   { id: 'r_oclp',          label: 'OCLP',               group: 'ratios',  brands: ['MNC','GOL','MCI'] },
   { id: 'r_lpvo',          label: 'LPVO',               group: 'ratios',  brands: ['MNC','GOL','MCI'] },
   { id: 'r_vo2l',          label: 'VO2L',               group: 'ratios',  brands: ['MNC','GOL'] },
+  { id: 'r_rl_share_cc',   label: 'RL Share CC',        group: 'ratios',  brands: ['MNC','GOL'] },
+  { id: 'r_rl_share_dp',   label: 'RL Share DP',        group: 'ratios',  brands: ['MNC','GOL'] },
+  { id: 'r_rl_share_mp',   label: 'RL Share MP',        group: 'ratios',  brands: ['MNC','GOL'] },
+  { id: 'r_rl_share_os',   label: 'RL Share OS',        group: 'ratios',  brands: ['MNC','GOL'] },
   { id: 'r_qual_rate_all', label: 'Quality Leads Rate', group: 'ratios',  brands: ['MNC','GOL'] },
   { id: 'r_qual_rate_cc',  label: 'QUAL Rate CC',       group: 'ratios',  brands: ['MNC','GOL'] },
   { id: 'r_ledi_dp',       label: 'LEDI Rate DP',       group: 'ratios',  brands: ['MNC','GOL'] },
@@ -482,19 +490,30 @@ function MetricPicker({ metrics, selected, onToggle, max, color = '#6366f1' }: {
 }
 
 // ── New Experiment Modal ─────────────────────────────────────────────────────
-function NewExperimentModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function NewExperimentModal({ onClose, onCreated, editExperiment }: { onClose: () => void; onCreated: () => void; editExperiment?: any }) {
+  const isEdit = !!editExperiment
+
+  // Pre-populate from existing experiment in edit mode
+  const editGroups = (editExperiment?.groups || []).map((g: any) => ({
+    name: g.group_name,
+    items: JSON.parse(g.campaign_ids || '[]').map((cid: string) => ({ id: cid, label: cid })),
+  }))
+
   const [step, setStep] = useState(0) // 0=setup, 1=groups, 2=metrics
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [brand, setBrand] = useState('')
-  const [level, setLevel] = useState<Level>('campaign')
-  const [groups, setGroups] = useState<ABGroup[]>([
-    { name: GROUP_NAMES[0], items: [] },
-    { name: GROUP_NAMES[1], items: [] },
-  ])
-  const [startDate, setStartDate] = useState('')
-  const [primaryMetric, setPrimaryMetric] = useState('')
-  const [secondaryMetrics, setSecondaryMetrics] = useState<string[]>([])
+  const [title, setTitle] = useState(editExperiment?.title || '')
+  const [description, setDescription] = useState(editExperiment?.description || '')
+  const [brand, setBrand] = useState(editExperiment?.brand || '')
+  const [level, setLevel] = useState<Level>(editExperiment?.level || 'campaign')
+  const [groups, setGroups] = useState<ABGroup[]>(
+    isEdit && editGroups.length >= 2
+      ? editGroups
+      : [{ name: GROUP_NAMES[0], items: [] }, { name: GROUP_NAMES[1], items: [] }]
+  )
+  const [startDate, setStartDate] = useState(editExperiment?.start_date || '')
+  const [primaryMetric, setPrimaryMetric] = useState(editExperiment?.primary_metric || '')
+  const [secondaryMetrics, setSecondaryMetrics] = useState<string[]>(
+    isEdit ? JSON.parse(editExperiment?.secondary_metrics || '[]') : []
+  )
   const [search, setSearch] = useState('')
   const [activeGroupIdx, setActiveGroupIdx] = useState(0)
   const [tsFilter, setTsFilter] = useState('')
@@ -557,9 +576,19 @@ function NewExperimentModal({ onClose, onCreated }: { onClose: () => void; onCre
 
       return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name))
     },
-    enabled: !!brand && step >= 1,
+    enabled: !!brand && (step >= 1 || isEdit),
     staleTime: 60_000,
   })
+
+  // In edit mode, enrich group item labels once dimension data loads
+  React.useEffect(() => {
+    if (!isEdit || !dimensionItems || dimensionItems.length === 0) return
+    const lookup = new Map(dimensionItems.map(d => [d.id, d.name]))
+    setGroups(prev => prev.map(g => ({
+      ...g,
+      items: g.items.map(it => ({ ...it, label: lookup.get(it.id) || it.id })),
+    })))
+  }, [dimensionItems])
 
   const availableMetrics = useMemo(
     () => brand ? ALL_METRICS.filter(m => m.brands.includes(brand)) : [],
@@ -611,7 +640,7 @@ function NewExperimentModal({ onClose, onCreated }: { onClose: () => void; onCre
         {/* Header */}
         <div style={S.header}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>New Experiment</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{isEdit ? 'Edit Experiment' : 'New Experiment'}</div>
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
               Step {step + 1} of 3 — {['Setup', 'Groups', 'Metrics'][step]}
             </div>
@@ -647,7 +676,7 @@ function NewExperimentModal({ onClose, onCreated }: { onClose: () => void; onCre
               <div style={{ display: 'flex', gap: 12 }}>
                 <div style={{ flex: 1 }}>
                   <div style={S.label}>Brand</div>
-                  <select value={brand} onChange={e => setBrand(e.target.value)} style={S.select}>
+                  <select value={brand} onChange={e => setBrand(e.target.value)} style={{ ...S.select, opacity: isEdit ? 0.5 : 1 }} disabled={isEdit}>
                     <option value="">Select brand...</option>
                     {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
@@ -991,29 +1020,54 @@ function NewExperimentModal({ onClose, onCreated }: { onClose: () => void; onCre
               onClick={async () => {
                 setSaving(true)
                 try {
-                  const id = crypto.randomUUID()
-                  const res = await fetch(`${D1_WORKER_URL}/v2/ab-tests`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      id,
-                      title: title.trim(),
-                      description: description.trim(),
-                      brand,
-                      level,
-                      start_date: startDate,
-                      primary_metric: primaryMetric,
-                      secondary_metrics: secondaryMetrics,
-                      groups: groups.map(g => ({
-                        name: g.name,
-                        campaign_ids: g.items.map(it => it.id),
-                      })),
-                    }),
-                  })
-                  if (!res.ok) {
-                    const err = await res.json().catch(() => ({}))
-                    alert(`Failed to save: ${(err as any).error || res.statusText}`)
-                    return
+                  if (isEdit) {
+                    // UPDATE existing experiment
+                    const res = await fetch(`${D1_WORKER_URL}/v2/ab-tests/${editExperiment.id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        title: title.trim(),
+                        description: description.trim(),
+                        start_date: startDate,
+                        primary_metric: primaryMetric,
+                        secondary_metrics: secondaryMetrics,
+                        groups: groups.map(g => ({
+                          name: g.name,
+                          campaign_ids: g.items.map(it => it.id),
+                        })),
+                      }),
+                    })
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}))
+                      alert(`Failed to save: ${(err as any).error || res.statusText}`)
+                      return
+                    }
+                  } else {
+                    // CREATE new experiment
+                    const id = crypto.randomUUID()
+                    const res = await fetch(`${D1_WORKER_URL}/v2/ab-tests`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        id,
+                        title: title.trim(),
+                        description: description.trim(),
+                        brand,
+                        level,
+                        start_date: startDate,
+                        primary_metric: primaryMetric,
+                        secondary_metrics: secondaryMetrics,
+                        groups: groups.map(g => ({
+                          name: g.name,
+                          campaign_ids: g.items.map(it => it.id),
+                        })),
+                      }),
+                    })
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}))
+                      alert(`Failed to save: ${(err as any).error || res.statusText}`)
+                      return
+                    }
                   }
                   onCreated()
                   onClose()
@@ -1026,7 +1080,7 @@ function NewExperimentModal({ onClose, onCreated }: { onClose: () => void; onCre
               disabled={!canCreate || saving}
               style={{ ...S.btn('primary'), opacity: canCreate && !saving ? 1 : 0.4 }}
             >
-              {saving ? 'Saving...' : 'Create Experiment'}
+              {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Experiment'}
             </button>
           )}
         </div>
@@ -1035,28 +1089,28 @@ function NewExperimentModal({ onClose, onCreated }: { onClose: () => void; onCre
   )
 }
 
-// ── Experiment Card with hydrated data ───────────────────────────────────────
-function ExperimentCard({ experiment: exp }: { experiment: any }) {
+/// ── Experiment Row — fetches data and renders a table row ─────────────────────
+function ExperimentRow({ experiment: exp, onClick, index, expanded, onEdit }: { experiment: any; onClick: () => void; index: number; expanded: boolean; onEdit: () => void }) {
   const groups = (exp.groups || []).map((g: any) => ({
     name: g.group_name,
     campaignIds: new Set<string>(JSON.parse(g.campaign_ids || '[]')),
   }))
 
-  // Collect all campaign IDs across all groups
   const allCampaignIds = useMemo(() => {
     const ids: string[] = []
     groups.forEach((g: any) => g.campaignIds.forEach((id: string) => ids.push(id)))
     return ids
   }, [groups])
 
-  const today = new Date().toISOString().slice(0, 10)
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  const endDate = exp.end_date || yesterday
 
-  const { data: rawData, isLoading } = useQuery({
+  const { data: rawData } = useQuery({
     queryKey: ['ab-data', exp.id, exp.start_date],
     queryFn: async () => {
       if (allCampaignIds.length === 0) return null
       const res = await fetch(
-        `${D1_WORKER_URL}/v2/ab-test-data?brand=${exp.brand}&from=${exp.start_date}&to=${today}&campaign_ids=${allCampaignIds.join(',')}`
+        `${D1_WORKER_URL}/v2/ab-test-data?brand=${exp.brand}&from=${exp.start_date}&to=${endDate}&campaign_ids=${allCampaignIds.join(',')}`
       )
       if (!res.ok) return null
       return res.json()
@@ -1071,126 +1125,170 @@ function ExperimentCard({ experiment: exp }: { experiment: any }) {
     )
   }, [rawData, groups, exp.start_date])
 
-  const allMetricIds = [exp.primary_metric, ...(JSON.parse(exp.secondary_metrics || '[]') as string[])]
-  const controlIdx = 0
+  // Time elapsed
+  const start = new Date(exp.start_date + 'T00:00:00')
+  const end = new Date(endDate + 'T00:00:00')
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000))
+  const elapsed = days < 7 ? `${days}d` : days < 30 ? `${Math.floor(days / 7)}w ${days % 7}d` : `${Math.floor(days / 30)}mo ${days % 30}d`
+
+  // Ad spend per group
+  const spendParts = groupAggs
+    ? groups.map((g: any, i: number) => {
+        const spend = groupAggs[i].ad_spend
+        return { name: g.name, label: spend > 0 ? 'Rp ' + Math.round(spend).toLocaleString('id-ID') : '—' }
+      })
+    : null
+
+  // Winning variant based on primary metric
+  let winnerName = '—'
+  let deltaStr = '—'
+  let deltaColor = 'rgba(255,255,255,0.3)'
+  if (groupAggs && groups.length >= 2) {
+    const controlVal = computeMetric(exp.primary_metric, groupAggs[0])
+    let bestIdx = 0
+    let bestDelta = 0
+    for (let i = 1; i < groups.length; i++) {
+      const val = computeMetric(exp.primary_metric, groupAggs[i])
+      if (controlVal === 0 && val === 0) continue
+      if (val === 0 && controlVal > 0) { bestIdx = i; bestDelta = -100; continue }
+      const diff = controlVal > 0 ? ((val - controlVal) / controlVal) * 100 : 100
+      if (i === 1) { bestIdx = i; bestDelta = diff }
+      else {
+        const hb = isHigherBetter(exp.primary_metric)
+        const curBetter = hb ? diff > bestDelta : diff < bestDelta
+        if (curBetter) { bestIdx = i; bestDelta = diff }
+      }
+    }
+    const hb = isHigherBetter(exp.primary_metric)
+    const variantWins = hb ? bestDelta > 0 : bestDelta < 0
+    if (bestDelta === 0 && controlVal === 0) {
+      // no data
+    } else if (variantWins) {
+      winnerName = groups[bestIdx].name
+      deltaStr = `${bestDelta > 0 ? '+' : ''}${bestDelta.toFixed(1)}%`
+      deltaColor = '#34d399'
+    } else {
+      winnerName = 'Control'
+      deltaStr = `${bestDelta > 0 ? '+' : ''}${bestDelta.toFixed(1)}%`
+      deltaColor = '#f87171'
+    }
+  }
+
+  const tdS: React.CSSProperties = { padding: '9px 12px', fontSize: 11, whiteSpace: 'nowrap', verticalAlign: 'top' }
+  const rowBg = index % 2 === 1 ? 'rgba(255,255,255,0.02)' : 'transparent'
+  const totalCols = 8
+
+  const allMetricIds = expanded ? [exp.primary_metric, ...(JSON.parse(exp.secondary_metrics || '[]') as string[])] : []
 
   return (
-    <div style={{
-      padding: 16, borderRadius: 8,
-      border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)',
-    }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{exp.title}</div>
-        <span style={{
-          fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3,
-          background: exp.status === 'active' ? '#34d39920' : 'rgba(255,255,255,0.05)',
-          color: exp.status === 'active' ? '#34d399' : 'rgba(255,255,255,0.3)',
-        }}>
-          {exp.status === 'active' ? '● Active' : 'Ended'}
-        </span>
-      </div>
-      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 12 }}>
-        {exp.brand} · {exp.level} · from {exp.start_date} to {today}
-        {exp.description && <span> · {exp.description}</span>}
-      </div>
-
-      {/* Data table */}
-      {isLoading ? (
-        <div style={{ padding: 20, textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
-          Loading performance data...
-        </div>
-      ) : groupAggs ? (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                  Metric
-                </th>
-                {groups.map((g: any, gi: number) => (
-                  <th key={gi} style={{
-                    textAlign: 'right', padding: '6px 10px', fontSize: 9, fontWeight: 700,
-                    color: GROUP_COLORS[gi], borderBottom: '1px solid rgba(255,255,255,0.08)',
-                  }}>
-                    {g.name}
-                  </th>
-                ))}
-                {groups.length === 2 && (
-                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                    Δ vs Control
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {allMetricIds.map((metricId: string, mi: number) => {
-                const def = ALL_METRICS.find(m => m.id === metricId)
-                if (!def) return null
-                const isPrimary = mi === 0
-                const values = groupAggs.map(agg => computeMetric(metricId, agg))
-                const controlVal = values[controlIdx]
-
-                return (
-                  <tr key={metricId} style={{
-                    background: isPrimary ? 'rgba(99,102,241,0.06)' : 'transparent',
-                    borderBottom: '1px solid rgba(255,255,255,0.03)',
-                  }}>
-                    <td style={{
-                      padding: '5px 10px', fontWeight: isPrimary ? 700 : 500,
-                      color: isPrimary ? '#6366f1' : 'rgba(255,255,255,0.6)',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {def.label}
-                      {isPrimary && <span style={{ fontSize: 8, marginLeft: 4, opacity: 0.5 }}>PRIMARY</span>}
-                    </td>
-                    {values.map((val, gi) => (
-                      <td key={gi} style={{
-                        textAlign: 'right', padding: '5px 10px', fontWeight: 600,
-                        color: isPrimary ? '#fff' : 'rgba(255,255,255,0.7)',
-                      }}>
-                        {formatMetric(metricId, val)}
-                      </td>
+    <>
+      <tr
+        onClick={onClick}
+        style={{ cursor: 'pointer', borderBottom: expanded ? 'none' : '1px solid rgba(255,255,255,0.04)', transition: 'background 0.1s', background: rowBg }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = rowBg }}
+      >
+        <td style={{ ...tdS, fontWeight: 700, color: '#6366f1' }}>
+          <span style={{ display: 'inline-block', width: 12, fontSize: 8, color: 'rgba(255,255,255,0.3)', marginRight: 4 }}>{expanded ? '▼' : '▶'}</span>
+          {exp.test_id || '—'}
+        </td>
+        <td style={{ ...tdS, whiteSpace: undefined as any }}>
+          <div style={{ fontWeight: 600, color: '#fff', fontSize: 11 }}>{exp.title}</div>
+          {exp.description && <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{exp.description}</div>}
+        </td>
+        <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)' }}>{exp.start_date}</td>
+        <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)' }}>{exp.end_date || '—'}</td>
+        <td style={{ ...tdS, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{elapsed}</td>
+        <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)', fontSize: 10, lineHeight: 1.6 }}>
+          {spendParts ? spendParts.map((s, i) => (
+            <div key={i}><span style={{ color: GROUP_COLORS[i], fontWeight: 600 }}>{s.name[0]}:</span> {s.label}</div>
+          )) : <span style={{ color: 'rgba(255,255,255,0.2)' }}>…</span>}
+        </td>
+        <td style={{ ...tdS, fontWeight: 700, color: winnerName === 'Control' ? GROUP_COLORS[0] : winnerName.startsWith('Variant') ? '#34d399' : 'rgba(255,255,255,0.3)' }}>
+          {winnerName}
+        </td>
+        <td style={{ ...tdS, fontWeight: 700, color: deltaColor }}>{deltaStr}</td>
+      </tr>
+      {expanded && (
+        <tr style={{ background: 'rgba(99,102,241,0.03)' }}>
+          <td colSpan={totalCols} style={{ padding: '12px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>
+                {exp.brand} · {exp.level} · {exp.start_date} → {exp.end_date || 'ongoing'}
+                <span style={{ marginLeft: 12, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: exp.status === 'active' ? '#34d39920' : 'rgba(255,255,255,0.05)', color: exp.status === 'active' ? '#34d399' : 'rgba(255,255,255,0.3)' }}>
+                  {exp.status === 'active' ? '● Active' : 'Ended'}
+                </span>
+              </div>
+              <button
+                onClick={e => { e.stopPropagation(); onEdit() }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', fontSize: 10, fontWeight: 600, borderRadius: 4,
+                  border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer',
+                  background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)',
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Edit
+              </button>
+            </div>
+            {!groupAggs ? (
+              <div style={{ padding: 12, textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>Loading…</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, borderRadius: 6, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)' }}>Metric</th>
+                    {groups.map((g: any, gi: number) => (
+                      <th key={gi} style={{ textAlign: 'right', padding: '6px 10px', fontSize: 9, fontWeight: 700, color: GROUP_COLORS[gi] }}>{g.name}</th>
                     ))}
-                    {groups.length === 2 && (() => {
-                      const variantVal = values[1]
-                      if (controlVal === 0 && variantVal === 0) return <td style={{ textAlign: 'right', padding: '5px 10px', color: 'rgba(255,255,255,0.2)' }}>—</td>
-                      // When one side is "—" (0), that side always loses — having no data is the worst outcome
-                      if (variantVal === 0 && controlVal > 0) {
-                        return <td style={{ textAlign: 'right', padding: '5px 10px', fontWeight: 600, color: '#f87171' }}>-100.0%</td>
-                      }
-                      if (controlVal === 0 && variantVal > 0) {
-                        return <td style={{ textAlign: 'right', padding: '5px 10px', fontWeight: 600, color: '#34d399' }}>∞</td>
-                      }
-                      // Both have values — normal % diff
-                      const diff = ((variantVal - controlVal) / controlVal) * 100
-                      const hb = isHigherBetter(metricId)
-                      const isGood = hb ? diff > 0 : diff < 0
-                      const color = Math.abs(diff) < 1 ? 'rgba(255,255,255,0.3)' : isGood ? '#34d399' : '#f87171'
-                      return (
-                        <td style={{ textAlign: 'right', padding: '5px 10px', fontWeight: 600, color }}>
-                          {diff > 0 ? '+' : ''}{diff.toFixed(1)}%
-                        </td>
-                      )
-                    })()}
+                    {groups.length === 2 && <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)' }}>Δ vs Control</th>}
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div style={{ padding: 12, textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>
-          No data available
-        </div>
+                </thead>
+                <tbody>
+                  {allMetricIds.map((metricId: string, mi: number) => {
+                    const def = ALL_METRICS.find(m => m.id === metricId)
+                    if (!def) return null
+                    const isPrimary = mi === 0
+                    const values = groupAggs.map(agg => computeMetric(metricId, agg))
+                    const controlVal = values[0]
+                    return (
+                      <tr key={metricId} style={{ background: isPrimary ? 'rgba(99,102,241,0.06)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '5px 10px', fontWeight: isPrimary ? 700 : 500, color: isPrimary ? '#6366f1' : 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>
+                          {def.label}{isPrimary && <span style={{ fontSize: 8, marginLeft: 4, opacity: 0.5 }}>PRIMARY</span>}
+                        </td>
+                        {values.map((val, gi) => (
+                          <td key={gi} style={{ textAlign: 'right', padding: '5px 10px', fontWeight: 600, color: isPrimary ? '#fff' : 'rgba(255,255,255,0.7)' }}>{formatMetric(metricId, val)}</td>
+                        ))}
+                        {groups.length === 2 && (() => {
+                          const v = values[1]
+                          if (controlVal === 0 && v === 0) return <td style={{ textAlign: 'right', padding: '5px 10px', color: 'rgba(255,255,255,0.2)' }}>—</td>
+                          if (v === 0 && controlVal > 0) return <td style={{ textAlign: 'right', padding: '5px 10px', fontWeight: 600, color: '#f87171' }}>-100.0%</td>
+                          if (controlVal === 0 && v > 0) return <td style={{ textAlign: 'right', padding: '5px 10px', fontWeight: 600, color: '#34d399' }}>∞</td>
+                          const diff = ((v - controlVal) / controlVal) * 100
+                          const hb = isHigherBetter(metricId)
+                          const isGood = hb ? diff > 0 : diff < 0
+                          const c = Math.abs(diff) < 1 ? 'rgba(255,255,255,0.3)' : isGood ? '#34d399' : '#f87171'
+                          return <td style={{ textAlign: 'right', padding: '5px 10px', fontWeight: 600, color: c }}>{diff > 0 ? '+' : ''}{diff.toFixed(1)}%</td>
+                        })()}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   )
 }
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 export function ABTestPage() {
   const [showModal, setShowModal] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editingExp, setEditingExp] = useState<any>(null)
 
   const { data: experiments, refetch } = useQuery({
     queryKey: ['ab-experiments'],
@@ -1204,53 +1302,67 @@ export function ABTestPage() {
 
   const hasExperiments = experiments && experiments.length > 0
 
+  const thS: React.CSSProperties = {
+    padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.55)',
+    textAlign: 'left', whiteSpace: 'nowrap',
+    textTransform: 'uppercase', letterSpacing: '0.03em',
+  }
+
   return (
-    <div style={{ padding: 32, maxWidth: 1000 }}>
+    <div style={{ padding: 32, maxWidth: 1200 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: '#fff', margin: 0 }}>A/B Test</h1>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
-            Track and analyze A/B test experiments
-          </p>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>Track and analyze A/B test experiments</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '8px 14px', fontSize: 12, fontWeight: 600, borderRadius: 7,
-            border: 'none', cursor: 'pointer',
-            background: '#6366f1', color: '#fff',
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
+        <button onClick={() => setShowModal(true)} style={{
+          display: 'flex', alignItems: 'center', gap: 5, padding: '8px 14px', fontSize: 12, fontWeight: 600, borderRadius: 7,
+          border: 'none', cursor: 'pointer', background: '#6366f1', color: '#fff',
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           New Experiment
         </button>
       </div>
 
       {hasExperiments ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {experiments!.map((exp: any) => (
-            <ExperimentCard key={exp.id} experiment={exp} />
-          ))}
+        <div style={{ borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <th style={thS}>Test ID</th>
+                <th style={{ ...thS, whiteSpace: undefined as any }}>Title</th>
+                <th style={thS}>Start Date</th>
+                <th style={thS}>End Date</th>
+                <th style={thS}>Elapsed</th>
+                <th style={thS}>Ad Spent</th>
+                <th style={thS}>Winner</th>
+                <th style={thS}>Δ Control</th>
+              </tr>
+            </thead>
+            <tbody>
+              {experiments!.map((exp: any, i: number) => (
+                <ExperimentRow
+                  key={exp.id}
+                  experiment={exp}
+                  index={i}
+                  expanded={expandedId === exp.id}
+                  onClick={() => setExpandedId(expandedId === exp.id ? null : exp.id)}
+                  onEdit={() => setEditingExp(exp)}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
-        <div style={{
-          padding: 40, textAlign: 'center', borderRadius: 10,
-          border: '1px dashed rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.02)',
-        }}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }}>
-            <path d="M9 2v6l-2 8h4l1 6" /><path d="M15 2v6l2 8h-4l-1 6" /><line x1="7" y1="8" x2="17" y2="8" />
-          </svg>
+        <div style={{ padding: 40, textAlign: 'center', borderRadius: 10, border: '1px dashed rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.02)' }}>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }}><path d="M9 2v6l-2 8h4l1 6" /><path d="M15 2v6l2 8h-4l-1 6" /><line x1="7" y1="8" x2="17" y2="8" /></svg>
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', margin: 0 }}>No experiments yet</p>
-          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 4 }}>
-            Click "+ New Experiment" to create your first A/B test
-          </p>
+          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 4 }}>Click "+ New Experiment" to create your first A/B test</p>
         </div>
       )}
 
       {showModal && <NewExperimentModal onClose={() => setShowModal(false)} onCreated={() => refetch()} />}
+      {editingExp && <NewExperimentModal editExperiment={editingExp} onClose={() => setEditingExp(null)} onCreated={() => { refetch(); setEditingExp(null) }} />}
     </div>
   )
 }
