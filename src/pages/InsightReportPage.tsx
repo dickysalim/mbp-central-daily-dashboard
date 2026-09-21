@@ -17,13 +17,14 @@ interface ReportMeta {
   brand: string
   created_at: string
   updated_at: string
+  _local?: boolean  // true for locally-served reports
 }
 
 export function InsightReportPage() {
   const [activeSlug, setActiveSlug] = useState<string | null>(null)
 
-  // Fetch report list
-  const { data, isLoading } = useQuery({
+  // Fetch KV report list
+  const { data: kvReports } = useQuery({
     queryKey: ['insight-reports'],
     queryFn: async () => {
       const res = await fetch(`${D1_WORKER_URL}/v2/insight-reports`)
@@ -32,22 +33,45 @@ export function InsightReportPage() {
     },
   })
 
+  // Fetch local report index (from public/local-reports/index.json)
+  const { data: localReports } = useQuery({
+    queryKey: ['local-reports'],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`/local-reports/index.json?t=${Date.now()}`)
+        if (!res.ok) return []
+        const list = await res.json() as ReportMeta[]
+        return list.map(r => ({ ...r, _local: true as const }))
+      } catch { return [] }
+    },
+    staleTime: 0, // always refetch for dev iteration
+  })
+
+  // Determine which slug is local
+  const localSlugs = new Set((localReports ?? []).map(r => r.slug))
+  const isLocalSlug = (slug: string) => localSlugs.has(slug)
+
   // Fetch report HTML when one is selected
   const { data: reportHtml, isLoading: loadingReport, refetch: refetchReport, dataUpdatedAt } = useQuery({
     queryKey: ['insight-report', activeSlug],
     queryFn: async () => {
-      const res = await fetch(`${D1_WORKER_URL}/v2/insight-reports/${activeSlug}?t=${Date.now()}`)
+      if (!activeSlug) return ''
+      const url = isLocalSlug(activeSlug)
+        ? `/local-reports/${activeSlug}.html?t=${Date.now()}`
+        : `${D1_WORKER_URL}/v2/insight-reports/${activeSlug}?t=${Date.now()}`
+      const res = await fetch(url)
       return res.text()
     },
     enabled: !!activeSlug,
     staleTime: 0,
   })
 
-  // Filter reports by domain brand:
-  // - Branded domains see own brand + GLOBAL
-  // - Main domain sees everything (MBP only visible here)
-  const reports = (data ?? []).filter(r => {
-    if (!REPORT_BRAND) return true // main domain sees all
+  // Merge: local reports first, then KV reports
+  const allReports = [...(localReports ?? []), ...(kvReports ?? [])]
+
+  // Filter by domain brand
+  const reports = allReports.filter(r => {
+    if (!REPORT_BRAND) return true
     return r.brand === REPORT_BRAND || r.brand === 'GLOBAL'
   })
 
@@ -126,7 +150,7 @@ export function InsightReportPage() {
         </p>
       </div>
 
-      {isLoading ? (
+      {!kvReports && !localReports ? (
         <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Loading reports…</div>
       ) : reports.length === 0 ? (
         <div style={{
@@ -167,6 +191,7 @@ export function InsightReportPage() {
                 >
                   <td style={{ padding: '10px 14px', fontSize: 11, fontWeight: 700, color: '#6366f1', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
                     {r.report_id || '—'}
+                    {(r as any)._local && <span style={{ marginLeft: 6, fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}>LOCAL</span>}
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 11, color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
                     {new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
