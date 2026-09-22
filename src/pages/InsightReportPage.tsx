@@ -4,7 +4,7 @@
  * Reports are stored via the worker's /v2/insight-reports endpoints.
  * Each report is a self-contained HTML document rendered in a sandboxed iframe.
  */
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { D1_WORKER_URL } from '../config/dataSource'
 import { REPORT_BRAND } from '../config/domainConfig'
@@ -74,6 +74,20 @@ export function InsightReportPage() {
     if (!REPORT_BRAND) return true
     return r.brand === REPORT_BRAND || r.brand === 'GLOBAL'
   })
+  // Auto-open report from URL param (?report_id=REP002 or ?slug=mnc-scale-down)
+  useEffect(() => {
+    if (activeSlug) return // already viewing a report
+    const params = new URLSearchParams(window.location.search)
+    const rid = params.get('report_id')
+    const slugParam = params.get('slug')
+    if (slugParam) {
+      const match = reports.find(r => r.slug === slugParam)
+      if (match) setActiveSlug(match.slug)
+    } else if (rid) {
+      const match = reports.find(r => r.report_id.toLowerCase() === rid.toLowerCase())
+      if (match) setActiveSlug(match.slug)
+    }
+  }, [reports]) // re-run when reports load
 
   // ── Viewing a report ─────────────────────────────────────────────────────
   if (activeSlug) {
