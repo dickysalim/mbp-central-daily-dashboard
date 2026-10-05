@@ -69,11 +69,31 @@ export function InsightReportPage() {
   // Merge: local reports first, then KV reports
   const allReports = [...(localReports ?? []), ...(kvReports ?? [])]
 
-  // Filter by domain brand
-  const reports = allReports.filter(r => {
-    if (!REPORT_BRAND) return true
-    return r.brand === REPORT_BRAND || r.brand === 'GLOBAL'
-  })
+  // Filter by domain brand & deduplicate LOCAL reports already posted as REP
+  const kvNums = new Set(
+    (kvReports ?? []).map(r => r.report_id?.replace(/\D/g, '')).filter(Boolean)
+  )
+  const reports = allReports
+    .filter(r => {
+      if (!REPORT_BRAND) return true
+      return r.brand === REPORT_BRAND || r.brand === 'GLOBAL'
+    })
+    .filter(r => {
+      // Hide LOCAL reports whose number already exists as a published REP
+      if (!(r as any)._local) return true
+      const num = r.report_id?.replace(/\D/g, '') || ''
+      return !kvNums.has(num)
+    })
+    .sort((a, b) => {
+      // LOCAL reports always on top
+      const aLocal = (a as any)._local ? 1 : 0
+      const bLocal = (b as any)._local ? 1 : 0
+      if (aLocal !== bLocal) return bLocal - aLocal
+      // Within same group, sort descending by report_id number
+      const numA = parseInt(a.report_id?.replace(/\D/g, '') || '0', 10)
+      const numB = parseInt(b.report_id?.replace(/\D/g, '') || '0', 10)
+      return numB - numA
+    })
   // Auto-open report from URL param (?report_id=REP002 or ?slug=mnc-scale-down)
   useEffect(() => {
     if (activeSlug) return // already viewing a report

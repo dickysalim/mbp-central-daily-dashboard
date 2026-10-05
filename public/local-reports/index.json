@@ -25,5 +25,14 @@
     "brand": "MNC",
     "created_at": "2026-10-02T14:44:00Z",
     "updated_at": "2026-10-02T14:44:00Z"
+  },
+  {
+    "slug": "mnc-monthly-sept-vs-aug",
+    "report_id": "LOC006",
+    "title": "MNC Monthly Report — September 2026",
+    "description": "Monthly performance report: September vs August 2026 — Scale down impact, restructuring results, October outlook",
+    "brand": "MNC",
+    "created_at": "2026-10-05T13:57:00Z",
+    "updated_at": "2026-10-05T13:57:00Z"
   }
 ]
