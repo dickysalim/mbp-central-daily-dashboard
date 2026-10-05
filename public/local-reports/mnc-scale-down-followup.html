@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MNC Scale Down — 20 Day Follow-Up</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',-apple-system,system-ui,sans-serif;background:#0f1117;color:#e2e4e9}
+  .container{max-width:960px;margin:0 auto;padding:40px 32px}
+  .brand-tag{display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;margin-right:6px}
+  .ref-tag{display:inline-block;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.4);font-size:9px;font-weight:600;padding:2px 8px;border-radius:4px;margin-left:6px}
+  h1{font-size:24px;font-weight:800;color:#fff;margin:6px 0 2px}
+  .subtitle{font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:32px}
+  h2{font-size:14px;font-weight:700;color:rgba(255,255,255,0.6);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.05em}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px}
+  th{padding:8px 10px;text-align:right;font-size:9px;font-weight:700;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid rgba(255,255,255,0.1)}
+  th:first-child{text-align:left}
+  td{padding:8px 10px;text-align:right;color:rgba(255,255,255,0.7);border-bottom:1px solid rgba(255,255,255,0.04);font-variant-numeric:tabular-nums;font-size:12px}
+  td:first-child{text-align:left;color:#fff;font-weight:600}
+  .chart-wrap{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:20px;position:relative}
+  .chart-title{font-size:11px;font-weight:600;color:rgba(255,255,255,0.4);margin-bottom:12px}
+  .chart-container{position:relative;width:100%}
+  canvas{display:block}
+  .insight-box{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:18px 20px;margin-top:4px}
+  .insight-box p{font-size:13px;color:rgba(255,255,255,0.6);line-height:1.7;margin-bottom:12px}
+  .insight-box p:last-child{margin-bottom:0}
+  .insight-box strong{color:rgba(255,255,255,0.85)}
+  .insight-label{font-size:10px;font-weight:700;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px}
+  .good{color:#34d399;font-weight:700}.bad{color:#f87171;font-weight:700}.note{color:#818cf8;font-weight:700}.warn{color:#fbbf24;font-weight:700}
+  .section-divider{border:none;border-top:1px solid rgba(255,255,255,0.06);margin:48px 0}
+  .section-box{background:rgba(255,255,255,0.015);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:28px 28px 20px;margin-bottom:0}
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+  .kpi-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:14px 16px}
+  .kpi-card .kpi-label{font-size:9px;color:rgba(255,255,255,0.3);text-transform:uppercase;font-weight:700;letter-spacing:0.04em}
+  .kpi-card .kpi-value{font-size:20px;font-weight:800;color:#fff;margin-top:4px}
+  .kpi-card .kpi-sub{font-size:10px;margin-top:2px}
+  .q-box{background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15);border-radius:8px;padding:14px 16px;margin-top:16px}
+  .q-box .q-label{font-size:10px;font-weight:700;color:rgba(99,102,241,0.7);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px}
+  .q-box p{font-size:12px;color:rgba(255,255,255,0.6);line-height:1.6;margin-bottom:8px}
+  .q-box p:last-child{margin-bottom:0}
+  .q-box strong{color:rgba(255,255,255,0.85)}
+  .legend-row{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+  .legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:rgba(255,255,255,0.45)}
+  .legend-dot{width:8px;height:8px;border-radius:50%}
+  .hint-text{font-size:10px;color:rgba(255,255,255,0.25);margin-top:8px;font-style:italic}
+  .phase-table th,.phase-table td{text-align:center}
+  .phase-table th:first-child,.phase-table td:first-child{text-align:left}
+  .highlight-bad{background:rgba(248,113,113,0.04)}
+  .highlight-good{background:rgba(52,211,153,0.04)}
+  .checklist{list-style:none;padding:0}
+  .checklist li{font-size:13px;color:rgba(255,255,255,0.6);padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);line-height:1.6}
+  .checklist li strong{color:rgba(255,255,255,0.85)}
+  .check-yes{color:#34d399;font-weight:700;font-size:11px;margin-right:6px}
+  .check-partial{color:#fbbf24;font-weight:700;font-size:11px;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="container">
+  <div><span class="brand-tag">MNC</span><span style="font-size:10px;color:rgba(255,255,255,0.2)">mGanik Nutrition</span><span class="ref-tag">Follow-up REP002</span></div>
+  <h1>MNC Scale Down — 20 Day Follow-Up</h1>
+  <p class="subtitle">Scale Down: 8 – 27 Sep 2026 (20 hari) vs Previous: 19 Aug – 7 Sep 2026 (20 hari)</p>
+
+  <!-- S1: Context -->
+  <div class="section-box">
+  <h2>1 · Konteks</h2>
+  <p style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;margin-bottom:20px">
+    Ini adalah follow-up dari <strong style="color:#fff">REP002</strong> yang menganalisis 12 hari pertama scale down (Sep 8–19). Kini data sudah tersedia 20 hari penuh (Sep 8–27), dan kita bisa memvalidasi proyeksi yang dibuat di REP002 — terutama apakah <strong style="color:#fff">D2OR Revenue lag</strong> sudah mengejar.
+  </p>
+  <div class="chart-wrap" style="margin-bottom:24px">
+    <div class="chart-title">Daily Ad Spend (Rp Juta) — Aug 19 to Sep 27</div>
+    <div class="chart-container" style="height:200px"><canvas id="budgetChart"></canvas></div>
+    <div class="legend-row">
+      <div class="legend-item"><div class="legend-dot" style="background:#818cf8"></div>Previous Period</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>Scale Down Period</div>
+    </div>
+  </div>
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Budget Cut</div>
+      <div class="kpi-value" style="color:#f87171">−25.7%</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">Rp 81.2M → Rp 60.3M/hari</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Periode</div>
+      <div class="kpi-value" style="color:#fff">20 hari</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">vs 12 hari di REP002</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Avg Daily Spend — Before</div>
+      <div class="kpi-value" style="color:#fff">Rp 81.2M</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">Aug 19 – Sep 7</div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(248,113,113,0.2)">
+      <div class="kpi-label">Avg Daily Spend — After</div>
+      <div class="kpi-value" style="color:#f87171">Rp 60.3M</div>
+      <div class="kpi-sub bad">−25.7% vs before</div>
+    </div>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- S2: Metrics Comparison -->
+  <div class="section-box">
+  <h2>2 · Perbandingan Metrik Utama</h2>
+  <table>
+    <thead><tr>
+      <th>Metrik</th><th>Previous (Aug 19 – Sep 7)</th><th>Scale Down (Sep 8 – 27)</th><th>Delta</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>Ad Spend</td><td>Rp 1,623.3M</td><td>Rp 1,206.9M</td><td><span class="bad">−25.7%</span></td></tr>
+      <tr><td>Impressions</td><td>62,101,014</td><td>39,764,781</td><td><span class="bad">−36.0%</span></td></tr>
+      <tr><td>Link Clicks</td><td>2,026,299</td><td>1,147,939</td><td><span class="bad">−43.3%</span></td></tr>
+      <tr><td>Real Leads (All)</td><td>18,247</td><td>13,815</td><td><span class="bad">−24.3%</span></td></tr>
+      <tr><td>RL CCOM</td><td>4,133</td><td>3,854</td><td><span class="bad">−6.8%</span></td></tr>
+      <tr><td>RL D2OR</td><td>8,771</td><td>6,768</td><td><span class="bad">−22.8%</span></td></tr>
+      <tr><td>Purchase CC</td><td>248</td><td>331</td><td><span class="good">+33.5%</span></td></tr>
+      <tr style="border-top:1px solid rgba(255,255,255,0.08)"><td>CPRL All</td><td>Rp 89K</td><td>Rp 87K</td><td><span class="good">−1.8%</span></td></tr>
+      <tr><td>CPA CC</td><td>Rp 6.5M</td><td>Rp 3.6M</td><td><span class="good">−44.3%</span></td></tr>
+      <tr><td>CTR</td><td>3.3%</td><td>2.9%</td><td><span class="bad">−11.5%</span></td></tr>
+    </tbody>
+  </table>
+  <div class="insight-box">
+    <div class="insight-label">💡 Insight — Konsistensi Temuan REP002</div>
+    <p>Temuan utama <strong>sama persis</strong> dengan REP002: CPRL tetap flat (Rp 89K → Rp 87K, −1.8%). Scale down bersifat <strong>proporsional</strong> — budget turun 26%, Real Leads turun 24%. Tidak ada efisiensi tambahan yang diperoleh.</p>
+    <p>RL CCOM hanya turun −6.8% (vs RL D2OR −22.8%). Artinya campaign yang tersisa <strong>lebih heavy ke CC</strong>. RL Share CCOM naik dari 22.7% → 27.9%.</p>
+  </div>
+  <div class="insight-box" style="border-color:rgba(52,211,153,0.15);background:rgba(52,211,153,0.03);margin-top:12px">
+    <div class="insight-label">🔍 Deep Dive — Mengapa CPA CC Turun −44%?</div>
+    <p>Dari 44 campaign sebelum scale down, <strong>22 campaign dimatikan</strong> — dan <strong>seluruhnya adalah DGEN</strong> (upper-funnel/demand generation). Berikut perbandingannya:</p>
+    <table style="margin:12px 0;font-size:11px">
+      <thead><tr><th style="text-align:left">Grup Campaign</th><th>Spend</th><th>Purchase CC</th><th>CPA CC</th></tr></thead>
+      <tbody>
+        <tr><td style="text-align:left;color:#f87171">22 Campaign Killed (DGEN)</td><td>Rp 343M</td><td>26</td><td><span class="bad">Rp 13.2M</span></td></tr>
+        <tr><td style="text-align:left;color:#fff">22 Campaign Survived — Before</td><td>Rp 1,275M</td><td>222</td><td>Rp 5.7M</td></tr>
+        <tr><td style="text-align:left;color:#34d399">22 Campaign Survived — After</td><td>Rp 1,201M</td><td>314</td><td><span class="good">Rp 3.8M</span></td></tr>
+      </tbody>
+    </table>
+    <p><strong>Dua faktor</strong> menurunkan CPA CC:</p>
+    <p>① <strong>DGEN dihapus</strong>: 22 DGEN campaign menyedot Rp 343M tapi hanya menghasilkan 26 purchase (CPA Rp 13.2M) — bahkan <strong>13 dari 22 campaign tidak menghasilkan satupun purchase</strong>. Menghapus campaign ini secara mekanis menurunkan CPA keseluruhan.</p>
+    <p>② <strong>Survived campaigns juga membaik</strong>: CPA CC campaign yang bertahan turun dari Rp 5.7M → Rp 3.8M (−33%). Purchase naik dari 222 → 314 (+41%) meski spend turun. Ini bisa jadi karena budget yang sebelumnya ke DGEN sekarang terkonsentrasi di campaign yang memang sudah perform.</p>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- S3: ROAS — REP002 Validation -->
+  <div class="section-box">
+  <h2>3 · Total RoAS — Validasi Proyeksi REP002</h2>
+  <p style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;margin-bottom:20px">
+    REP002 memproyeksikan ROAS 6.34x akan turun ke ~4.73x ketika lag D2OR terkejar. Berikut realitanya setelah 20 hari:
+  </p>
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Total ROAS</div>
+      <div class="kpi-value"><span style="color:rgba(255,255,255,0.4)">4.40x</span> <span style="color:rgba(255,255,255,0.2);font-size:14px">→</span> <span style="color:#34d399">5.28x</span></div>
+      <div class="kpi-sub good">+20.1%</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Marketing Cost Ratio</div>
+      <div class="kpi-value"><span style="color:rgba(255,255,255,0.4)">22.7%</span> <span style="color:rgba(255,255,255,0.2);font-size:14px">→</span> <span style="color:#34d399">18.9%</span></div>
+      <div class="kpi-sub good">−16.7%</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total Revenue</div>
+      <div class="kpi-value" style="font-size:16px"><span style="color:rgba(255,255,255,0.4)">Rp 7,137M</span></div>
+      <div class="kpi-value" style="font-size:16px;margin-top:0"><span style="color:rgba(255,255,255,0.2);font-size:10px">↓ </span><span class="bad">Rp 6,373M</span></div>
+      <div class="kpi-sub bad">−10.7%</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">REP002 Predicted</div>
+      <div class="kpi-value" style="color:rgba(255,255,255,0.5)">4.73x</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">actual: 5.28x (masih inflated)</div>
+    </div>
+  </div>
+  <div class="insight-box" style="border-color:rgba(251,191,36,0.15);background:rgba(251,191,36,0.03)">
+    <div class="insight-label">⚠️ Warning — ROAS 5.28x Masih Mengandung Lag</div>
+    <p>ROAS 5.28x masih <strong>di atas proyeksi REP002 (4.73x)</strong> karena minggu 1-2 scale down masih menikmati D2OR revenue dari lead sebelumnya. D2OR avg Rp 251M/hari di minggu 1-2, lalu <strong>jatuh ke Rp 118M/hari di minggu 3</strong>.</p>
+    <p>Jika kita hanya menghitung minggu ke-3 (Sep 22-27), ROAS di sekitar <strong>~3.7x</strong> — <strong>lebih rendah dari sebelum scale down</strong>. Ini menunjukkan bahwa scale down tidak hanya gagal meningkatkan efisiensi, tapi justru <strong>mengurangi revenue secara lebih agresif dari yang diprediksi</strong>.</p>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- S4: D2OR Revenue Cliff — THE BIG FINDING -->
+  <div class="section-box">
+  <h2>4 · 🔴 D2OR Revenue Cliff — Temuan Utama</h2>
+  <p style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;margin-bottom:20px">
+    Inilah jawaban dari pertanyaan terpenting REP002: <strong style="color:#fff">"Apakah D2OR Revenue akan turun sesuai proyeksi?"</strong> — Jawabannya: ya, dan <strong style="color:#f87171">lebih parah dari proyeksi</strong>.
+  </p>
+  <div class="chart-wrap" style="margin-bottom:24px">
+    <div class="chart-title">D2OR Revenue (daily + 14D MA) — Aug 19 to Sep 27</div>
+    <div class="chart-container" style="height:220px"><canvas id="dpRevChart"></canvas></div>
+    <div class="legend-row">
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b40"></div>Daily</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>14D MA</div>
+    </div>
+    <div class="hint-text">⚠ Perhatikan 14D MA yang mulai jatuh tajam sejak Sep 22</div>
+  </div>
+  <table class="phase-table">
+    <thead><tr><th>Minggu</th><th>D2OR/hari</th><th>CC/hari</th><th>D2OR vs Pre-SD</th></tr></thead>
+    <tbody>
+      <tr><td>Aug 19-25 (pre)</td><td>Rp 246.0M</td><td>Rp 31.1M</td><td>—</td></tr>
+      <tr><td>Aug 26-Sep 1 (pre)</td><td>Rp 264.4M</td><td>Rp 32.8M</td><td>—</td></tr>
+      <tr><td>Sep 2-7 (last pre)</td><td>Rp 186.0M</td><td>Rp 34.6M</td><td>—</td></tr>
+      <tr><td>Sep 8-14 (SD wk1)</td><td>Rp 251.0M</td><td>Rp 28.3M</td><td><span class="good">+2%</span></td></tr>
+      <tr><td>Sep 15-21 (SD wk2)</td><td>Rp 253.4M</td><td>Rp 28.9M</td><td><span class="good">+3%</span></td></tr>
+      <tr class="highlight-bad"><td><strong>Sep 22-27 (SD wk3)</strong></td><td><strong style="color:#f87171">Rp 117.7M</strong></td><td>Rp 27.5M</td><td><span class="bad">−53%</span></td></tr>
+    </tbody>
+  </table>
+  <div class="insight-box" style="border-color:rgba(248,113,113,0.2);background:rgba(248,113,113,0.03)">
+    <div class="insight-label">🔴 D2OR Revenue Cliff</div>
+    <p>D2OR Revenue <strong>jatuh −53% di minggu ke-3</strong> scale down (Rp 251M/hari → Rp 118M/hari). Ini lebih parah dari proyeksi REP002 yang memprediksi −25%.</p>
+    <p><strong>Penjelasan:</strong> D2OR revenue memiliki lag 2-3 minggu dari lead generation. Minggu 1-2 masih "panen" dari lead sebelum scale down. Minggu ke-3 adalah <strong>titik di mana revenue mulai mencerminkan supply lead yang sudah berkurang</strong>.</p>
+    <p>Sementara CC Revenue relatif stabil di ~Rp 28M/hari — ini konsisten karena CC memiliki siklus lebih pendek dan sudah terkoreksi sejak minggu pertama.</p>
+  </div>
+  <div class="q-box" style="margin-top:12px;background:rgba(251,191,36,0.04);border-color:rgba(251,191,36,0.15)">
+    <div class="q-label" style="color:rgba(251,191,36,0.7)">⚠️ Catatan Penting</div>
+    <p>Data D2OR Revenue di hari-hari terakhir <strong>notoriously unreliable</strong> — bisa jadi data penjualan belum tersinkron seluruhnya dari sistem distributor. Angka minggu ke-3 (Sep 22-27) <strong>bisa berubah naik atau stay di angka sekarang</strong> setelah sync lengkap — kita belum tahu. Cek kembali minggu depan untuk angka yang lebih settled.</p>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- S5: CC Revenue -->
+  <div class="section-box">
+  <h2>5 · CC Revenue — Stabil tapi Turun</h2>
+  <div class="chart-wrap" style="margin-bottom:24px">
+    <div class="chart-title">CC Revenue (daily + 7D MA) — Aug 19 to Sep 27</div>
+    <div class="chart-container" style="height:180px"><canvas id="ccRevChart"></canvas></div>
+    <div class="legend-row">
+      <div class="legend-item"><div class="legend-dot" style="background:#818cf840"></div>Daily</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#818cf8"></div>7D MA</div>
+    </div>
+  </div>
+  <div class="kpi-row" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kpi-card">
+      <div class="kpi-label">CC Revenue — Before</div>
+      <div class="kpi-value" style="color:#fff">Rp 32.7M<span style="font-size:12px;color:rgba(255,255,255,0.3)">/hari</span></div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(248,113,113,0.2)">
+      <div class="kpi-label">CC Revenue — After</div>
+      <div class="kpi-value" style="color:#f87171">Rp 28.3M<span style="font-size:12px;color:rgba(255,255,255,0.3)">/hari</span></div>
+      <div class="kpi-sub bad">−13.7%</div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(52,211,153,0.2)">
+      <div class="kpi-label">CPA CC</div>
+      <div class="kpi-value"><span style="color:rgba(255,255,255,0.4)">Rp 6.5M</span> <span style="color:rgba(255,255,255,0.2);font-size:14px">→</span> <span style="color:#34d399">Rp 3.6M</span></div>
+      <div class="kpi-sub good">−44.3%</div>
+    </div>
+  </div>
+  <div class="insight-box">
+    <div class="insight-label">💡 Insight — CC Sebagai Baseline</div>
+    <p>CC Revenue 7D MA sudah <strong>stabil di ~Rp 28M/hari</strong> sejak minggu ke-2 scale down — turun ~14% dari Rp 33M/hari. Ini menjadi <strong>baseline baru</strong> untuk level budget saat ini.</p>
+    <p><strong>Kabar baik:</strong> walaupun revenue turun, <strong>CPA CC membaik drastis −44%</strong> (Rp 6.5M → Rp 3.6M) dan Purchase CC naik +34% (248 → 331). Mematikan DGEN upper-funnel berhasil meningkatkan conversion efficiency di CC.</p>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- S6: DP Agent Impact -->
+  <div class="section-box">
+  <h2>6 · Dampak ke Distributor: Daily RL/Agen</h2>
+  <div class="kpi-row" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kpi-card">
+      <div class="kpi-label">Daily RL/Agen — Before</div>
+      <div class="kpi-value" style="color:#fff">0.58</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">785 registered agents</div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(248,113,113,0.2)">
+      <div class="kpi-label">Daily RL/Agen — After</div>
+      <div class="kpi-value" style="color:#f87171">0.45</div>
+      <div class="kpi-sub bad">−22.1%</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total Registered Agen</div>
+      <div class="kpi-value" style="color:#fff">785</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">from CMS master list</div>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Metrik</th><th>Previous<br><span style="font-weight:400;text-transform:none">Aug 19 – Sep 7</span></th><th>Scale Down<br><span style="font-weight:400;text-transform:none">Sep 8 – 27</span></th><th>Delta</th></tr></thead>
+    <tbody>
+      <tr><td>Total RL D2OR</td><td>9,034</td><td>7,034</td><td><span class="bad">−22.1%</span></td></tr>
+      <tr><td>Agen with RL &gt; 0</td><td>808</td><td>757</td><td><span class="bad">−6.3%</span></td></tr>
+      <tr><td>Daily RL/Agen</td><td>0.58</td><td>0.45</td><td><span class="bad">−22.1%</span></td></tr>
+      <tr><td>Leads hilang/minggu</td><td colspan="2" style="text-align:center;color:rgba(255,255,255,0.4)">—</td><td><span class="bad">~700</span></td></tr>
+    </tbody>
+  </table>
+  <div class="insight-box" style="border-color:rgba(248,113,113,0.2);background:rgba(248,113,113,0.03)">
+    <div class="insight-label">⚠️ Warning — Agent Churn Mulai Terlihat</div>
+    <p>51 agen sudah <strong>"hilang"</strong> dari daftar aktif (808 → 757, −6.3%). Setiap minggu, ~700 lead hilang dari pipeline distributor. Dengan D2OR Revenue yang sudah cliff di minggu ke-3, <strong>tekanan ke agen akan makin besar</strong> di minggu-minggu berikutnya.</p>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- S7: REP002 Monitoring Checklist — Answered -->
+  <div class="section-box">
+  <h2>7 · ✅ REP002 Monitoring Checklist — Dijawab</h2>
+  <p style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;margin-bottom:20px">
+    REP002 meninggalkan 3 pertanyaan monitoring. Berikut jawabannya:
+  </p>
+  <ul class="checklist">
+    <li>
+      <span class="check-yes">✅ CONFIRMED</span>
+      <strong>"D2OR Revenue di minggu terakhir September — apakah mulai turun sesuai proyeksi?"</strong><br>
+      <span style="padding-left:28px;display:inline-block;margin-top:4px">Ya, dan <strong>lebih parah dari proyeksi</strong>. REP002 memprediksi −25%, aktual −53%. D2OR avg turun dari Rp 250M/hari → Rp 118M/hari di minggu ke-3.</span>
+    </li>
+    <li>
+      <span class="check-partial">⏳ PARTIALLY</span>
+      <strong>"ROAS Total — apakah settle di ~4.7x?"</strong><br>
+      <span style="padding-left:28px;display:inline-block;margin-top:4px">Over 20 hari: 5.28x (masih inflated oleh minggu 1-2). Minggu ke-3 saja: ~3.7x — <strong>di bawah prediksi</strong>. Perlu 1 bulan penuh data untuk angka settled.</span>
+    </li>
+    <li>
+      <span class="check-yes">✅ CONFIRMED</span>
+      <strong>"RL Share distribution — apakah ada pergeseran channel mix?"</strong><br>
+      <span style="padding-left:28px;display:inline-block;margin-top:4px">Ya. CCOM share naik dari 22.7% → 27.9% (+5.2pp). Campaign yang tersisa lebih heavy ke CC. D2OR share stabil di ~49%.</span>
+    </li>
+  </ul>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- S8: Revenue Comparison Table -->
+  <div class="section-box">
+  <h2>8 · Revenue by Channel — REP002 vs Follow-Up</h2>
+
+  <div style="font-size:11px;font-weight:700;color:rgba(99,102,241,0.7);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">REP002 — 12 Hari (Sep 8–19 vs Aug 27–Sep 7)</div>
+  <table class="phase-table">
+    <thead><tr><th>Channel</th><th>Avg/hari Prev</th><th>Avg/hari SD</th><th>Delta</th></tr></thead>
+    <tbody>
+      <tr><td>CC Revenue</td><td>Rp 33.8M</td><td>Rp 28.6M</td><td><span class="bad">−15.3%</span></td></tr>
+      <tr><td>D2OR Revenue</td><td>Rp 240.8M</td><td style="color:#34d399;font-weight:700">Rp 275.6M</td><td><span class="good">+14.5%</span></td></tr>
+      <tr><td>MPSH Revenue</td><td>Rp 86.9M</td><td>Rp 70.1M</td><td><span class="bad">−19.4%</span></td></tr>
+      <tr><td>OFLS Revenue</td><td>Rp 8.0M</td><td>Rp 7.0M</td><td><span class="bad">−11.7%</span></td></tr>
+      <tr style="border-top:2px solid rgba(255,255,255,0.1);font-weight:700"><td>TOTAL</td><td>Rp 369.5M</td><td>Rp 381.3M</td><td><span class="good">+3.2%</span></td></tr>
+    </tbody>
+  </table>
+
+  <div style="font-size:11px;font-weight:700;color:rgba(52,211,153,0.7);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;margin-top:28px">Follow-Up — 20 Hari (Sep 8–27 vs Aug 19–Sep 7)</div>
+  <table class="phase-table">
+    <thead><tr><th>Channel</th><th>Avg/hari Prev</th><th>Avg/hari SD</th><th>Delta</th></tr></thead>
+    <tbody>
+      <tr><td>CC Revenue</td><td>Rp 32.7M</td><td>Rp 28.3M</td><td><span class="bad">−13.7%</span></td></tr>
+      <tr><td>D2OR Revenue</td><td>Rp 234.4M</td><td style="color:#f87171;font-weight:700">Rp 211.8M</td><td><span class="bad">−9.6%</span></td></tr>
+      <tr><td>MPSH Revenue</td><td>Rp 82.0M</td><td>Rp 71.8M</td><td><span class="bad">−12.5%</span></td></tr>
+      <tr><td>OFLS Revenue</td><td>Rp 7.6M</td><td>Rp 6.8M</td><td><span class="bad">−11.3%</span></td></tr>
+      <tr style="border-top:2px solid rgba(255,255,255,0.1);font-weight:700"><td>TOTAL</td><td>Rp 356.8M</td><td>Rp 318.7M</td><td><span class="bad">−10.7%</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="insight-box">
+    <div class="insight-label">💡 Insight — Perbandingan REP002 vs Realita</div>
+    <p>Perbedaan paling mencolok: <strong>D2OR Revenue</strong>. Di REP002, D2OR masih <span class="good">+14.5%</span> karena lag — kita sudah memperingatkan ini. Sekarang dengan 20 hari data, D2OR sudah <span class="bad">−9.6%</span> dan terus memburuk.</p>
+    <p>Total Revenue per hari: di REP002 terlihat <span class="good">+3.2%</span> (menyesatkan), sekarang sudah <span class="bad">−10.7%</span>. <strong>Inilah yang REP002 prediksi</strong> — angka "cantik" di minggu awal hanyalah efek lag D2OR.</p>
+    <p>CC, MPSH, OFLS <strong>relatif konsisten</strong> antara REP002 dan Follow-Up — channel-channel ini sudah settle di baseline baru sejak minggu pertama.</p>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- S9: Conclusion -->
+  <div class="section-box">
+  <h2>9 · Kesimpulan</h2>
+  <div class="insight-box" style="margin-bottom:16px">
+    <div class="insight-label">📋 Rangkuman</div>
+    <p>• <strong>CPRL tetap flat</strong> (Rp 89K → Rp 87K) — mengkonfirmasi REP002: scale down proporsional, bukan efisiensi.</p>
+    <p>• <strong>D2OR Revenue cliff di minggu ke-3</strong> — turun −53% dari Rp 250M/hari ke Rp 118M/hari. Ini lebih parah dari proyeksi REP002 (−25%).</p>
+    <p>• <strong>CPA CC membaik signifikan</strong> (−44%) karena mematikan DGEN upper-funnel. Ini adalah satu-satunya win yang genuine dari scale down.</p>
+    <p>• <strong>ROAS 5.28x masih inflated</strong> — angka settled kemungkinan di range 3.7-4.5x, mendekati atau di bawah level sebelum scale down.</p>
+    <p>• <strong>Agent churn sudah dimulai</strong>: 51 agen hilang dari aktif, ~700 leads hilang/minggu dari pipeline distributor.</p>
+  </div>
+  <div class="q-box">
+    <div class="q-label">🔬 Yang Perlu Dimonitor Selanjutnya</div>
+    <p>• <strong>D2OR Revenue minggu 1-2 Oktober</strong> — apakah stabilize di level baru (~Rp 120M/hari) atau terus turun?</p>
+    <p>• <strong>ROAS settled</strong> — 1 bulan penuh data (seluruh Oktober) akan menunjukkan ROAS realistis setelah scale down.</p>
+    <p>• <strong>Agent churn rate</strong> — 51 agen hilang dalam 20 hari. Berapa di bulan berikutnya?</p>
+  </div>
+  </div>
+
+</div>
+<script>
+Chart.register(ChartDataLabels);
+function fmt(n) {
+  if (n == null) return '-';
+  if (n >= 1e6) return 'Rp ' + (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return 'Rp ' + Math.round(n/1e3) + 'K';
+  return 'Rp ' + n;
+}
+
+const labels = ["08-19","08-20","08-21","08-22","08-23","08-24","08-25","08-26","08-27","08-28","08-29","08-30","08-31","09-01","09-02","09-03","09-04","09-05","09-06","09-07","09-08","09-09","09-10","09-11","09-12","09-13","09-14","09-15","09-16","09-17","09-18","09-19","09-20","09-21","09-22","09-23","09-24","09-25","09-26","09-27"];
+const sdIdx = 20;
+const axDef = {
+  x: { ticks: { color: 'rgba(255,255,255,0.3)', font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { display: false } },
+};
+const annLine = {
+  type: 'line', xMin: sdIdx - 0.5, xMax: sdIdx - 0.5, borderColor: '#f8717180', borderWidth: 2, borderDash: [4,3],
+  label: { display: true, content: 'Scale Down', color: '#f87171', font: { size: 9, weight: 700 }, position: 'start', yAdjust: -8, backgroundColor: 'transparent' }
+};
+
+// Budget chart
+new Chart(document.getElementById('budgetChart'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [{
+      data: [79.6,71.3,89.9,82.7,92.7,87.7,83.9,74.4,55.3,55.6,80.1,86.6,88.9,88.0,83.5,82.6,86.9,85.4,92.9,75.1,61.7,61.4,63.6,53.2,62.0,66.4,64.9,32.5,40.8,77.6,65.0,73.4,63.9,67.7,54.4,55.2,56.2,61.7,59.1,66.4],
+      backgroundColor: labels.map((_, i) => i >= sdIdx ? '#f8717140' : '#818cf840'),
+      borderColor: labels.map((_, i) => i >= sdIdx ? '#f87171' : '#818cf8'),
+      borderWidth: 1, borderRadius: 3,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, datalabels: { display: false },
+      annotation: { annotations: { sdLine: annLine } }
+    },
+    scales: { ...axDef,
+      y: { min: 0, max: 120, ticks: { color: 'rgba(255,255,255,0.2)', font: { size: 9 }, callback: v => v + 'M' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+    }
+  }
+});
+
+// D2OR Revenue chart
+new Chart(document.getElementById('dpRevChart'), {
+  type: 'line',
+  data: {
+    labels: labels,
+    datasets: [
+      { label: 'Daily', data: [371.9,367.0,453.8,139.7,0.0,153.7,235.8,77.5,547.4,124.3,190.3,67.0,776.2,68.4,131.9,375.6,76.7,166.6,30.1,334.8,368.8,431.5,199.3,205.5,181.6,5.8,364.2,291.2,164.2,527.7,401.3,165.9,62.1,161.7,197.8,63.3,171.0,55.0,150.7,68.2], borderColor: '#f59e0b30', backgroundColor: '#f59e0b10', fill: true, tension: 0.1, pointRadius: 1.5, borderWidth: 1 },
+      { label: '14D MA', data: [371.9,369.4,397.6,333.1,266.5,247.7,246.0,224.9,260.8,247.1,241.9,227.4,269.6,255.2,238.1,238.7,211.8,213.7,215.8,228.8,238.3,263.5,238.7,244.5,243.9,239.5,210.1,226.0,228.3,239.1,262.3,262.3,264.6,252.2,240.0,213.7,211.7,200.9,198.7,203.2], borderColor: '#f59e0b', backgroundColor: 'transparent', fill: false, tension: 0.4, pointRadius: 0, borderWidth: 2.5 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, datalabels: { display: false },
+      annotation: { annotations: { sdLine: annLine } }
+    },
+    scales: { ...axDef,
+      y: { min: 50, max: 450, ticks: { color: 'rgba(255,255,255,0.2)', font: { size: 9 }, callback: v => v + 'M' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+    }
+  }
+});
+
+// CC Revenue chart
+new Chart(document.getElementById('ccRevChart'), {
+  type: 'line',
+  data: {
+    labels: labels,
+    datasets: [
+      { label: 'Daily', data: [41.4,26.8,28.2,22.0,28.9,37.1,33.1,31.3,21.0,32.7,28.9,35.2,44.7,35.4,37.8,33.1,33.0,26.6,34.2,42.9,31.5,27.1,27.4,34.5,21.0,21.3,35.2,30.0,26.2,28.0,30.9,29.5,26.3,31.1,30.2,27.2,28.8,31.3,30.3,17.3], borderColor: '#818cf830', backgroundColor: '#818cf810', fill: true, tension: 0.1, pointRadius: 1.5, borderWidth: 1 },
+      { label: '7D MA', data: [41.4,34.1,32.1,29.6,29.5,30.7,31.1,29.6,28.8,29.4,30.4,31.3,32.4,32.7,33.7,35.4,35.4,35.1,35.0,34.7,34.2,32.6,31.8,32.0,31.2,29.4,28.3,28.1,27.9,28.0,27.5,28.7,29.4,28.9,28.9,29.0,29.1,29.2,29.3,28.0], borderColor: '#818cf8', backgroundColor: 'transparent', fill: false, tension: 0.4, pointRadius: 0, borderWidth: 2.5 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, datalabels: { display: false },
+      annotation: { drawTime: 'afterDatasetsDraw', annotations: { sdLine: annLine } }
+    },
+    scales: { ...axDef,
+      y: { min: 15, max: 45, ticks: { color: 'rgba(255,255,255,0.2)', font: { size: 9 }, callback: v => v + 'M' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1090,7 +1090,7 @@ function NewExperimentModal({ onClose, onCreated, editExperiment }: { onClose: (
 }
 
 /// ── Experiment Row — fetches data and renders a table row ─────────────────────
-function ExperimentRow({ experiment: exp, onClick, index, expanded, onEdit }: { experiment: any; onClick: () => void; index: number; expanded: boolean; onEdit: () => void }) {
+function ExperimentRow({ experiment: exp, onClick, index, expanded, onEdit, onEndTest }: { experiment: any; onClick: () => void; index: number; expanded: boolean; onEdit: () => void; onEndTest: () => void }) {
   const groups = (exp.groups || []).map((g: any) => ({
     name: g.group_name,
     campaignIds: new Set<string>(JSON.parse(g.campaign_ids || '[]')),
@@ -1106,7 +1106,7 @@ function ExperimentRow({ experiment: exp, onClick, index, expanded, onEdit }: { 
   const endDate = exp.end_date || yesterday
 
   const { data: rawData } = useQuery({
-    queryKey: ['ab-data', exp.id, exp.start_date],
+    queryKey: ['ab-data', exp.id, exp.start_date, exp.end_date],
     queryFn: async () => {
       if (allCampaignIds.length === 0) return null
       const res = await fetch(
@@ -1139,46 +1139,73 @@ function ExperimentRow({ experiment: exp, onClick, index, expanded, onEdit }: { 
       })
     : null
 
-  // Winning variant based on primary metric
+  // Winning variant based on weighted composite: 65% primary + 35% shared across secondary metrics
+  const secondaryMetrics: string[] = JSON.parse(exp.secondary_metrics || '[]')
   let winnerName = '—'
   let deltaStr = '—'
   let deltaColor = 'rgba(255,255,255,0.3)'
   if (groupAggs && groups.length >= 2) {
-    const controlVal = computeMetric(exp.primary_metric, groupAggs[0])
+    /** Compute direction-normalized % delta for a metric (positive = better) */
+    const metricDelta = (metricId: string, controlAgg: AggRow, variantAgg: AggRow): number | null => {
+      const cv = computeMetric(metricId, controlAgg)
+      const vv = computeMetric(metricId, variantAgg)
+      if (cv === 0 && vv === 0) return null
+      const rawPct = cv > 0 ? ((vv - cv) / cv) * 100 : (vv > 0 ? 100 : 0)
+      const hb = isHigherBetter(metricId)
+      return hb ? rawPct : -rawPct  // normalize: positive = better
+    }
+
+    const PRIMARY_WEIGHT = 0.65
+    const SECONDARY_WEIGHT = 0.35
+
     let bestIdx = 0
-    let bestDelta = 0
+    let bestScore = -Infinity
+    let bestRawPrimaryDelta = 0
+
     for (let i = 1; i < groups.length; i++) {
-      const val = computeMetric(exp.primary_metric, groupAggs[i])
-      if (controlVal === 0 && val === 0) continue
-      if (val === 0 && controlVal > 0) { bestIdx = i; bestDelta = -100; continue }
-      const diff = controlVal > 0 ? ((val - controlVal) / controlVal) * 100 : 100
-      if (i === 1) { bestIdx = i; bestDelta = diff }
-      else {
-        const hb = isHigherBetter(exp.primary_metric)
-        const curBetter = hb ? diff > bestDelta : diff < bestDelta
-        if (curBetter) { bestIdx = i; bestDelta = diff }
+      // Primary delta
+      const pDelta = metricDelta(exp.primary_metric, groupAggs[0], groupAggs[i])
+      if (pDelta === null) continue
+
+      // Secondary deltas
+      const sDeltasValid: number[] = []
+      for (const sm of secondaryMetrics) {
+        const d = metricDelta(sm, groupAggs[0], groupAggs[i])
+        if (d !== null) sDeltasValid.push(d)
+      }
+      const sAvg = sDeltasValid.length > 0 ? sDeltasValid.reduce((a, b) => a + b, 0) / sDeltasValid.length : 0
+
+      // Weighted composite (positive = variant is better overall)
+      const composite = secondaryMetrics.length > 0
+        ? PRIMARY_WEIGHT * pDelta + SECONDARY_WEIGHT * sAvg
+        : pDelta  // no secondary metrics → 100% primary
+
+      if (i === 1 || composite > bestScore) {
+        bestIdx = i
+        bestScore = composite
+        bestRawPrimaryDelta = pDelta
       }
     }
-    const hb = isHigherBetter(exp.primary_metric)
-    const variantWins = hb ? bestDelta > 0 : bestDelta < 0
-    if (bestDelta === 0 && controlVal === 0) {
-      // no data
-    } else if (variantWins) {
-      winnerName = groups[bestIdx].name
-      deltaStr = `${bestDelta > 0 ? '+' : ''}${bestDelta.toFixed(1)}%`
-      deltaColor = '#34d399'
-    } else {
-      winnerName = 'Control'
-      deltaStr = `${bestDelta > 0 ? '+' : ''}${bestDelta.toFixed(1)}%`
-      deltaColor = '#f87171'
+
+    if (bestScore > -Infinity) {
+      const variantWins = bestScore > 0
+      if (variantWins) {
+        winnerName = groups[bestIdx].name
+        deltaStr = `+${bestScore.toFixed(1)}%`
+        deltaColor = '#34d399'
+      } else {
+        winnerName = 'Control'
+        deltaStr = `${bestScore.toFixed(1)}%`
+        deltaColor = '#f87171'
+      }
     }
   }
 
   const tdS: React.CSSProperties = { padding: '9px 12px', fontSize: 11, whiteSpace: 'nowrap', verticalAlign: 'top' }
   const rowBg = index % 2 === 1 ? 'rgba(255,255,255,0.02)' : 'transparent'
-  const totalCols = 8
+  const totalCols = 9
 
-  const allMetricIds = expanded ? [exp.primary_metric, ...(JSON.parse(exp.secondary_metrics || '[]') as string[])] : []
+  const allMetricIds = expanded ? [exp.primary_metric, ...secondaryMetrics] : []
 
   return (
     <>
@@ -1197,7 +1224,11 @@ function ExperimentRow({ experiment: exp, onClick, index, expanded, onEdit }: { 
           {exp.description && <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{exp.description}</div>}
         </td>
         <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)' }}>{exp.start_date}</td>
-        <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)' }}>{exp.end_date || '—'}</td>
+        <td
+          onClick={e => { e.stopPropagation(); onEndTest() }}
+          style={{ ...tdS, color: exp.end_date ? '#818cf8' : 'rgba(255,255,255,0.5)', cursor: 'pointer' }}
+          title="Click to set/edit end date"
+        >{exp.end_date || '—'}</td>
         <td style={{ ...tdS, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{elapsed}</td>
         <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)', fontSize: 10, lineHeight: 1.6 }}>
           {spendParts ? spendParts.map((s, i) => (
@@ -1208,15 +1239,34 @@ function ExperimentRow({ experiment: exp, onClick, index, expanded, onEdit }: { 
           {winnerName}
         </td>
         <td style={{ ...tdS, fontWeight: 700, color: deltaColor }}>{deltaStr}</td>
+        <td style={{ ...tdS, textAlign: 'right' }}>
+          {exp.status !== 'ended' && (
+            <button
+              onClick={e => { e.stopPropagation(); onEndTest() }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '3px 8px', fontSize: 9, fontWeight: 600, borderRadius: 4,
+                border: '1px solid rgba(248,113,113,0.25)', cursor: 'pointer',
+                background: 'rgba(248,113,113,0.08)', color: '#f87171',
+              }}
+            >End Test</button>
+          )}
+        </td>
       </tr>
       {expanded && (
         <tr style={{ background: 'rgba(99,102,241,0.03)' }}>
           <td colSpan={totalCols} style={{ padding: '12px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>
-                {exp.brand} · {exp.level} · {exp.start_date} → {exp.end_date || 'ongoing'}
-                <span style={{ marginLeft: 12, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: exp.status === 'active' ? '#34d39920' : 'rgba(255,255,255,0.05)', color: exp.status === 'active' ? '#34d399' : 'rgba(255,255,255,0.3)' }}>
-                  {exp.status === 'active' ? '● Active' : 'Ended'}
+            {/* Setup Info */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: 'rgba(99,102,241,0.12)', color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  {exp.level} level
+                </span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+                  {exp.brand} · {exp.start_date} → {exp.end_date || 'ongoing'}
+                </span>
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: exp.status !== 'ended' ? '#34d39920' : 'rgba(255,255,255,0.05)', color: exp.status !== 'ended' ? '#34d399' : 'rgba(255,255,255,0.3)' }}>
+                  {exp.status !== 'ended' ? '● Active' : 'Ended'}
                 </span>
               </div>
               <button
@@ -1232,6 +1282,37 @@ function ExperimentRow({ experiment: exp, onClick, index, expanded, onEdit }: { 
                 Edit
               </button>
             </div>
+
+            {/* Groups / Items */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+              {groups.map((g: any, gi: number) => {
+                const dimMap: Record<string, { name: string; sku: string }> = {}
+                if (rawData?.dimensions) {
+                  for (const d of rawData.dimensions) {
+                    dimMap[d.campaign_id] = { name: d.campaign_name, sku: d.sku }
+                  }
+                }
+                const ids = Array.from(g.campaignIds) as string[]
+                return (
+                  <div key={gi} style={{ flex: 1, background: 'rgba(255,255,255,0.02)', borderRadius: 6, border: `1px solid ${GROUP_COLORS[gi]}22`, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: GROUP_COLORS[gi], textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+                      {g.name} — {ids.length} {exp.level}{ids.length > 1 ? 's' : ''}
+                    </div>
+                    {ids.map((id: string) => {
+                      const dim = dimMap[id]
+                      return (
+                        <div key={id} style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, display: 'flex', gap: 4 }}>
+                          {dim?.sku && <span style={{ color: 'rgba(255,255,255,0.25)', fontWeight: 600, minWidth: 28 }}>{dim.sku}</span>}
+                          <span style={{ color: 'rgba(255,255,255,0.55)' }}>{dim?.name || id}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Metrics Table */}
             {!groupAggs ? (
               <div style={{ padding: 12, textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>Loading…</div>
             ) : (
@@ -1289,6 +1370,8 @@ export function ABTestPage() {
   const [showModal, setShowModal] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editingExp, setEditingExp] = useState<any>(null)
+  const [endTestExp, setEndTestExp] = useState<any>(null)
+  const [endTestDate, setEndTestDate] = useState('')
 
   const { data: experiments, refetch } = useQuery({
     queryKey: ['ab-experiments'],
@@ -1337,6 +1420,7 @@ export function ABTestPage() {
                 <th style={thS}>Ad Spent</th>
                 <th style={thS}>Winner</th>
                 <th style={thS}>Δ Control</th>
+                <th style={thS}></th>
               </tr>
             </thead>
             <tbody>
@@ -1348,6 +1432,10 @@ export function ABTestPage() {
                   expanded={expandedId === exp.id}
                   onClick={() => setExpandedId(expandedId === exp.id ? null : exp.id)}
                   onEdit={() => setEditingExp(exp)}
+                  onEndTest={() => {
+                    setEndTestExp(exp)
+                    setEndTestDate(exp.end_date || new Date().toISOString().slice(0, 10))
+                  }}
                 />
               ))}
             </tbody>
@@ -1363,6 +1451,56 @@ export function ABTestPage() {
 
       {showModal && <NewExperimentModal onClose={() => setShowModal(false)} onCreated={() => refetch()} />}
       {editingExp && <NewExperimentModal editExperiment={editingExp} onClose={() => setEditingExp(null)} onCreated={() => { refetch(); setEditingExp(null) }} />}
+
+      {/* End Test Modal */}
+      {endTestExp && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setEndTestExp(null)}>
+          <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 24, width: 360, border: '1px solid rgba(255,255,255,0.08)' }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: '0 0 6px' }}>{endTestExp.end_date ? 'Update End Date' : 'End Test'}</h3>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', margin: '0 0 16px' }}>
+              Set the end date for <strong style={{ color: '#fff' }}>{endTestExp.title}</strong>. Data will be locked to the range {endTestExp.start_date} → end date.
+            </p>
+            <label style={{ display: 'block', fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>End Date</label>
+            <input
+              type="date" value={endTestDate}
+              min={endTestExp.start_date}
+              onChange={e => setEndTestDate(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+              <button onClick={() => setEndTestExp(null)} style={{
+                padding: '7px 16px', fontSize: 11, fontWeight: 600, borderRadius: 6,
+                border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer',
+                background: 'transparent', color: 'rgba(255,255,255,0.5)',
+              }}>Cancel</button>
+              <button
+                disabled={!endTestDate}
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`${D1_WORKER_URL}/v2/ab-tests/${endTestExp.id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ end_date: endTestDate, status: 'ended' }),
+                    })
+                    if (!res.ok) throw new Error(await res.text())
+                    setEndTestExp(null)
+                    refetch()
+                  } catch (err: any) {
+                    alert(`Failed to end test: ${err.message}`)
+                  }
+                }}
+                style={{
+                  padding: '7px 16px', fontSize: 11, fontWeight: 600, borderRadius: 6,
+                  border: 'none', cursor: endTestDate ? 'pointer' : 'not-allowed',
+                  background: endTestDate ? '#f87171' : 'rgba(248,113,113,0.3)', color: '#fff',
+                  opacity: endTestDate ? 1 : 0.5,
+                }}>Confirm End</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

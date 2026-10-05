@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MNS Scale Down Strategy</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',-apple-system,system-ui,sans-serif;background:#0f1117;color:#e2e4e9}
+  .container{max-width:960px;margin:0 auto;padding:40px 32px}
+  .brand-tag{display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;margin-right:6px}
+  .sku-tag{display:inline-block;background:rgba(251,191,36,0.15);color:#fbbf24;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;margin-left:4px}
+  h1{font-size:24px;font-weight:800;color:#fff;margin:6px 0 2px}
+  .subtitle{font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:32px}
+  h2{font-size:14px;font-weight:700;color:rgba(255,255,255,0.6);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.05em}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px}
+  th{padding:8px 10px;text-align:left;font-size:9px;font-weight:700;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid rgba(255,255,255,0.1)}
+  td{padding:8px 10px;text-align:left;color:rgba(255,255,255,0.7);border-bottom:none;font-variant-numeric:tabular-nums;font-size:12px}
+  td:first-child{color:#fff;font-weight:600}
+  .chart-wrap{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:20px;position:relative}
+  .chart-title{font-size:11px;font-weight:600;color:rgba(255,255,255,0.4);margin-bottom:12px}
+  .chart-container{position:relative;width:100%}
+  canvas{display:block}
+  .insight-box{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:18px 20px;margin-top:4px}
+  .insight-box p{font-size:13px;color:rgba(255,255,255,0.6);line-height:1.7;margin-bottom:12px}
+  .insight-box p:last-child{margin-bottom:0}
+  .insight-box strong{color:rgba(255,255,255,0.85)}
+  .insight-label{font-size:10px;font-weight:700;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px}
+  .good{color:#34d399;font-weight:700}.bad{color:#f87171;font-weight:700}.note{color:#818cf8;font-weight:700}.warn{color:#fbbf24;font-weight:700}
+  .section-divider{border:none;border-top:1px solid rgba(255,255,255,0.06);margin:48px 0}
+  .section-box{background:rgba(255,255,255,0.015);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:28px 28px 20px;margin-bottom:0}
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+  .kpi-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:14px 16px}
+  .kpi-card .kpi-label{font-size:9px;color:rgba(255,255,255,0.3);text-transform:uppercase;font-weight:700;letter-spacing:0.04em}
+  .kpi-card .kpi-value{font-size:20px;font-weight:800;color:#fff;margin-top:4px}
+  .kpi-card .kpi-sub{font-size:10px;margin-top:2px}
+  .q-box{background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15);border-radius:8px;padding:14px 16px;margin-top:16px}
+  .q-box .q-label{font-size:10px;font-weight:700;color:rgba(99,102,241,0.7);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px}
+  .q-box p{font-size:12px;color:rgba(255,255,255,0.6);line-height:1.6;margin-bottom:8px}
+  .q-box p:last-child{margin-bottom:0}
+  .q-box strong{color:rgba(255,255,255,0.85)}
+  .legend-row{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+  .legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:rgba(255,255,255,0.45)}
+  .legend-dot{width:8px;height:8px;border-radius:50%}
+  .hint-text{font-size:10px;color:rgba(255,255,255,0.25);margin-top:8px;font-style:italic}
+  .highlight-bad{background:rgba(248,113,113,0.04)}
+  .highlight-good{background:rgba(52,211,153,0.04)}
+  .camp-name{font-size:11px;color:rgba(255,255,255,0.5);font-weight:400;display:block;margin-top:2px}
+  .funnel-tag{display:inline-block;font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:4px}
+  .funnel-tofu{background:rgba(99,102,241,0.15);color:rgba(99,102,241,0.8)}
+  .funnel-mofu{background:rgba(251,191,36,0.15);color:rgba(251,191,36,0.8)}
+  .funnel-bofu{background:rgba(52,211,153,0.15);color:rgba(52,211,153,0.8)}
+  .action-tag{display:inline-block;font-size:9px;font-weight:700;padding:2px 0;border-radius:3px;width:52px;text-align:center}
+  .action-kill{background:rgba(248,113,113,0.15);color:#f87171}
+  .action-keep{background:rgba(52,211,153,0.15);color:#34d399}
+  .action-reduce{background:rgba(251,191,36,0.15);color:#fbbf24}
+  .bd-l{border-left:1px solid rgba(255,255,255,0.12)}
+  .bd-r{border-right:1px solid rgba(255,255,255,0.12)}
+  .bd-t{border-top:1px solid rgba(255,255,255,0.12)}
+  .bd-b{border-bottom:1px solid rgba(255,255,255,0.12)}
+</style>
+</head>
+<body>
+<div class="container">
+  <div><span class="brand-tag">MNC</span><span class="sku-tag">MNS — Nightsure</span></div>
+  <h1>MNS Scale Down Strategy</h1>
+  <p class="subtitle">Data: September 2026 (30 hari) · Target RoAS: 6.59x</p>
+
+  <!-- S1: Current vs Target -->
+  <div class="section-box">
+  <h2>1 · Current vs Target</h2>
+  <p style="font-size:11px;color:rgba(255,255,255,0.25);margin-bottom:20px">Data: 1 Sep – 30 Sep 2026 (30 hari)</p>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px">
+    <div class="kpi-card">
+      <div class="kpi-label">Current Avg. Daily Velocity</div>
+      <div class="kpi-value" style="color:#fff">Rp 17.6M</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">30D MA all-channel revenue</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Current Ad Spend Setting</div>
+      <div class="kpi-value" style="color:#fff">Rp 5.80M</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">/hari (sum campaign budgets)</div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(248,113,113,0.2)">
+      <div class="kpi-label">Current RoAS</div>
+      <div class="kpi-value" style="color:#f87171">3.05x</div>
+      <div class="kpi-sub bad">jauh di bawah target</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
+    <div class="kpi-card" style="border-color:rgba(52,211,153,0.2)">
+      <div class="kpi-label">Target Avg. Sales Velocity</div>
+      <div class="kpi-value" style="color:#34d399">Rp 20.2M</div>
+      <div class="kpi-sub good">+15% dari current</div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(52,211,153,0.2)">
+      <div class="kpi-label">Target Scale Down</div>
+      <div class="kpi-value" style="color:#34d399">Rp 3.07M</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">/hari (−47% dari setting)</div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(52,211,153,0.2)">
+      <div class="kpi-label">Target RoAS</div>
+      <div class="kpi-value" style="color:#34d399">6.59x</div>
+      <div class="kpi-sub" style="color:rgba(255,255,255,0.3)">benchmark MNC</div>
+    </div>
+  </div>
+  <div class="insight-box">
+    <div class="insight-label">📋 Kondisi &amp; Ekspektasi</div>
+    <p>Untuk mencapai RoAS 6.59x, kedua sisi harus <strong>bertemu di tengah</strong>:</p>
+    <p>① <strong>Sisi Ads (kita)</strong>: scale down budget dari Rp 5.80M → Rp 3.07M/hari. Kita akan berusaha mematikan budget bleeders dan mempertahankan campaign yang sudah perform — detail di section berikutnya.</p>
+    <p>② <strong>Sisi Sales Team</strong>: velocity harus tumbuh minimal <strong>+15%</strong> dari Rp 17.6M → Rp 20.2M/hari. Ini bukan target yang bisa dicapai ads saja — <strong>effort ekstra dari Sales Team sangat dibutuhkan</strong> agar strategi ini bisa berhasil.</p>
+    <p style="color:rgba(255,255,255,0.4)">Formula: (Rp 17.6M × 1.15) ÷ 6.59 = Rp 3.07M max ad spend/hari</p>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+  <div style="height:12px"></div>
+
+  <!-- S2: Campaign Performance -->
+  <div class="section-box">
+  <h2>2 · Campaign Performance — September 2026</h2>
+  <p style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;margin-bottom:20px">
+    MNS memiliki <strong style="color:#fff">6 campaign aktif</strong>: 1 DGEN (ToFU) + 5 META (full-funnel). Funnel flow: <strong style="color:#fff">ToFU00 → MoFU25 → BoFU50 → BoFU75</strong>.
+  </p>
+  <table style="font-size:11px">
+    <thead><tr>
+      <th style="width:10%"></th><th style="width:32%">Campaign</th><th>RL All</th><th>RL CC</th><th>Purch</th><th>CPRL</th><th>CPA CC</th><th class="bd-l bd-t">Setting/hari</th><th class="bd-t" style="width:3%"></th><th class="bd-r bd-t">Scaled Down</th>
+    </tr></thead>
+    <tbody>
+      <tr class="highlight-good">
+        <td><span class="action-tag action-keep">KEEP</span></td>
+        <td>[DGENMNS] C1 - ToFU00 - NightSure</td>
+        <td>512</td><td>201</td><td>50</td>
+        <td>Rp 76K</td><td><span class="good">Rp 0.8M</span></td>
+        <td class="bd-l">Rp 0.80M</td><td style="color:rgba(255,255,255,0.2)">→</td><td class="bd-r" style="color:#34d399">Rp 0.80M</td>
+      </tr>
+      <tr class="highlight-bad">
+        <td><span class="action-tag action-kill">KILL</span></td>
+        <td>[META] I1 - Educational - Nightsure</td>
+        <td>280</td><td>88</td><td>6</td>
+        <td><span class="bad">Rp 118K</span></td><td><span class="bad">Rp 5.5M</span></td>
+        <td class="bd-l">Rp 1.05M</td><td style="color:rgba(255,255,255,0.2)">→</td><td class="bd-r" style="color:#f87171">Rp 0</td>
+      </tr>
+      <tr>
+        <td><span class="action-tag action-reduce">−31%</span></td>
+        <td>[META] I1 - Social Proof Customer</td>
+        <td>446</td><td>124</td><td>17</td>
+        <td>Rp 75K</td><td>Rp 2.0M</td>
+        <td class="bd-l">Rp 1.05M</td><td style="color:rgba(255,255,255,0.2)">→</td><td class="bd-r" style="color:#fbbf24">Rp 0.72M</td>
+      </tr>
+      <tr>
+        <td><span class="action-tag action-keep">KEEP</span></td>
+        <td>[META] I2 - MoFU25 - Brand Offer</td>
+        <td>677</td><td>199</td><td>22</td>
+        <td><span class="good">Rp 43K</span></td><td>Rp 1.3M</td>
+        <td class="bd-l">Rp 0.84M</td><td style="color:rgba(255,255,255,0.2)">→</td><td class="bd-r" style="color:#34d399">Rp 0.84M</td>
+      </tr>
+      <tr class="highlight-good">
+        <td><span class="action-tag action-keep">KEEP</span></td>
+        <td>[META] I3 - BoFU50 - Objection Handling</td>
+        <td>390</td><td>128</td><td>19</td>
+        <td><span class="good">Rp 56K</span></td><td><span class="good">Rp 1.2M</span></td>
+        <td class="bd-l">Rp 0.71M</td><td style="color:rgba(255,255,255,0.2)">→</td><td class="bd-r" style="color:#34d399">Rp 0.71M</td>
+      </tr>
+      <tr class="highlight-bad">
+        <td><span class="action-tag action-kill">KILL</span></td>
+        <td>[META] I4 - BoFU75 - Access &amp; Promo</td>
+        <td>357</td><td>141</td><td>12</td>
+        <td><span class="good">Rp 46K</span></td><td>Rp 1.4M</td>
+        <td class="bd-l">Rp 0.55M</td><td style="color:rgba(255,255,255,0.2)">→</td><td class="bd-r">Rp 0</td>
+      </tr>
+      <tr style="font-weight:700">
+        <td></td><td style="color:rgba(255,255,255,0.4)">TOTAL</td>
+        <td></td><td></td><td></td><td></td><td></td>
+        <td class="bd-l bd-t bd-b" style="color:#fff">Rp 5.80M</td><td class="bd-t bd-b" style="color:rgba(255,255,255,0.2)">→</td><td class="bd-r bd-t bd-b" style="color:#34d399">Rp 3.07M</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="insight-box">
+    <div class="insight-label">💡 Reasoning</div>
+    <p><strong>🟢 DGEN ToFU00 dan BoFU50 dipertahankan</strong> — keduanya best performing campaign. Ini yang menjaga campaign MNS tetap berjalan dengan baik saat ini.</p>
+    <p><strong>🔴 Educational di-kill</strong> — performa terburuk dari semua campaign (CPRL 118K, CPA 5.5M). Untuk sementara, <strong>stop pembuatan campaign Educational untuk Nightsure</strong>. Kemungkinan konten educational Nightsure saat ini terlalu berat/sulit diikuti audience — ini menjadi point of consideration untuk tim kreatif.</p>
+    <p><strong>🔴 BoFU75 di-kill</strong> — sebenarnya performanya bagus (CPRL 46K), tapi karena ini adalah <strong>scale down yang cukup masif (−47%)</strong>, harus ada yang dikorbankan. Tidak bisa mengorbankan semua ToFU karena funnel akan kelaparan. MoFU25 dan BoFU50 performanya terlalu bagus untuk dimatikan. Jadi BoFU75 yang harus direlakan untuk saat ini.</p>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- Notes & Monitoring -->
+  <div class="section-box">
+  <h2>3 · Catatan &amp; Monitoring</h2>
+  <div class="insight-box" style="border-color:rgba(251,191,36,0.15);background:rgba(251,191,36,0.03);margin-bottom:16px">
+    <div class="insight-label">⚠️ D2OR Revenue Lag</div>
+    <p>62% revenue MNS berasal dari D2OR. <strong>D2OR memiliki lag 2-3 minggu</strong> — revenue yang terlihat sekarang sebagian besar berasal dari leads yang dihasilkan minggu-minggu lalu.</p>
+    <p>Setelah scale down, <strong>ROAS minggu 1-2 akan terlihat sangat bagus</strong> (revenue masih dari lead lama dengan spend yang sudah turun). Jangan tertipu oleh angka awal — angka sebenarnya baru terlihat di <strong>minggu ke-3 sampai ke-4</strong>, saat revenue mulai mencerminkan volume lead yang sudah berkurang.</p>
+  </div>
+  <div class="q-box">
+    <div class="q-label">🔬 Yang Perlu Dimonitor</div>
+    <p>• <strong>Velocity setelah scale down</strong> — apakah tetap di Rp 17.6M atau turun?</p>
+    <p>• <strong>D2OR Revenue minggu ke-3</strong> — apakah terjadi cliff seperti MNC (REP003)?</p>
+    <p>• <strong>META funnel health</strong> — apakah MoFU/BoFU masih mendapat cukup audience dari Social Proof ToFU yang sudah direduksi?</p>
+    <p>• <strong>CPRL dan CPA CC</strong> — apakah membaik setelah scale down? Jika CPRL turun, scale down berada di trajectory yang bagus. Jika CPRL tetap atau naik, tim marketing perlu kerja lebih keras di sisi kreatif.</p>
+    <p>• <strong>Sales Team velocity growth</strong> — apakah +15% tercapai? Tanpa ini, target RoAS 6.59x tidak akan tercapai.</p>
+  </div>
+  </div>
+
+</div>
+<script>
+Chart.register(ChartDataLabels);
+</script>
+</body>
+</html>

@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "slug": "mnc-scale-down-followup",
+    "report_id": "LOC003",
+    "title": "MNC Scale Down — 20 Day Follow-Up",
+    "description": "Follow-up REP002: validates D2OR lag projection with 20 days of data",
+    "brand": "MNC",
+    "created_at": "2026-09-28T12:55:00Z",
+    "updated_at": "2026-09-28T12:55:00Z"
+  },
+  {
+    "slug": "mns-scale-down",
+    "report_id": "LOC004",
+    "title": "MNS Scale Down Strategy",
+    "description": "Scale down strategy for MNS: velocity-based budget calculation and campaign kill/keep",
+    "brand": "MNC",
+    "created_at": "2026-10-01T22:45:00Z",
+    "updated_at": "2026-10-01T22:45:00Z"
+  },
+  {
+    "slug": "mnc-educational-analysis",
+    "report_id": "LOC005",
+    "title": "MNC Educational Campaign Analysis",
+    "description": "Analysis of Educational campaign underperformance across all MNC SKUs — restructuring proposal",
+    "brand": "MNC",
+    "created_at": "2026-10-02T14:44:00Z",
+    "updated_at": "2026-10-02T14:44:00Z"
+  }
+]
