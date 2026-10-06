@@ -34,5 +34,14 @@
     "brand": "MNC",
     "created_at": "2026-10-05T13:57:00Z",
     "updated_at": "2026-10-05T13:57:00Z"
+  },
+  {
+    "slug": "mnc-educational-execution",
+    "report_id": "LOC007",
+    "title": "Execution: Kill Educational & Redistribute Budget",
+    "description": "Step-by-step instructions to kill Educational campaigns and redistribute budget to SRCH + DGEN",
+    "brand": "MNC",
+    "created_at": "2026-10-06T10:25:00Z",
+    "updated_at": "2026-10-06T10:25:00Z"
   }
 ]

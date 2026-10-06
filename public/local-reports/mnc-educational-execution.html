@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:#0f1117;color:#e0e2e6;padding:32px 28px;line-height:1.6}
+  .container{max-width:900px;margin:0 auto}
+  h1{font-size:22px;font-weight:700;margin-bottom:4px}
+  h2{font-size:16px;font-weight:600;margin-bottom:16px;color:rgba(255,255,255,0.85)}
+  .subtitle{font-size:13px;color:rgba(255,255,255,0.4);margin-bottom:24px}
+  .section-box{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:20px 22px;margin-bottom:24px}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:rgba(255,255,255,0.35);padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.08)}
+  td{font-size:12px;padding:8px 10px;color:rgba(255,255,255,0.7);border-bottom:1px solid rgba(255,255,255,0.04)}
+  .good{color:#34d399}
+  .bad{color:#f87171}
+  .warn{color:#fbbf24}
+  .muted{color:rgba(255,255,255,0.3)}
+  .insight-box{background:rgba(96,165,250,0.03);border:1px solid rgba(96,165,250,0.1);border-radius:8px;padding:14px 16px;margin-bottom:16px}
+  .insight-box p{font-size:12px;color:rgba(255,255,255,0.6);line-height:1.7;margin-bottom:6px}
+  .insight-box p:last-child{margin-bottom:0}
+  .insight-label{font-size:11px;font-weight:600;color:rgba(255,255,255,0.5);margin-bottom:8px}
+  .campaign-tag{display:inline-block;font-size:10px;font-weight:600;padding:2px 6px;border-radius:3px;margin:2px 0;font-family:'SF Mono','Fira Code',monospace}
+  .tag-kill{background:rgba(248,113,113,0.1);color:#f87171;border:1px solid rgba(248,113,113,0.2)}
+  .tag-add{background:rgba(52,211,153,0.1);color:#34d399;border:1px solid rgba(52,211,153,0.2)}
+  .tag-srch{background:rgba(96,165,250,0.1);color:#60a5fa;border:1px solid rgba(96,165,250,0.2)}
+  .tag-dgen{background:rgba(251,191,36,0.1);color:#fbbf24;border:1px solid rgba(251,191,36,0.2)}
+  .tag-meta{background:rgba(99,102,241,0.1);color:#818cf8;border:1px solid rgba(99,102,241,0.2)}
+  .ref-link{font-size:11px;color:#818cf8;text-decoration:none}
+  .ref-link:hover{text-decoration:underline}
+  .checkbox{display:inline-block;width:14px;height:14px;border:1.5px solid rgba(255,255,255,0.2);border-radius:3px;margin-right:8px;vertical-align:middle;flex-shrink:0}
+  .step{display:flex;align-items:flex-start;margin-bottom:14px}
+  .step-content{font-size:13px;color:rgba(255,255,255,0.7);line-height:1.7}
+  .sku-divider{font-size:10px;font-weight:700;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;padding:12px 10px 6px;border-bottom:none}
+  .summary-card{display:inline-block;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.15);border-radius:8px;padding:10px 20px;text-align:center;margin:0 6px}
+  .summary-label{font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px}
+  .summary-value{font-size:18px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <h1>Execution: Kill Educational Campaigns & Redistribute Budget</h1>
+  <p class="subtitle">Follow-up dari <a href="?report_id=REP005" class="ref-link">REP005 — MNC Educational Campaign Analysis ↗</a> · Budget data per 5 Oct 2026</p>
+
+  <!-- Section 1: Kill List -->
+  <div class="section-box">
+  <h2>1 · Educational Campaigns — Kill List</h2>
+  <p style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:16px">Campaign META yang akan di-kill. MNS sudah di-kill sebelumnya.</p>
+  <table>
+    <thead><tr>
+      <th>SKU</th>
+      <th>Campaign</th>
+      <th>Campaign ID</th>
+      <th style="text-align:right">Daily Budget</th>
+      <th>Status</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td style="color:#fff;font-weight:600">MTA</td>
+        <td>[META] I1 - ToFU00 - Educational - Metafiber</td>
+        <td style="font-size:10px;font-family:monospace;color:rgba(255,255,255,0.4)">6949324074943</td>
+        <td style="text-align:right;font-weight:600;color:#fff">Rp 4.440.412</td>
+        <td><span class="campaign-tag tag-kill">KILL</span></td>
+      </tr>
+      <tr>
+        <td style="color:#fff;font-weight:600">MSF</td>
+        <td>[META] I1 - ToFU00 - Educational - Superfood</td>
+        <td style="font-size:10px;font-family:monospace;color:rgba(255,255,255,0.4)">120243654808310624</td>
+        <td style="text-align:right;font-weight:600;color:#fff">Rp 2.308.530</td>
+        <td><span class="campaign-tag tag-kill">KILL</span></td>
+      </tr>
+      <tr>
+        <td style="color:#fff;font-weight:600">M3P</td>
+        <td>[META] I1 - ToFU00 - Educational - 3Peptide</td>
+        <td style="font-size:10px;font-family:monospace;color:rgba(255,255,255,0.4)">120243410200660579</td>
+        <td style="text-align:right;font-weight:600;color:#fff">Rp 2.303.184</td>
+        <td><span class="campaign-tag tag-kill">KILL</span></td>
+      </tr>
+      <tr style="opacity:0.4">
+        <td style="font-weight:600">MNS</td>
+        <td>[META] I1 - ToFU00 - Educational - Nightsure</td>
+        <td style="font-size:10px;font-family:monospace">—</td>
+        <td style="text-align:right;font-weight:600">Rp 0</td>
+        <td><span style="font-size:10px;color:rgba(255,255,255,0.3)">Already killed</span></td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr style="border-top:1px solid rgba(255,255,255,0.1)">
+        <td colspan="3" style="font-weight:700;color:rgba(255,255,255,0.5)">Total Budget Freed</td>
+        <td style="text-align:right;font-weight:700;color:#f87171;font-size:14px">Rp 9.052.126</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+  </div>
+
+
+  <!-- Section 2: MTA Campaign Performance + Distribution -->
+  <div class="section-box">
+  <h2>2 · Metafiber (MTA) — Campaign Performance & Distribution Plan</h2>
+  <p style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:16px">Semua campaign MTA yang aktif. Data: 14 hari terakhir (22 Sep – 5 Oct 2026). Sorted by funnel stage.</p>
+
+  <table style="margin-bottom:20px">
+    <thead><tr>
+      <th>Campaign</th>
+      <th style="text-align:center">Days</th>
+      <th style="text-align:right">Spend/day</th>
+      <th style="text-align:right">CPRL</th>
+      <th style="text-align:right">CPA CC</th>
+      <th style="text-align:right">RoAS CC</th>
+    </tr></thead>
+    <tbody>
+      <!-- ToFU00 -->
+      <tr style="background:rgba(248,113,113,0.04)">
+        <td><span class="campaign-tag tag-kill">KILL</span> I1 - ToFU00 - Educational</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.35)">14</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.5)">Rp 4.4M</td>
+        <td style="text-align:right;color:#f87171;font-weight:600">Rp 130K</td>
+        <td style="text-align:right;color:#f87171;font-weight:600">Rp 12.3M</td>
+        <td style="text-align:right;color:#f87171">0.03x</td>
+      </tr>
+      <tr>
+        <td><span class="campaign-tag tag-meta">META</span> I1 - ToFU00 - Social Proof Customer</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.35)">14</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.5)">Rp 4.9M</td>
+        <td style="text-align:right">Rp 95K</td>
+        <td style="text-align:right">Rp 5.3M</td>
+        <td style="text-align:right">0.04x</td>
+      </tr>
+      <!-- MoFU25 -->
+      <tr style="background:rgba(52,211,153,0.03)">
+        <td><span class="campaign-tag tag-meta">META</span> I2 - MoFU25 - Brand Offer</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.35)">14</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.5)">Rp 5.6M</td>
+        <td style="text-align:right">Rp 112K</td>
+        <td style="text-align:right;color:#34d399;font-weight:600">Rp 2.7M</td>
+        <td style="text-align:right;color:#34d399;font-weight:600">0.16x</td>
+      </tr>
+      <!-- BoFU50 -->
+      <tr style="background:rgba(52,211,153,0.03)">
+        <td><span class="campaign-tag tag-meta">META</span> I3 - BoFU50 - Objection Handling</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.35)">14</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.5)">Rp 4.1M</td>
+        <td style="text-align:right">Rp 105K</td>
+        <td style="text-align:right;color:#34d399;font-weight:600">Rp 2.4M</td>
+        <td style="text-align:right">0.09x</td>
+      </tr>
+      <!-- BoFU75 -->
+      <tr style="background:rgba(52,211,153,0.03)">
+        <td><span class="campaign-tag tag-meta">META</span> I4 - BoFU75 - Access & Promo</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.35)">14</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.5)">Rp 3.0M</td>
+        <td style="text-align:right;color:#34d399">Rp 58K</td>
+        <td style="text-align:right;color:#34d399;font-weight:600">Rp 2.6M</td>
+        <td style="text-align:right;color:#34d399">0.17x</td>
+      </tr>
+      <!-- DGEN -->
+      <tr>
+        <td><span class="campaign-tag tag-dgen">DGEN</span> [DGENMTA] C1 - ToFU00</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.35)">14</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.5)">Rp 9.0M</td>
+        <td style="text-align:right">Rp 150K</td>
+        <td style="text-align:right">Rp 2.8M</td>
+        <td style="text-align:right">0.12x</td>
+      </tr>
+      <!-- SRCH -->
+      <tr style="background:rgba(251,191,36,0.04)">
+        <td><span class="campaign-tag" style="background:rgba(251,191,36,0.15);color:#fbbf24">SRCH</span> [SRCHMTA] C1 - ToFU00</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.35)">14</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.5)">Rp 0.5M</td>
+        <td style="text-align:right;color:#34d399;font-weight:600">Rp 59K</td>
+        <td style="text-align:right;color:#34d399;font-weight:600">Rp 0.9M</td>
+        <td style="text-align:right;color:#34d399;font-weight:600">0.55x</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="insight-box">
+    <div class="insight-label">💡 Keputusan Distribusi MTA</div>
+    <p>Educational memiliki <strong>CPA CC terburuk (Rp 12.3M)</strong> — 4-5x lebih mahal dari campaign lain. Budget yang dibebaskan (Rp 4.4M/day) didistribusi sebagai berikut:</p>
+    <p>• <strong>SRCH</strong> dinaikkan ke Rp 0.9M/day (+Rp 400K) — SRCH memiliki metrics terbaik: CPA CC <span class="good">Rp 0.9M</span>, RoAS CC <span class="good">0.55x</span></p>
+    <p>• Sisa Rp 4.0M/day didistribusi ke <strong>MoFU25</strong> (36.5%), <strong>BoFU75</strong> (40.3%), dan <strong>BoFU50</strong> (23.1%) — proporsional berdasarkan efisiensi (inverse CPA CC × RoAS CC)</p>
+    <p style="color:rgba(255,255,255,0.45);font-size:11px;margin-top:8px">DGEN MTA tidak menerima tambahan — sudah di Rp 9.0M/day (tertinggi di semua campaign MTA)</p>
+  </div>
+  </div>
+
+
+  <!-- Section 3: Full Redistribution Plan -->
+  <div class="section-box">
+  <h2>3 · Budget Redistribution Plan — All SKUs</h2>
+
+  <!-- MTA -->
+  <div class="sku-divider" style="padding-top:4px">Metafiber (MTA) — Rp 4.440.412 freed</div>
+  <table style="margin-bottom:20px">
+    <thead><tr>
+      <th>Destination</th>
+      <th style="text-align:right">CPA CC</th>
+      <th style="text-align:right">RoAS CC</th>
+      <th style="text-align:center">Weight</th>
+      <th style="text-align:right">Added</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="campaign-tag tag-srch">SRCH</span> [SRCHMTA] C1</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.4)">Rp 0.9M</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.4)">0.55x</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.3)">flat</td>
+        <td style="text-align:right;font-weight:600;color:#60a5fa">+Rp 400.000</td>
+      </tr>
+      <tr>
+        <td><span class="campaign-tag tag-meta">META</span> I2 - MoFU25 - Brand Offer</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.4)">Rp 2.7M</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.4)">0.16x</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.5)">36.5%</td>
+        <td style="text-align:right;font-weight:600;color:#818cf8">+Rp 1.474.750</td>
+      </tr>
+      <tr>
+        <td><span class="campaign-tag tag-meta">META</span> I4 - BoFU75 - Access & Promo</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.4)">Rp 2.6M</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.4)">0.17x</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.5)">40.3%</td>
+        <td style="text-align:right;font-weight:600;color:#818cf8">+Rp 1.632.496</td>
+      </tr>
+      <tr>
+        <td><span class="campaign-tag tag-meta">META</span> I3 - BoFU50 - Objection Handling</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.4)">Rp 2.4M</td>
+        <td style="text-align:right;color:rgba(255,255,255,0.4)">0.09x</td>
+        <td style="text-align:center;color:rgba(255,255,255,0.5)">23.1%</td>
+        <td style="text-align:right;font-weight:600;color:#818cf8">+Rp 933.166</td>
+      </tr>
+    </tbody>
+    <tfoot><tr style="border-top:1px solid rgba(255,255,255,0.08)">
+      <td colspan="4" style="text-align:right;color:rgba(255,255,255,0.4);font-size:11px">Total</td>
+      <td style="text-align:right;font-weight:700;color:#fff">+Rp 4.440.412</td>
+    </tr></tfoot>
+  </table>
+
+  <!-- MSF -->
+  <div class="sku-divider">Superfood (MSF) — Rp 2.308.530 freed</div>
+  <table style="margin-bottom:20px">
+    <thead><tr>
+      <th>Destination</th>
+      <th style="text-align:right">Added</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="campaign-tag tag-srch">SRCH</span> [SRCHMSF] C1</td>
+        <td style="text-align:right;font-weight:600;color:#60a5fa">+Rp 500.000</td>
+      </tr>
+      <tr>
+        <td><span class="campaign-tag tag-dgen">DGEN</span> [DGENMSF] C1</td>
+        <td style="text-align:right;font-weight:600;color:#fbbf24">+Rp 1.808.530</td>
+      </tr>
+    </tbody>
+    <tfoot><tr style="border-top:1px solid rgba(255,255,255,0.08)">
+      <td style="text-align:right;color:rgba(255,255,255,0.4);font-size:11px">Total</td>
+      <td style="text-align:right;font-weight:700;color:#fff">+Rp 2.308.530</td>
+    </tr></tfoot>
+  </table>
+
+  <!-- M3P -->
+  <div class="sku-divider">3Peptide (M3P) — Rp 2.303.184 freed</div>
+  <table style="margin-bottom:20px">
+    <thead><tr>
+      <th>Destination</th>
+      <th style="text-align:right">Added</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="campaign-tag tag-srch">SRCH</span> [SRCHM3P] C1</td>
+        <td style="text-align:right;font-weight:600;color:#60a5fa">+Rp 500.000</td>
+      </tr>
+      <tr>
+        <td><span class="campaign-tag tag-dgen">DGEN</span> [DGENM3P] C1</td>
+        <td style="text-align:right;font-weight:600;color:#fbbf24">+Rp 1.803.184</td>
+      </tr>
+    </tbody>
+    <tfoot><tr style="border-top:1px solid rgba(255,255,255,0.08)">
+      <td style="text-align:right;color:rgba(255,255,255,0.4);font-size:11px">Total</td>
+      <td style="text-align:right;font-weight:700;color:#fff">+Rp 2.303.184</td>
+    </tr></tfoot>
+  </table>
+
+  <!-- MNS -->
+  <div class="sku-divider">NightSure (MNS) — no Educational budget (already killed)</div>
+  <p style="font-size:12px;color:rgba(255,255,255,0.35);padding:4px 10px 12px">MNS tidak memiliki SRCH campaign. Tidak ada redistribusi.</p>
+
+  <!-- Totals -->
+  <div style="display:flex;justify-content:center;gap:12px;margin-top:8px">
+    <div class="summary-card" style="background:rgba(248,113,113,0.06);border-color:rgba(248,113,113,0.15)">
+      <div class="summary-label">Freed</div>
+      <div class="summary-value" style="color:#f87171">Rp 9.052.126</div>
+    </div>
+    <div class="summary-card" style="background:rgba(99,102,241,0.06);border-color:rgba(99,102,241,0.15)">
+      <div class="summary-label">→ META</div>
+      <div class="summary-value" style="color:#818cf8">Rp 4.040.412</div>
+    </div>
+    <div class="summary-card" style="background:rgba(96,165,250,0.06);border-color:rgba(96,165,250,0.15)">
+      <div class="summary-label">→ SRCH</div>
+      <div class="summary-value" style="color:#60a5fa">Rp 1.400.000</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">→ DGEN</div>
+      <div class="summary-value" style="color:#fbbf24">Rp 3.611.714</div>
+    </div>
+  </div>
+  </div>
+
+  <!-- Section 4: Campaign Restructure & Ads Migration -->
+  <div class="section-box">
+  <h2>4 · Restructuring: 2 ToFU → 1 ToFU + Ads Migration</h2>
+  <p style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:20px">Setelah Educational di-kill, campaign ToFU00 di-consolidate menjadi 1 campaign. Ads terbaik dari Educational di-salvage ke Social Proof. Ref: <a href="https://dashboard.centralsolution.online/insight-report?report_id=REP005" target="_blank" style="color:#818cf8">REP005</a></p>
+
+  <div style="display:flex;align-items:flex-end;justify-content:center;gap:20px;margin:24px 0 20px">
+    <div style="background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);border-radius:8px;padding:10px 20px;text-align:center">
+      <div style="font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Rename</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.45);text-decoration:line-through">ToFU00 - Social Proof Customer</div>
+    </div>
+    <div style="font-size:18px;color:rgba(255,255,255,0.2);padding-bottom:14px">→</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:0">
+      <div style="background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.2);border-radius:8px;padding:10px 20px;text-align:center">
+        <div style="font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Kill</div>
+        <div style="font-size:13px;color:#f87171;text-decoration:line-through">ToFU00 - Educational</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;margin:4px 0">
+        <div style="font-size:10px;color:rgba(255,255,255,0.3)">konten terbaik ↓</div>
+        <div style="font-size:14px;color:rgba(255,255,255,0.15)">▼</div>
+      </div>
+      <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);border-radius:8px;padding:14px 28px;text-align:center">
+        <div style="font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">New Campaign</div>
+        <div style="font-size:16px;font-weight:700;color:#34d399">ToFU00 - Social Proof</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="insight-box">
+    <div class="insight-label">💡 Penjelasan</div>
+    <p><strong>ToFU00 - Social Proof Customer</strong> di-rename menjadi <strong>ToFU00 - Social Proof</strong> — scope-nya diperluas, tidak lagi hanya customer testimonial tapi juga mencakup konten-konten educational terbaik yang terbukti punya engagement tinggi.</p>
+    <p>Dengan ini, kita hanya punya <strong>1 ToFU campaign</strong> — lebih fokus, tidak saling berebut audience, dan lebih mudah dikelola oleh tim kreatif.</p>
+  </div>
+
+  <hr style="border:none;border-top:1px solid rgba(255,255,255,0.06);margin:20px 0">
+
+  <h3 style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);margin-bottom:8px">Ads untuk Di-Migrate ke Social Proof</h3>
+  <p style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:16px">Hanya ads Educational yang memiliki minimal 1 Purchase CC (data: 1 Aug – 30 Sep 2026). Ad Name hyperlinked ke Notion.</p>
+
+  <div style="padding:10px 12px;background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.12);border-radius:8px;margin-bottom:16px">
+    <p style="font-size:12px;color:rgba(251,191,36,0.8);margin:0">⏰ <strong>Tidak perlu buru-buru.</strong> Migrasi ads ini bisa dilakukan kapan saja — yang penting <strong>wajib selesai dalam 14 hari ke depan</strong> (sebelum 20 Oktober 2026).</p>
+  </div>
+
+  <div style="font-size:10px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;padding-top:4px">3Peptide (M3P) — 5 ads</div>
+  <table style="margin-bottom:12px"><tbody>
+    <tr><td><a href="https://app.notion.com/p/ToFU-KOL-Expert-Maria-Ana-M3P-2c0409cba75b8023a256fd2cb8ef4434" target="_blank" style="color:#818cf8;text-decoration:none">ADS03139</a> — KOL Expert Maria Ana</td><td style="text-align:right;color:rgba(255,255,255,0.35)">9 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Talent-Jessica-Tekanan-darah-mencapai-angka-140-90-3Peptide-1bc409cba75b8027a20fc4b40952d776" target="_blank" style="color:#818cf8;text-decoration:none">ADS01607</a> — Talent Jessica - Tekanan Darah</td><td style="text-align:right;color:rgba(255,255,255,0.35)">3 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/KOL-Expert-Neuron-Brand-Promise-mGanik-3Peptide-Animasi-3Peptide-1b9409cba75b8006a868f319014413ff" target="_blank" style="color:#818cf8;text-decoration:none">ADS01082</a> — KOL Expert Neuron Brand Promise</td><td style="text-align:right;color:rgba(255,255,255,0.35)">2 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/No-Talent-Penderita-Hipertensi-Tidak-Menyadari-3Peptide-1bc409cba75b808dac5fc973860230ea" target="_blank" style="color:#818cf8;text-decoration:none">ADS01634</a> — Penderita Hipertensi Tidak Menyadari</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Expert-dr-Arlis-Faktor-Pemicu-Hipertensi-yang-Sering-Diabaikan-3Peptide-1e7409cba75b806b82c5f1d0c148dc01" target="_blank" style="color:#818cf8;text-decoration:none">ADS02155</a> — dr. Arlis - Faktor Pemicu Hipertensi</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+  </tbody></table>
+
+  <div style="font-size:10px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">NightSure (MNS) — 7 ads</div>
+  <table style="margin-bottom:12px"><tbody>
+    <tr><td><a href="https://app.notion.com/p/NS-EDU-Brand-Carousel-Kalau-Kamu-Kamu-Butuh-NightSure-3a3409cba75b806c8678f816c4c29432" target="_blank" style="color:#818cf8;text-decoration:none">ADS03813</a> — Carousel: Kalau Kamu Butuh NightSure</td><td style="text-align:right;color:rgba(255,255,255,0.35)">4 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Expert-dr-Kelvin-Candiago-Pentingnya-Magnesium-3cf409cba75b8093a43be3dc62c2942a" target="_blank" style="color:#818cf8;text-decoration:none">ADS04024</a> — dr. Kelvin - Pentingnya Magnesium</td><td style="text-align:right;color:rgba(255,255,255,0.35)">4 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/NS-EDU-Brand-BVA-Single-Image-4-dari-10-Orang-Diabetes-Alami-Masalah-Tidur-Apakah-Anda-Sala-3a5409cba75b8047ba5ccf93d69c0a06" target="_blank" style="color:#818cf8;text-decoration:none">ADS03834</a> — 4 dari 10 Orang Diabetes Alami Masalah Tidur</td><td style="text-align:right;color:rgba(255,255,255,0.35)">2 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/NS-EDU-Brand-Carousel-Bukan-Sembarang-Protein-Jaga-Gula-Darah-Stabil-Hingga-8-Jam-NightSu-3a5409cba75b801a90edcf92b6363c27" target="_blank" style="color:#818cf8;text-decoration:none">ADS03832</a> — Bukan Sembarang Protein</td><td style="text-align:right;color:rgba(255,255,255,0.35)">2 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/NS-EDU-Brand-VID-Kenapa-GDP-Tetap-Tinggi-Walaupun-Sudah-Minum-Obat-Cutdown-MV-NightSure-39e409cba75b808ba046c744e51edbeb" target="_blank" style="color:#818cf8;text-decoration:none">ADS03791</a> — Kenapa GDP Tetap Tinggi</td><td style="text-align:right;color:rgba(255,255,255,0.35)">2 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/NS-EDU-Brand-Carousel-Tidur-Restoratif-Faktor-Kesembuhan-Diabetes-yang-Sering-Diabaikan-N-3a3409cba75b80a68140fc041730f830" target="_blank" style="color:#818cf8;text-decoration:none">ADS03808</a> — Tidur Restoratif Faktor Kesembuhan</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/EDU-Expert-VID-dr-Nagib-Cari-topik-di-transcript-cutdown-Zoom-NightSure-3e5409cba75b8003b81bd66929661dbb" target="_blank" style="color:#818cf8;text-decoration:none">ADS04104</a> — dr. Nagib Cutdown Zoom</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+  </tbody></table>
+
+  <div style="font-size:10px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Superfood (MSF) — 7 ads</div>
+  <table style="margin-bottom:12px"><tbody>
+    <tr><td><a href="https://app.notion.com/p/KOL-Expert-Audy-Apriliana-Jadwal-Makan-Diabetesi-yang-Dianjurkan-Multigrain-1bd409cba75b80168480c81d8333d05e" target="_blank" style="color:#818cf8;text-decoration:none">ADS01722</a> — Audy Apriliana - Jadwal Makan Diabetesi</td><td style="text-align:right;color:rgba(255,255,255,0.35)">4 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/No-Talent-Siapa-Bilang-Harus-Minum-Obat-Seumur-Hidup-Angle-Roove-Superfood-1bb409cba75b80338b42e67697f880fc" target="_blank" style="color:#818cf8;text-decoration:none">ADS01492</a> — Siapa Bilang Harus Minum Obat Seumur Hidup</td><td style="text-align:right;color:rgba(255,255,255,0.35)">2 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/0-Brand-Education-Hai-Aku-Pankreas-Mirroring-IG-Superfood-2df409cba75b805f96a0ca4d43dac711" target="_blank" style="color:#818cf8;text-decoration:none">ADS03224</a> — Hai Aku Pankreas (Mirroring IG)</td><td style="text-align:right;color:rgba(255,255,255,0.35)">2 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Expert-VID-dr-Kelvin-Penyuluhan-Diabetes-TK-Apa-itu-Remisi-Diabetes-276409cba75b801895dde12d722ec5dc" target="_blank" style="color:#818cf8;text-decoration:none">ADS02887</a> — dr. Kelvin - Apa itu Remisi Diabetes</td><td style="text-align:right;color:rgba(255,255,255,0.35)">2 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Expert-Cutdown-2-dr-Kelvin-Perjalanan-Menuju-Remisi-Pak-Yanto-Journey-to-Remission-296409cba75b80999d25e65a934c6643" target="_blank" style="color:#818cf8;text-decoration:none">ADS03038</a> — dr. Kelvin - Perjalanan Remisi Pak Yanto</td><td style="text-align:right;color:rgba(255,255,255,0.35)">2 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/No-Talent-Rahasia-Gula-Darah-Tinggi-Bisa-Turun-Version-A-Highlighted-Multigrain-1bb409cba75b8044b5d9c4a618e2f01a" target="_blank" style="color:#818cf8;text-decoration:none">ADS01521</a> — Rahasia Gula Darah Tinggi Bisa Turun</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/KOL-Expert-Ad-Code-Maria-Ana-Mustika-Superfood-226409cba75b80e8a325ebf8ae337b4a" target="_blank" style="color:#818cf8;text-decoration:none">ADS02423</a> — KOL Maria Ana Mustika</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+  </tbody></table>
+
+  <div style="font-size:10px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Metafiber (MTA) — 10 ads</div>
+  <table style="margin-bottom:4px"><tbody>
+    <tr><td><a href="https://app.notion.com/p/Expert-Mirroring-IG-Sesi-QnA-dr-Kelvin-Penyuluhan-Diabetes-TK-269409cba75b80ac9758ea93f9f2fc25" target="_blank" style="color:#818cf8;text-decoration:none">ADS02820</a> — Sesi QnA dr. Kelvin Penyuluhan Diabetes</td><td style="text-align:right;color:rgba(255,255,255,0.35)">6 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/KOL-Expert-Bodyfit-bagus-Makanan-aman-untuk-diabetesi-Metafiber-1bd409cba75b80189518e4a5a1342ac8" target="_blank" style="color:#818cf8;text-decoration:none">ADS01673</a> — KOL Bodyfit - Makanan Aman untuk Diabetesi</td><td style="text-align:right;color:rgba(255,255,255,0.35)">6 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Expert-dr-Arlis-Diabetesi-Jangan-Takut-Makan-Metafiber-1ea409cba75b80eb800ec97a67fb8da8" target="_blank" style="color:#818cf8;text-decoration:none">ADS02164</a> — dr. Arlis - Diabetesi Jangan Takut Makan</td><td style="text-align:right;color:rgba(255,255,255,0.35)">4 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/KOL-Expert-dr-Cecep-Hermawan-Metafiber-358409cba75b809fb01cc113f9584b47" target="_blank" style="color:#818cf8;text-decoration:none">ADS03535</a> — dr. Cecep Hermawan</td><td style="text-align:right;color:rgba(255,255,255,0.35)">3 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Pufi-Vina-Panduwinata-Diabetesi-Jangan-Putus-Semangat-Metafiber-1b3409cba75b80c19053dff9da54c004" target="_blank" style="color:#818cf8;text-decoration:none">ADS00777</a> — Pufi Vina - Jangan Putus Semangat</td><td style="text-align:right;color:rgba(255,255,255,0.35)">3 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Expert-BVA-dr-Kelvin-Apakah-Diabetes-Bisa-Lepas-Ketergantungan-Obat-Metafiber-206409cba75b80ff9b5bfab58b3ff0e1" target="_blank" style="color:#818cf8;text-decoration:none">ADS02254</a> — dr. Kelvin - Lepas Ketergantungan Obat</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Pufi-Nunung-Ngga-Makan-Tenang-Metafiber-Mass-Awareness-19f409cba75b80a4ac77ebc8aaddec92" target="_blank" style="color:#818cf8;text-decoration:none">ADS00180</a> — Pufi Nunung - Ngga Makan Tenang</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Pufi-Nunung-Gula-yang-Bikin-Panik-Versi-2-Metafiber-1a0409cba75b80b797caef805411f5e8" target="_blank" style="color:#818cf8;text-decoration:none">ADS00217</a> — Pufi Nunung - Gula yang Bikin Panik v2</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Pufi-Nunung-Gula-yang-Bikin-Panik-Versi-3-Metafiber-1a0409cba75b80888ef2fdc02b61ad1c" target="_blank" style="color:#818cf8;text-decoration:none">ADS00218</a> — Pufi Nunung - Gula yang Bikin Panik v3</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+    <tr><td><a href="https://app.notion.com/p/Talent-Jessica-Penyebab-Utama-Komplikasi-Diabetes-Metafiber-1b8409cba75b8023a9b3d5939755b6fa" target="_blank" style="color:#818cf8;text-decoration:none">ADS01017</a> — Jessica - Penyebab Utama Komplikasi Diabetes</td><td style="text-align:right;color:rgba(255,255,255,0.35)">1 purch</td></tr>
+  </tbody></table>
+
+  <p style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px">Total: 29 ads across 4 SKUs. Sorted by Purchase CC descending. Ads tanpa Purchase sengaja tidak di-include — beresiko menyedot budget dari ads lain di Social Proof.</p>
+
+  </div>
+
+</div>
+</body>
+</html>

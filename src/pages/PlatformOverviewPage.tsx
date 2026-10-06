@@ -616,10 +616,12 @@ export function PlatformOverviewPage({ brand: fixedBrand }: { brand?: string } =
           return v
         }
         for (const r of skuPerf) {
+          if (r.date < activeFrom || r.date > activeTo) continue
           const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id)
           v.spend += r.ad_spend ?? 0
         }
         for (const r of conv) {
+          if (r.date < activeFrom || r.date > activeTo) continue
           const v = getOrInit(r.traffic_source, r.ads_platform_campaign_id)
           v.rl += activeBrand === 'MCI'
             ? (r.mongo_form_submission ?? 0)

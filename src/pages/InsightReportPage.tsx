@@ -160,7 +160,7 @@ export function InsightReportPage() {
           <iframe
             key={dataUpdatedAt}
             srcDoc={reportHtml}
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
             style={{
               flex: 1, width: '100%', border: 'none',
               background: '#fff', borderRadius: 0,
