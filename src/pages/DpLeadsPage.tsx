@@ -58,7 +58,7 @@ interface AgentRow {
 interface MergedAgent {
   code: string; name: string; city: string; province: string; island: string
   isStarSeller: boolean; type: string; latLng: [number, number] | null
-  rl_total: number; ledi_total: number; agdi: number; revenue: number
+  rl_total: number; ledi_total: number; agdi: number; revenue: number; revenue_warmup: number
   rl_paid: number; rl_dmag: number; rl_organic: number
 }
 interface AggRow {
@@ -252,10 +252,11 @@ export function DpLeadsPage() {
 
   // 3b) Index revenue by kode_agen (CMS names match exactly)
   const revenueMap = useMemo(() => {
-    const m = new Map<string, number>()
+    const m = new Map<string, { revenue: number; revenue_warmup: number }>()
     if (!leadsData?.revenue) return m
-    for (const r of leadsData.revenue) {
-      m.set(r.kode_agen, (m.get(r.kode_agen) ?? 0) + r.revenue)
+    for (const r of leadsData.revenue as { kode_agen: string; revenue: number; revenue_warmup: number }[]) {
+      const prev = m.get(r.kode_agen) ?? { revenue: 0, revenue_warmup: 0 }
+      m.set(r.kode_agen, { revenue: prev.revenue + r.revenue, revenue_warmup: prev.revenue_warmup + (r.revenue_warmup ?? r.revenue) })
     }
     return m
   }, [leadsData])
@@ -266,14 +267,14 @@ export function DpLeadsPage() {
     return cmsData.map(c => {
       const key = `${c.newAgentCode}|${c.name.trim()}`
       const leads = leadsMap.get(key)
-      const rev = revenueMap.get(c.newAgentCode) ?? 0
+      const rev = revenueMap.get(c.newAgentCode) ?? { revenue: 0, revenue_warmup: 0 }
       return {
         code: c.newAgentCode, name: c.name, city: c.cityName, province: c.provinceName,
         island: getIsland(c.provinceName),
         isStarSeller: c.isStarSeller, type: c.type,
         latLng: parseLatLng(c.lat, c.lng, c.googleMapsUrl) ?? FALLBACK_COORDS[key] ?? null,
         rl_total: leads?.rl_total ?? 0, ledi_total: leads?.ledi_total ?? 0, agdi: leads?.agdi ?? 0,
-        revenue: rev,
+        revenue: rev.revenue, revenue_warmup: rev.revenue_warmup,
         rl_paid: leads?.rl_paid ?? 0, rl_dmag: leads?.rl_dmag ?? 0, rl_organic: leads?.rl_organic ?? 0,
       }
     }).sort((a, b) => b.rl_total - a.rl_total)
@@ -336,16 +337,16 @@ export function DpLeadsPage() {
 
   // Aggregation for each view level
   const aggRows = useMemo((): AggRow[] => {
-    const map = new Map<string, { count: number; rl: number; ledi: number; agdi: number; rev: number; rl_paid: number; rl_dmag: number; rl_organic: number; island: string; province: string; city: string }>()
+    const map = new Map<string, { count: number; rl: number; ledi: number; agdi: number; rev: number; rev_warmup: number; rl_paid: number; rl_dmag: number; rl_organic: number; island: string; province: string; city: string }>()
     for (const a of filtered) {
       const key = viewLevel === 'island' ? a.island
         : viewLevel === 'province' ? a.province
         : viewLevel === 'city' ? a.city
         : a.code + '|' + a.name
       let g = map.get(key)
-      if (!g) { g = { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, rl_paid: 0, rl_dmag: 0, rl_organic: 0, island: a.island, province: a.province, city: a.city }; map.set(key, g) }
+      if (!g) { g = { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, rev_warmup: 0, rl_paid: 0, rl_dmag: 0, rl_organic: 0, island: a.island, province: a.province, city: a.city }; map.set(key, g) }
       g.count++
-      g.rl += a.rl_total; g.ledi += a.ledi_total; g.agdi += a.agdi; g.rev += a.revenue
+      g.rl += a.rl_total; g.ledi += a.ledi_total; g.agdi += a.agdi; g.rev += a.revenue; g.rev_warmup += a.revenue_warmup
       g.rl_paid += a.rl_paid; g.rl_dmag += a.rl_dmag; g.rl_organic += a.rl_organic
     }
     const pvMap = viewLevel === 'island' ? pvByIsland : viewLevel === 'province' ? pvByProvince : pvByCity
@@ -355,7 +356,7 @@ export function DpLeadsPage() {
         if (map.has(key)) continue
         // Province tab: only include PV provinces within checked islands
         if (viewLevel === 'province' && checkedIslands.size > 0 && !checkedIslands.has(getIsland(key))) continue
-        map.set(key, { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, rl_paid: 0, rl_dmag: 0, rl_organic: 0, island: viewLevel === 'province' ? getIsland(key) : key, province: viewLevel === 'province' ? key : '', city: '' })
+        map.set(key, { count: 0, rl: 0, ledi: 0, agdi: 0, rev: 0, rev_warmup: 0, rl_paid: 0, rl_dmag: 0, rl_organic: 0, island: viewLevel === 'province' ? getIsland(key) : key, province: viewLevel === 'province' ? key : '', city: '' })
       }
     }
     return Array.from(map.entries())
@@ -364,7 +365,7 @@ export function DpLeadsPage() {
         count: g.count, rl_total: g.rl, ledi_total: g.ledi, agdi: g.agdi, revenue: g.rev,
         rl_paid: g.rl_paid, rl_dmag: g.rl_dmag, rl_organic: g.rl_organic,
         leadsPerAgent: g.count > 0 ? g.rl / g.count / numDays : 0,
-        revenuePerAgent: g.count > 0 ? (g.rev / revDays) * 30 / g.count : 0,
+        revenuePerAgent: g.count > 0 ? (g.rev_warmup / revDays) * 30 / g.count : 0,
         pv: viewLevel !== 'agent' ? (pvMap.get(key) ?? 0) : 0,
         island: g.island, province: g.province, city: g.city,
       }))
@@ -396,8 +397,8 @@ export function DpLeadsPage() {
 
   // Global stats (unfiltered — for summary cards above the table)
   const globalTotals = useMemo(() => {
-    const t = { total: 0, rl_total: 0, ledi_total: 0, agdi: 0, revenue: 0 }
-    for (const a of agents) { t.total++; t.rl_total += a.rl_total; t.ledi_total += a.ledi_total; t.agdi += a.agdi; t.revenue += a.revenue }
+    const t = { total: 0, rl_total: 0, ledi_total: 0, agdi: 0, revenue: 0, revenue_warmup: 0 }
+    for (const a of agents) { t.total++; t.rl_total += a.rl_total; t.ledi_total += a.ledi_total; t.agdi += a.agdi; t.revenue += a.revenue; t.revenue_warmup += a.revenue_warmup }
     return t
   }, [agents])
 
@@ -688,7 +689,7 @@ export function DpLeadsPage() {
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.50)', textTransform: 'uppercase', marginBottom: 3 }}>Mo. Revenue / Agent</div>
             <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.04em', color: '#34d399', lineHeight: 1, opacity: 0.72 }}>
-              {globalTotals.total > 0 && globalTotals.revenue > 0 ? 'Rp ' + fmtNum(Math.round((globalTotals.revenue / revDays) * 30 / globalTotals.total)) : '-'}
+              {globalTotals.total > 0 && globalTotals.revenue_warmup > 0 ? 'Rp ' + fmtNum(Math.round((globalTotals.revenue_warmup / revDays) * 30 / globalTotals.total)) : '-'}
             </div>
           </div>
         </div>
