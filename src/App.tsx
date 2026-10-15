@@ -15,6 +15,7 @@ import { CsvDownloaderPage } from './pages/CsvDownloaderPage'
 import { DpLeadsPage } from './pages/DpLeadsPage'
 import { InsightReportPage } from './pages/InsightReportPage'
 import { ABTestPage } from './pages/ABTestPage'
+import { CrmPrototypePage } from './pages/CrmPrototypePage'
 import { DOMAIN_PIN, DEFAULT_ROUTE, IS_GOLO, IS_MNC, IS_MCI, IS_GOL_CC, IS_MNC_CC } from './config/domainConfig'
 
 const queryClient = new QueryClient({
@@ -69,6 +70,7 @@ function App() {
               <Route path="/overview" element={<GeneralOverviewPage />} />
               <Route path="/pipeline-status" element={<PipelineStatusPage />} />
               <Route path="/ab-test" element={<ABTestPage />} />
+              <Route path="/crm-prototype" element={<CrmPrototypePage />} />
             </>}
           </Route>
         </Routes>

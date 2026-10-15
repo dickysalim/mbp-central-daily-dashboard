@@ -29,7 +29,7 @@ export const ALLOWED_ROUTES: string[] = IS_GOL_CC
   ? ['/mnc', '/platform-overview', '/sales-velocity', '/cc-sales', '/campaign-explorer', '/dp-leads', '/csv-downloader', '/insight-report']
   : IS_MCI
   ? ['/mci', '/mci-campaigns', '/platform-overview', '/csv-downloader', '/insight-report']
-  : ['/overview', '/mnc', '/gol', '/mci', '/platform-overview', '/sales-velocity', '/cc-sales', '/gol-sales-velocity', '/gol-cc-sales', '/campaign-explorer', '/gol-campaigns', '/mci-campaigns', '/dp-leads', '/pipeline-status', '/csv-downloader', '/insight-report', '/ab-test']
+  : ['/overview', '/mnc', '/gol', '/mci', '/platform-overview', '/sales-velocity', '/cc-sales', '/gol-sales-velocity', '/gol-cc-sales', '/campaign-explorer', '/gol-campaigns', '/mci-campaigns', '/dp-leads', '/pipeline-status', '/csv-downloader', '/insight-report', '/ab-test', '/crm-prototype']
 
 /** Default landing page */
 export const DEFAULT_ROUTE = IS_GOL_CC ? '/gol-cc-sales' : IS_MNC_CC ? '/cc-sales' : IS_GOLO ? '/gol' : IS_MNC ? '/mnc' : IS_MCI ? '/mci' : '/overview'
