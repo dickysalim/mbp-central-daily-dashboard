@@ -280,8 +280,11 @@ export function CsvDownloaderPage() {
   const uniqueTrafficSources = useMemo(() => {
     if (!data) return []
     const s = new Set<string>()
-    for (const p of data.performance) s.add(p.traffic_source)
-    for (const g of (data.ga4 ?? [])) s.add(g.traffic_source)
+    const resolveTS = (ts: string) => ts === 'IGPV' ? 'MBST' : ts
+    for (const p of data.performance) s.add(resolveTS(p.traffic_source))
+    for (const g of (data.ga4 ?? [])) s.add(resolveTS(g.traffic_source))
+    // Always include MBST for organic conversions bucket
+    if ((data.organic_conversions ?? []).length > 0) s.add('MBST')
     return [...s].sort()
   }, [data])
 
@@ -336,10 +339,12 @@ export function CsvDownloaderPage() {
     const MCI_SKU_ALIAS: Record<string, string> = { ABC: 'A1C', DEF: 'CEK', GHI: 'WCA' }
     const resolveSku = (sku: string) => (brand === 'MCI' ? MCI_SKU_ALIAS[sku] ?? sku : sku)
     const skipSku = (sku: string) => isB2B(sku) || skuBelongsElsewhere(sku, brand)
+    // IGPV and MBST are interchangeable — normalize to MBST (organic)
+    const resolveTS = (ts: string) => ts === 'IGPV' ? 'MBST' : ts
 
     for (const p of data.performance) {
       if (skipSku(p.sku)) continue
-      const r = ensure(p.date, p.traffic_source, resolveSku(p.sku))
+      const r = ensure(p.date, resolveTS(p.traffic_source), resolveSku(p.sku))
       r.ad_spend += p.ad_spend ?? 0
       r.impressions += p.impressions ?? 0
       r.link_click += p.link_click ?? 0
@@ -351,7 +356,7 @@ export function CsvDownloaderPage() {
 
     for (const g of (data.ga4 ?? [])) {
       if (skipSku(g.sku)) continue
-      const r = ensure(g.date, g.traffic_source, resolveSku(g.sku))
+      const r = ensure(g.date, resolveTS(g.traffic_source), resolveSku(g.sku))
       r.first_visit += g.ga4_first_visit ?? 0
       r.lp_view += g.ga4_page_view ?? 0
       r.view_offer += g.ga4_view_offer ?? 0
@@ -359,7 +364,7 @@ export function CsvDownloaderPage() {
 
     for (const c of (data.conversions ?? [])) {
       if (skipSku(c.sku)) continue
-      const r = ensure(c.date, c.traffic_source, resolveSku(c.sku))
+      const r = ensure(c.date, resolveTS(c.traffic_source), resolveSku(c.sku))
       r.rl_ccom += c.mongo_real_lead_ccom ?? 0
       r.rl_d2or += c.mongo_real_lead_d2or ?? 0
       r.rl_mpsh += c.mongo_real_lead_mpsh ?? 0
